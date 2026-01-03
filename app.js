@@ -47,6 +47,7 @@ let stream = null;
 let currentScanType = null;
 let processingInterval = null;
 let userSettings = null;
+let cameraStream = null;
 
 // ============ INITIALIZATION ============
 async function init() {
@@ -2532,9 +2533,6 @@ async function updateEmailReminders() {
     `;
 }
 // ============ CAMERA & SCANNING FUNCTIONS ============
-
-let cameraStream = null;
-let currentScanType = null;
 
 // Start camera for scanning
 async function startCamera() {
