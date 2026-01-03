@@ -7,6 +7,15 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
     <title>Ultimate Wellness System v1.0</title>
+    
+    <!-- EmailJS for real email sending -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script type="text/javascript">
+        (function(){
+            // Public key - safe to expose
+            emailjs.init("rTGjT9QEhzON_tI8h"); // Free EmailJS account
+        })();
+    </script>
     <style>
         * {
             margin: 0;
@@ -1339,6 +1348,7 @@
             <button class="quick-action-btn" onclick="quickAIPrompt('recipe')">🍳 Recipe Ideas</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('meal-plan')">📋 Meal Plan</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('exercise')">💪 Exercise Help</button>
+            <button class="quick-action-btn" onclick="quickAIPrompt('log-meal')">📝 Log Meal</button>
             <button class="quick-action-btn" onclick="toggleVoiceOutput()">
                 <span id="voiceOutputIcon">🔊</span> <span id="voiceOutputText">Voice On</span>
             </button>
