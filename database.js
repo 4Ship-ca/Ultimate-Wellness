@@ -442,6 +442,12 @@ async function getStoresByDate(date) {
     return await dbGetByIndex('stores', 'date', date);
 }
 
+async function getTotalSpending(startDate, endDate) {
+    const all = await dbGetAll('stores');
+    const filtered = all.filter(s => s.date >= startDate && s.date <= endDate);
+    return filtered.reduce((sum, s) => sum + (s.total || 0), 0);
+}
+
 // ============ EXPORT / IMPORT ============
 
 async function exportAllData() {
