@@ -103,6 +103,7 @@ async function completeSetup() {
     const dailyPoints = calculateDailyPoints(gender, age, weight, heightInInches, activity);
 
     userSettings = {
+        id: 'user', // REQUIRED for IndexedDB
         name,
         email,
         birthday,
