@@ -1,6 +1,15 @@
 // ============ MAIN APPLICATION LOGIC ============
 // Ultimate Wellness System v1.0
 
+// ============ SECURE API CONFIGURATION ============
+// Cloudflare Worker proxy - API key is now 100% hidden and secure!
+const USE_PROXY = true; // ✅ PROXY ENABLED
+const PROXY_URL = 'https://ultimate-wellness.your4ship.workers.dev'; // ✅ YOUR WORKER URL
+const CLAUDE_API_KEY = ''; // ✅ EMPTY - Key stored securely in Cloudflare!
+
+// Your API key is now stored as an encrypted environment variable in Cloudflare Workers
+// Nobody can see it in your code, git history, or browser - completely secure! 🔒
+
 // ============ CONSTANTS ============
 const EXERCISES = ['Chores', 'Vacuum', 'Laundry', 'Elliptical', 'Walk', 'Yard Work'];
 const EXERCISE_POINTS_PER_15MIN = 1;
@@ -1445,6 +1454,11 @@ async function buildAIContext() {
 }
 
 async function callClaudeAPI(userMessage, context) {
+    // Check if this is a meal logging request
+    if (isMealLoggingRequest(userMessage)) {
+        return await processMealLogging(userMessage, context);
+    }
+    
     // Check if this is a recipe request
     if (isRecipeRequest(userMessage)) {
         return await generateRecipe(userMessage, context);
@@ -1454,23 +1468,47 @@ async function callClaudeAPI(userMessage, context) {
     const systemPrompt = buildSystemPrompt(context);
     
     try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1000,
-                system: systemPrompt,
-                messages: [
-                    { role: 'user', content: userMessage }
-                ]
-            })
-        });
+        // Check if API key is configured (if not using proxy)
+        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            throw new Error('Claude API key not configured. See SECURE-API-SETUP.md for setup instructions.');
+        }
+        
+        const requestBody = {
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            system: systemPrompt,
+            messages: [
+                { role: 'user', content: userMessage }
+            ]
+        };
+        
+        let response;
+        
+        if (USE_PROXY) {
+            // Use Cloudflare Worker proxy (secure)
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            // Direct API call (only for testing with private repos)
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
         
         if (!response.ok) {
-            throw new Error('API request failed');
+            const error = await response.json();
+            throw new Error(error.error?.message || 'API request failed');
         }
         
         const data = await response.json();
@@ -1484,6 +1522,200 @@ async function callClaudeAPI(userMessage, context) {
 
 function isRecipeRequest(message) {
     const recipeKeywords = ['recipe', 'meal', 'cook', 'make', 'prepare', 'dinner', 'lunch', 'breakfast', 'snack', 'food idea'];
+    return recipeKeywords.some(keyword => message.toLowerCase().includes(keyword));
+}
+
+function isMealLoggingRequest(message) {
+    const lowerMsg = message.toLowerCase();
+    
+    // Direct logging keywords
+    const logKeywords = [
+        'log meal', 'log food', 'record meal', 'record food', 'ate', 'had for',
+        'just ate', 'just had', 'i ate', 'i had', 'consumed', 'for breakfast',
+        'for lunch', 'for dinner', 'for snack'
+    ];
+    
+    // Check if message contains logging intent
+    return logKeywords.some(keyword => lowerMsg.includes(keyword)) ||
+           // Pattern: "3 eggs, 2 toast" (food items with quantities)
+           (/\d+\s*(egg|toast|bacon|sausage|pancake|waffle|coffee|banana|apple|chicken|rice|pasta|potato)/i.test(lowerMsg));
+}
+
+async function processMealLogging(userMessage, context) {
+    // Ask Claude to parse the meal and calculate points
+    const systemPrompt = `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
+
+CRITICAL QUANTITY RULES:
+1. ALWAYS look for specific quantities in the user's message
+2. If quantity is NOT specified, ASK the user (e.g., "How much rice did you have?")
+3. Common serving sizes:
+   - Rice/pasta: 1 cup COOKED = ~200 calories, ~5 pts
+   - Chicken breast: 4 oz = ~120 calories, ~3 pts
+   - Eggs: 1 large egg = ~70 calories, ~2 pts
+   - Toast: 1 slice = ~80 calories, ~2 pts
+   - Butter: 1 tablespoon = ~100 calories, ~3 pts
+
+CALCULATION RULES:
+1. Use SmartPoints formula: Points = (Calories × 0.0305) + (SatFat × 0.275) + (Sugar × 0.12) - (Protein × 0.098)
+2. Round points to nearest whole number (use Math.round)
+3. Be conservative - estimate on the HIGHER side if unsure
+
+RECIPE SCALING RULES:
+1. If user mentions "1 can of sauce" - check if it's per-serving or per-can on label
+   - Per can + makes 2 meals = divide by 2
+   - Per serving + 4 servings per can + makes 2 meals = 2 servings per meal
+2. If user says "I made X recipe that serves 4 and had 1 serving" = divide recipe total by 4
+3. If user ate "half" of something = multiply by 0.5
+4. If user ate "1/4" = multiply by 0.25
+
+PORTION PATTERNS TO DETECT:
+- "1 cup of rice" → 1 cup
+- "2 cups cooked rice" → 2 cups  
+- "handful of nuts" → ~1 oz
+- "small apple" → 1 medium apple
+- "large chicken breast" → 6-8 oz
+- "regular chicken breast" → 4 oz
+- "half a sandwich" → 0.5 serving
+- "quarter of a pizza" → 0.25 pizza
+
+IF QUANTITY IS UNCLEAR:
+Respond with: "I need to know the quantity. How much [food] did you have? (e.g., 1 cup, 4 oz, 2 slices)"
+
+ONLY if quantities ARE specified, respond in JSON format:
+{
+  "foods": [
+    {
+      "name": "Cooked brown rice",
+      "quantity": "1 cup",
+      "points": 5,
+      "calories": 215,
+      "portionNote": "cooked measurement"
+    },
+    {
+      "name": "Grilled chicken breast",
+      "quantity": "4 oz",
+      "points": 3,
+      "calories": 120,
+      "portionNote": "typical breast size"
+    }
+  ],
+  "totalPoints": 8,
+  "mealType": "lunch",
+  "needsClarification": false
+}
+
+If clarification needed:
+{
+  "needsClarification": true,
+  "question": "How much rice did you have? (1 cup, 2 cups, etc.)"
+}`;
+
+    try {
+        // Check if API key is configured (if not using proxy)
+        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            return "⚠️ API key not configured. I can't parse your meal automatically. Please use the manual food logger.";
+        }
+        
+        const requestBody = {
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            system: systemPrompt,
+            messages: [
+                { role: 'user', content: userMessage }
+            ]
+        };
+        
+        let response;
+        
+        if (USE_PROXY) {
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
+        
+        if (!response.ok) {
+            throw new Error('API request failed');
+        }
+        
+        const data = await response.json();
+        const responseText = data.content[0].text;
+        
+        // Parse JSON from response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            // AI is asking for clarification
+            return responseText;
+        }
+        
+        const mealData = JSON.parse(jsonMatch[0]);
+        
+        // Check if AI needs clarification
+        if (mealData.needsClarification) {
+            return `❓ ${mealData.question}\n\nPlease be specific with quantities for accurate point tracking!`;
+        }
+        
+        // Log each food item to database
+        const today = getTodayKey();
+        const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        
+        for (const food of mealData.foods) {
+            await addFood({
+                date: today,
+                name: `${food.name} (${food.quantity})`,
+                points: food.points,
+                time: currentTime,
+                source: 'ai_voice_log',
+                calories: food.calories
+            });
+        }
+        
+        // Update UI
+        await updateAllUI();
+        
+        // Return confirmation
+        let confirmation = `✅ **Meal Logged!**\n\n`;
+        confirmation += `**${mealData.mealType.charAt(0).toUpperCase() + mealData.mealType.slice(1)}:**\n`;
+        
+        mealData.foods.forEach(food => {
+            confirmation += `• ${food.name} (${food.quantity}): ${food.points} pts`;
+            if (food.portionNote) {
+                confirmation += ` *${food.portionNote}*`;
+            }
+            confirmation += `\n`;
+        });
+        
+        confirmation += `\n**Total:** ${mealData.totalPoints} pts\n`;
+        confirmation += `**Time:** ${currentTime}\n\n`;
+        
+        const remaining = context.dailyPoints - (context.todayStats.foodPoints + mealData.totalPoints);
+        confirmation += `**Points Remaining Today:** ${remaining} pts`;
+        
+        return confirmation;
+        
+    } catch (error) {
+        console.error('Meal logging error:', error);
+        return `❌ Sorry, I couldn't parse that meal. Try being more specific with quantities:\n\n"I had 3 eggs, 2 slices of toast, and 1 tablespoon of butter for breakfast"\n\n"I ate 1 cup of cooked rice with 4 oz grilled chicken"\n\nOr use the manual food logger.`;
+    }
+}
+
+function isRecipeRequest(message) {
+    const recipeKeywords = ['recipe', 'meal', 'cook', 'make', 'prepare', 'dinner', 'lunch', 'breakfast', 'snack', 'food idea'];
+    // Don't treat meal logging as recipe request
+    if (isMealLoggingRequest(message)) return false;
     return recipeKeywords.some(keyword => message.toLowerCase().includes(keyword));
 }
 
@@ -1513,23 +1745,45 @@ Include measurement toggle: <span class="measurement" data-imperial="X oz" data-
 Provide 2-3 recipe options if asked for "ideas" or "suggestions".`;
 
     try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 2000,
-                system: systemPrompt,
-                messages: [
-                    { role: 'user', content: userMessage }
-                ]
-            })
-        });
+        // Check if API key is configured (if not using proxy)
+        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            throw new Error('Claude API key not configured');
+        }
+        
+        const requestBody = {
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 2000,
+            system: systemPrompt,
+            messages: [
+                { role: 'user', content: userMessage }
+            ]
+        };
+        
+        let response;
+        
+        if (USE_PROXY) {
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
         
         if (!response.ok) {
-            throw new Error('API request failed');
+            const error = await response.json();
+            throw new Error(error.error?.message || 'API request failed');
         }
         
         const data = await response.json();
@@ -1704,11 +1958,27 @@ function quickAIPrompt(type) {
     const prompts = {
         'recipe': `I have ${userSettings.dailyPoints - (document.getElementById('pointsToday').textContent || 0)} points left today. Can you suggest 2-3 healthy recipe options?`,
         'meal-plan': `Can you create a 3-day meal plan that fits my ${userSettings.dailyPoints} daily points?`,
-        'exercise': `I'm on the exercise tab. What's a good workout plan for me today?`
+        'exercise': `I'm on the exercise tab. What's a good workout plan for me today?`,
+        'log-meal': `Log meal: ` // User will complete with their meal
     };
     
-    document.getElementById('aiChatInput').value = prompts[type] || '';
-    sendAIMessage();
+    const input = document.getElementById('aiChatInput');
+    input.value = prompts[type] || '';
+    
+    // For log-meal, focus on input so user can type their meal
+    if (type === 'log-meal') {
+        input.focus();
+        // Auto-start voice input if available
+        if (recognition && !isListening) {
+            setTimeout(() => {
+                if (confirm('Use voice to describe your meal?')) {
+                    toggleVoiceInput();
+                }
+            }, 100);
+        }
+    } else {
+        sendAIMessage();
+    }
 }
 
 // Update currentTab when switching tabs
@@ -1762,13 +2032,61 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// ============ EMAIL CONFIGURATION ============
+
+// EmailJS Configuration (for real email sending)
+// Sign up free at https://www.emailjs.com
+const EMAIL_CONFIG = {
+    enabled: false, // Set to true after setting up EmailJS
+    serviceId: 'YOUR_SERVICE_ID', // Replace with your EmailJS service ID
+    templates: {
+        welcome: 'YOUR_WELCOME_TEMPLATE_ID',
+        weeklyReport: 'YOUR_WEEKLY_REPORT_TEMPLATE_ID',
+        weighIn: 'YOUR_WEIGHIN_TEMPLATE_ID',
+        groceryList: 'YOUR_GROCERY_TEMPLATE_ID'
+    }
+};
+
+// Real email sending function
+async function sendRealEmail(to, subject, body, templateId = null) {
+    if (!EMAIL_CONFIG.enabled || typeof emailjs === 'undefined') {
+        // Fallback to mailto
+        const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.open(mailtoUrl);
+        return false;
+    }
+    
+    try {
+        const templateParams = {
+            to_email: to,
+            to_name: userSettings?.name || 'there',
+            subject: subject,
+            message: body
+        };
+        
+        await emailjs.send(
+            EMAIL_CONFIG.serviceId,
+            templateId || EMAIL_CONFIG.templates.weeklyReport,
+            templateParams
+        );
+        
+        return true;
+    } catch (error) {
+        console.error('EmailJS error:', error);
+        // Fallback to mailto
+        const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.open(mailtoUrl);
+        return false;
+    }
+}
+
 // ============ EMAIL FUNCTIONS ============
 
 function sendWelcomeEmail() {
     if (!userSettings || !userSettings.email) return;
     
-    const subject = encodeURIComponent('🔥 Welcome to Your Wellness Journey!');
-    const body = encodeURIComponent(`Hi ${userSettings.name}!
+    const subject = '🔥 Welcome to Your Wellness Journey!';
+    const body = `Hi ${userSettings.name}!
 
 Welcome to Ultimate Wellness System! 🎉
 
@@ -1791,9 +2109,14 @@ Your weekly progress reports will arrive every Monday morning!
 
 Happy tracking! 💪
 
-- Your Ultimate Wellness System`);
+- Your Ultimate Wellness System`;
 
-    window.open(`mailto:${userSettings.email}?subject=${subject}&body=${body}`);
+    sendRealEmail(userSettings.email, subject, body, EMAIL_CONFIG.templates.welcome)
+        .then(success => {
+            if (success) {
+                console.log('✅ Welcome email sent successfully!');
+            }
+        });
 }
 
 async function emailWeeklyReport() {
@@ -1805,10 +2128,21 @@ async function emailWeeklyReport() {
     // Calculate weekly stats
     const stats = await calculateWeeklyStats();
     
-    const subject = encodeURIComponent(`📊 Your Weekly Wellness Report - ${stats.weekLabel}`);
-    const body = encodeURIComponent(generateWeeklyReportBody(stats));
+    const subject = `📊 Your Weekly Wellness Report - ${stats.weekLabel}`;
+    const body = generateWeeklyReportBody(stats);
 
-    window.open(`mailto:${userSettings.email}?subject=${subject}&body=${body}`);
+    const success = await sendRealEmail(
+        userSettings.email, 
+        subject, 
+        body, 
+        EMAIL_CONFIG.templates.weeklyReport
+    );
+    
+    if (success) {
+        alert('✅ Weekly report sent to your email!');
+    } else {
+        // mailto opened as fallback
+    }
 }
 
 async function calculateWeeklyStats() {
@@ -2069,10 +2403,20 @@ async function emailGroceryList() {
     list += `• Buy seasonal produce for best deals\n`;
     list += `\nHappy shopping! 🎉`;
 
-    const subject = encodeURIComponent('🛒 Your Grocery List');
-    const body = encodeURIComponent(list);
-
-    window.open(`mailto:${userSettings.email}?subject=${subject}&body=${body}`);
+    const subject = '🛒 Your Grocery List';
+    
+    const success = await sendRealEmail(
+        userSettings.email, 
+        subject, 
+        list, 
+        EMAIL_CONFIG.templates.groceryList
+    );
+    
+    if (success) {
+        alert('✅ Grocery list sent to your email!');
+    } else {
+        // mailto opened as fallback
+    }
 }
 
 async function checkWeeklyReminders() {
@@ -2118,8 +2462,8 @@ function shouldSendWeeklyReport() {
 function sendWeighInReminder() {
     if (!userSettings || !userSettings.email) return;
     
-    const subject = encodeURIComponent('⚖️ Time to Weigh In!');
-    const body = encodeURIComponent(`Hi ${userSettings.name}!
+    const subject = '⚖️ Time to Weigh In!';
+    const body = `Hi ${userSettings.name}!
 
 It's weigh-in time! ⚖️
 
@@ -2137,10 +2481,20 @@ Remember:
 
 You're doing great! Keep going! 💪
 
-- Your Ultimate Wellness System`);
+- Your Ultimate Wellness System`;
 
     localStorage.setItem('lastWeighInReminder', getTodayKey());
-    window.open(`mailto:${userSettings.email}?subject=${subject}&body=${body}`);
+    
+    sendRealEmail(
+        userSettings.email, 
+        subject, 
+        body, 
+        EMAIL_CONFIG.templates.weighIn
+    ).then(success => {
+        if (success) {
+            console.log('✅ Weigh-in reminder sent!');
+        }
+    });
 }
 
 async function updateAllUI() {
@@ -2176,4 +2530,495 @@ async function updateEmailReminders() {
         Next weekly report: ${nextMonday.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}<br>
         Next weigh-in reminder: ${nextWeighIn.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
     `;
+}
+// ============ CAMERA & SCANNING FUNCTIONS ============
+
+let cameraStream = null;
+let currentScanType = null;
+
+// Start camera for scanning
+async function startCamera() {
+    const container = document.getElementById('cameraContainer');
+    const video = document.getElementById('scanVideo');
+    const uploadOptions = document.querySelector('.upload-options');
+    const useCaseSelector = document.getElementById('useCaseSelector');
+    
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } // Use back camera on mobile
+        });
+        
+        video.srcObject = cameraStream;
+        container.style.display = 'block';
+        uploadOptions.style.display = 'none';
+        useCaseSelector.style.display = 'block';
+        
+        // Add capture button
+        if (!document.getElementById('captureBtn')) {
+            const captureBtn = document.createElement('button');
+            captureBtn.id = 'captureBtn';
+            captureBtn.className = 'btn';
+            captureBtn.textContent = '📸 Capture';
+            captureBtn.onclick = capturePhoto;
+            captureBtn.style.marginTop = '10px';
+            captureBtn.style.width = '100%';
+            container.appendChild(captureBtn);
+        }
+        
+    } catch (error) {
+        console.error('Camera error:', error);
+        alert('Could not access camera. Please grant camera permissions or use file upload.');
+    }
+}
+
+// Stop camera
+function stopCamera() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+    const video = document.getElementById('scanVideo');
+    video.srcObject = null;
+    document.getElementById('cameraContainer').style.display = 'none';
+    document.querySelector('.upload-options').style.display = 'flex';
+}
+
+// Capture photo from camera
+function capturePhoto() {
+    const video = document.getElementById('scanVideo');
+    const canvas = document.getElementById('scanCanvas');
+    const image = document.getElementById('scanImage');
+    
+    // Set canvas size to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Draw video frame to canvas
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    
+    // Convert to data URL
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // Show captured image
+    image.src = dataUrl;
+    image.style.display = 'block';
+    video.style.display = 'none';
+    
+    // Stop camera
+    stopCamera();
+    
+    // Remove capture button
+    const captureBtn = document.getElementById('captureBtn');
+    if (captureBtn) captureBtn.remove();
+    
+    // Analyze the image
+    analyzeImage(dataUrl);
+}
+
+// Handle file upload
+function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const dataUrl = e.target.result;
+        const image = document.getElementById('scanImage');
+        image.src = dataUrl;
+        image.style.display = 'block';
+        document.getElementById('cameraContainer').style.display = 'block';
+        document.querySelector('.upload-options').style.display = 'none';
+        document.getElementById('useCaseSelector').style.display = 'block';
+        
+        // Analyze the image
+        analyzeImage(dataUrl);
+    };
+    reader.readAsDataURL(file);
+}
+
+// Analyze image with Claude API
+async function analyzeImage(imageDataUrl) {
+    const useCase = document.getElementById('useCaseSelect').value;
+    currentScanType = useCase;
+    
+    const resultDiv = document.getElementById('scanResult');
+    resultDiv.innerHTML = '<div class="spinner"></div><p>Analyzing image with AI...</p>';
+    
+    // Convert data URL to base64 (remove data:image/jpeg;base64, prefix)
+    const base64Data = imageDataUrl.split(',')[1];
+    
+    try {
+        const prompt = getAnalysisPrompt(useCase);
+        const response = await callClaudeVision(base64Data, prompt);
+        
+        displayScanResult(response, useCase);
+        
+    } catch (error) {
+        console.error('Analysis error:', error);
+        resultDiv.innerHTML = `
+            <div style="color: var(--danger); padding: 20px; text-align: center;">
+                <p>⚠️ Error analyzing image</p>
+                <p style="font-size: 14px; margin-top: 10px;">${error.message}</p>
+                ${error.message.includes('API key') ? '<p style="font-size: 12px; margin-top: 10px;">Add your Claude API key in app.js (line ~10)</p>' : ''}
+            </div>
+        `;
+    }
+}
+
+// Get analysis prompt based on scan type
+function getAnalysisPrompt(useCase) {
+    const prompts = {
+        barcode: `Analyze this image and extract:
+1. Any barcodes or product codes visible
+2. Product name and brand
+3. Nutritional information (calories, protein, carbs, fat, sugar, saturated fat)
+4. Serving size
+5. Calculate SmartPoints using: Points = (Calories × 0.0305) + (SatFat × 0.275) + (Sugar × 0.12) - (Protein × 0.098)
+
+Respond in JSON format:
+{
+  "productName": "...",
+  "brand": "...",
+  "servingSize": "...",
+  "nutrition": {
+    "calories": 0,
+    "protein": 0,
+    "carbs": 0,
+    "fat": 0,
+    "saturatedFat": 0,
+    "sugar": 0
+  },
+  "smartPoints": 0
+}`,
+
+        grocery: `Analyze this grocery receipt and extract:
+1. Store name
+2. Date
+3. All food items purchased
+4. Total amount spent
+
+Respond in JSON format:
+{
+  "store": "...",
+  "date": "...",
+  "items": ["item1", "item2"],
+  "total": 0.00
+}`,
+
+        restaurant: `Analyze this restaurant receipt and extract:
+1. Restaurant name
+2. Date
+3. Individual menu items with prices
+4. Estimate SmartPoints for each item (typical points: appetizers 5-10, entrees 10-20, desserts 8-15)
+5. Total bill
+
+Respond in JSON format:
+{
+  "restaurant": "...",
+  "date": "...",
+  "items": [
+    {"name": "...", "price": 0.00, "estimatedPoints": 0}
+  ],
+  "total": 0.00
+}`,
+
+        pantry: `Analyze this photo of pantry/fridge items and list:
+1. All visible food items
+2. Estimate freshness/expiry status if visible
+3. Categorize items (produce, dairy, meat, pantry staples, etc.)
+
+Respond in JSON format:
+{
+  "items": [
+    {"name": "...", "category": "...", "quantity": "..."}
+  ]
+}`,
+
+        medication: `Analyze this medication label and extract:
+1. Medication name
+2. Dosage (mg, ml, etc.)
+3. Instructions (frequency, timing)
+4. Warnings or special instructions
+
+Respond in JSON format:
+{
+  "name": "...",
+  "dosage": "...",
+  "instructions": "...",
+  "timing": ["morning", "afternoon", "evening"]
+}`
+    };
+    
+    return prompts[useCase] || prompts.barcode;
+}
+
+// Call Claude Vision API
+async function callClaudeVision(base64Image, prompt) {
+    // Check if API key is configured (if not using proxy)
+    if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+        throw new Error('Claude API key not configured. Add your API key in app.js or set up Cloudflare Worker proxy.');
+    }
+    
+    const requestBody = {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        messages: [
+            {
+                role: 'user',
+                content: [
+                    {
+                        type: 'image',
+                        source: {
+                            type: 'base64',
+                            media_type: 'image/jpeg',
+                            data: base64Image
+                        }
+                    },
+                    {
+                        type: 'text',
+                        text: prompt
+                    }
+                ]
+            }
+        ]
+    };
+    
+    let response;
+    
+    if (USE_PROXY) {
+        response = await fetch(PROXY_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+    } else {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': CLAUDE_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(requestBody)
+        });
+    }
+    
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || 'API request failed');
+    }
+    
+    const data = await response.json();
+    const text = data.content[0].text;
+    
+    // Try to parse JSON response
+    try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+    } catch (e) {
+        console.error('JSON parse error:', e);
+    }
+    
+    return { rawText: text };
+}
+
+// Display scan results
+async function displayScanResult(result, useCase) {
+    const resultDiv = document.getElementById('scanResult');
+    
+    switch (useCase) {
+        case 'barcode':
+            resultDiv.innerHTML = `
+                <div class="card" style="margin-top: 15px;">
+                    <h3>${result.productName || 'Unknown Product'}</h3>
+                    ${result.brand ? `<p style="color: var(--text-secondary);">${result.brand}</p>` : ''}
+                    <div style="margin: 15px 0;">
+                        <div style="font-size: 32px; font-weight: bold; color: var(--primary);">
+                            ${result.smartPoints || 0} pts
+                        </div>
+                        <div style="font-size: 14px; color: var(--text-secondary);">
+                            per ${result.servingSize || 'serving'}
+                        </div>
+                    </div>
+                    ${result.nutrition ? `
+                        <div style="font-size: 14px; color: var(--text-secondary);">
+                            ${result.nutrition.calories} cal | ${result.nutrition.protein}g protein | 
+                            ${result.nutrition.carbs}g carbs | ${result.nutrition.fat}g fat
+                        </div>
+                    ` : ''}
+                    <button class="btn" style="margin-top: 15px;" onclick="logFoodFromScan(${JSON.stringify(result).replace(/"/g, '&quot;')})">
+                        Log This Food
+                    </button>
+                </div>
+            `;
+            break;
+            
+        case 'grocery':
+            resultDiv.innerHTML = `
+                <div class="card" style="margin-top: 15px;">
+                    <h3>🛒 ${result.store || 'Grocery Receipt'}</h3>
+                    <p style="color: var(--text-secondary);">${result.date || 'Unknown date'}</p>
+                    <div style="margin: 15px 0;">
+                        <strong>Items Found:</strong>
+                        <ul style="margin-top: 10px;">
+                            ${(result.items || []).map(item => `<li>${item}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div style="font-size: 18px; font-weight: bold;">
+                        Total: $${result.total?.toFixed(2) || '0.00'}
+                    </div>
+                    <button class="btn" style="margin-top: 15px;" onclick="savePantryItems(${JSON.stringify(result.items || []).replace(/"/g, '&quot;')})">
+                        Save to Pantry
+                    </button>
+                </div>
+            `;
+            break;
+            
+        case 'restaurant':
+            resultDiv.innerHTML = `
+                <div class="card" style="margin-top: 15px;">
+                    <h3>🍕 ${result.restaurant || 'Restaurant Receipt'}</h3>
+                    <p style="color: var(--text-secondary);">${result.date || ''}</p>
+                    <div style="margin: 15px 0;">
+                        <strong>Select your item:</strong>
+                        ${(result.items || []).map((item, idx) => `
+                            <div style="padding: 10px; margin: 5px 0; background: var(--bg-light); border-radius: 8px; cursor: pointer;" onclick="selectRestaurantItem(${idx}, ${JSON.stringify(result).replace(/"/g, '&quot;')})">
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span>${item.name}</span>
+                                    <span>$${item.price?.toFixed(2)}</span>
+                                </div>
+                                <div style="font-size: 12px; color: var(--text-secondary);">
+                                    ~${item.estimatedPoints} pts | $${(item.price / item.estimatedPoints).toFixed(2)}/pt
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div style="font-size: 18px; font-weight: bold;">
+                        Total Bill: $${result.total?.toFixed(2) || '0.00'}
+                    </div>
+                </div>
+            `;
+            break;
+            
+        default:
+            resultDiv.innerHTML = `
+                <div class="card" style="margin-top: 15px;">
+                    <pre style="white-space: pre-wrap;">${JSON.stringify(result, null, 2)}</pre>
+                    <button class="btn btn-secondary" style="margin-top: 15px;" onclick="closeScan()">
+                        Close
+                    </button>
+                </div>
+            `;
+    }
+}
+
+// Log food from barcode scan
+async function logFoodFromScan(result) {
+    const today = getTodayKey();
+    await addFood({
+        date: today,
+        name: result.productName || 'Scanned Food',
+        points: result.smartPoints || 0,
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        source: 'barcode_scan',
+        nutrition: result.nutrition
+    });
+    
+    await updateAllUI();
+    closeScan();
+    alert(`✅ ${result.productName} logged! (${result.smartPoints} pts)`);
+}
+
+// Select restaurant item
+async function selectRestaurantItem(index, receiptData) {
+    const item = receiptData.items[index];
+    const today = getTodayKey();
+    
+    await addFood({
+        date: today,
+        name: `🍕 ${item.name}`,
+        points: item.estimatedPoints,
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        source: 'restaurant_receipt',
+        cost: item.price
+    });
+    
+    await addStoreVisit({
+        date: today,
+        store: receiptData.restaurant,
+        total: item.price,
+        type: 'restaurant'
+    });
+    
+    await updateAllUI();
+    closeScan();
+    
+    const costPerPoint = (item.price / item.estimatedPoints).toFixed(2);
+    alert(`✅ ${item.name} logged!\n\n${item.estimatedPoints} pts for $${item.price.toFixed(2)}\nCost per point: $${costPerPoint}`);
+}
+
+// Save pantry items
+async function savePantryItems(items) {
+    const today = getTodayKey();
+    for (const item of items) {
+        await addPantryItem({
+            date: today,
+            name: item
+        });
+    }
+    alert(`✅ ${items.length} items saved to pantry!`);
+    closeScan();
+}
+
+// Open quick scan
+function openQuickScan(type) {
+    const modal = document.getElementById('scanModal');
+    const title = document.getElementById('scanTitle');
+    const select = document.getElementById('useCaseSelect');
+    
+    const titles = {
+        'food': 'Scan Food Barcode',
+        'receipt': 'Scan Grocery Receipt',
+        'cheat_receipt': 'Scan Restaurant Receipt',
+        'pantry': 'Scan Pantry/Fridge',
+        'medication': 'Scan Medication'
+    };
+    
+    title.textContent = titles[type] || 'Scan';
+    
+    // Set use case
+    const useCaseMap = {
+        'food': 'barcode',
+        'receipt': 'grocery',
+        'cheat_receipt': 'restaurant',
+        'pantry': 'pantry',
+        'medication': 'medication'
+    };
+    
+    select.value = useCaseMap[type] || 'barcode';
+    currentScanType = useCaseMap[type];
+    
+    modal.classList.add('active');
+}
+
+// Close scan modal
+function closeScan() {
+    stopCamera();
+    const modal = document.getElementById('scanModal');
+    modal.classList.remove('active');
+    
+    // Reset UI
+    document.getElementById('scanResult').innerHTML = '';
+    document.getElementById('scanImage').style.display = 'none';
+    document.getElementById('cameraContainer').style.display = 'none';
+    document.querySelector('.upload-options').style.display = 'flex';
+    document.getElementById('useCaseSelector').style.display = 'none';
+    
+    // Reset file input
+    document.getElementById('fileUpload').value = '';
 }
