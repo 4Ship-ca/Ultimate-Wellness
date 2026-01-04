@@ -344,12 +344,20 @@ async function getTasksByDate(date) {
     return await dbGetByIndex('tasks', 'date', date);
 }
 
+async function getAllTasks() {
+    return await dbGetAll('tasks');
+}
+
 async function updateTask(id, updates) {
     const task = await dbGet('tasks', id);
     if (task) {
         Object.assign(task, updates);
         return await dbPut('tasks', task);
     }
+}
+
+async function deleteTask(id) {
+    return await dbDelete('tasks', id);
 }
 
 // Photos
