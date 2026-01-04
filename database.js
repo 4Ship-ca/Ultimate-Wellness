@@ -131,6 +131,10 @@ async function initDatabase() {
 
 async function dbAdd(storeName, data) {
     return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
         const request = store.add(data);
@@ -142,6 +146,10 @@ async function dbAdd(storeName, data) {
 
 async function dbPut(storeName, data) {
     return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
         const request = store.put(data);
@@ -153,6 +161,10 @@ async function dbPut(storeName, data) {
 
 async function dbGet(storeName, key) {
     return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
         const request = store.get(key);
@@ -164,6 +176,10 @@ async function dbGet(storeName, key) {
 
 async function dbGetAll(storeName) {
     return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
         const request = store.getAll();
@@ -175,6 +191,10 @@ async function dbGetAll(storeName) {
 
 async function dbGetByIndex(storeName, indexName, value) {
     return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
         const index = store.index(indexName);
@@ -187,6 +207,10 @@ async function dbGetByIndex(storeName, indexName, value) {
 
 async function dbDelete(storeName, key) {
     return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
         const request = store.delete(key);
@@ -198,6 +222,10 @@ async function dbDelete(storeName, key) {
 
 async function dbClear(storeName) {
     return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
         const request = store.clear();
