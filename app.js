@@ -102,11 +102,24 @@ async function init() {
 // ============ SETUP & SETTINGS ============
 async function completeSetup() {
     try {
-        // Check if database is ready
+        // Show loading state
+        const setupButton = document.getElementById('setupButton');
+        const originalText = setupButton.innerHTML;
+        setupButton.disabled = true;
+        setupButton.innerHTML = 'Setting up... ⏳';
+        
+        // Wait for database to be ready (max 5 seconds)
+        let attempts = 0;
+        while (!db && attempts < 50) {
+            console.log('Waiting for database... attempt', attempts + 1);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+        
         if (!db) {
-            alert('Database is initializing... Please wait a moment and try again.');
-            // Try to initialize
-            await initDatabase();
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('Database initialization failed. Please refresh the page and try again.');
             return;
         }
         
@@ -121,12 +134,16 @@ async function completeSetup() {
         const activity = document.getElementById('setupActivity').value;
 
         if (!name || !email || !birthday || !weight || !goalWeight || !heightFeet) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
             alert('Please fill in all fields');
             return;
         }
 
         // Validate email
         if (!email.includes('@') || !email.includes('.')) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
             alert('Please enter a valid email address');
             return;
         }
@@ -170,6 +187,14 @@ async function completeSetup() {
         
     } catch (err) {
         console.error('Setup error:', err);
+        
+        // Reset button
+        const setupButton = document.getElementById('setupButton');
+        if (setupButton) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = 'Start My Journey! 🔥';
+        }
+        
         alert('Error saving settings: ' + err.message + '\n\nPlease refresh the page and try again.');
     }
 }
