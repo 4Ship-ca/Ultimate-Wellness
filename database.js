@@ -3,7 +3,7 @@
 // Tables: settings, foods, exercise, sleep, medications, water, tasks, photos, pantry, preferences, weightLogs
 
 const DB_NAME = 'UltimateWellnessDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped for naps table
 let db = null;
 
 // Initialize IndexedDB
@@ -415,24 +415,141 @@ async function getLatestWeightLog() {
 }
 
 // Points Bank
+// ============ BONUS POINTS SYSTEM ============
+// New system: Earn bonuses, cap at 28/week, reset Mondays
+
+async function getBonusPoints() {
+    const all = await dbGetAll('points_bank');
+    
+    // Get start of current week (Monday)
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1));
+    monday.setHours(0, 0, 0, 0);
+    const mondayKey = monday.toISOString().split('T')[0];
+    
+    // Only count points from this week (Monday onwards)
+    const thisWeek = all.filter(p => p.date >= mondayKey);
+    const total = thisWeek.reduce((sum, p) => sum + p.points, 0);
+    
+    // Cap at 28
+    return Math.min(total, 28);
+}
+
+async function addBonusPoints(points, reason, date) {
+    // Check current total
+    const current = await getBonusPoints();
+    
+    if (current >= 28) {
+        console.log('Bonus points cap reached (28/week)');
+        return;
+    }
+    
+    // Add points (will be capped on retrieval)
+    return await dbAdd('points_bank', {
+        points,
+        reason,
+        date,
+        timestamp: Date.now()
+    });
+}
+
+async function deductBonusPoints(points, reason, date) {
+    // Deduct by adding negative points
+    return await dbAdd('points_bank', {
+        points: -points,
+        reason,
+        date,
+        timestamp: Date.now()
+    });
+}
+
+async function resetWeeklyBonusIfNeeded() {
+    // Check if it's Monday and we haven't reset yet
+    const now = new Date();
+    const lastReset = localStorage.getItem('lastBonusReset');
+    const currentMonday = getMonday(now).toISOString().split('T')[0];
+    
+    if (lastReset !== currentMonday) {
+        // New week! Clear old bonus points
+        console.log('🔄 New week - clearing old bonus points');
+        
+        const all = await dbGetAll('points_bank');
+        const previousMonday = getMonday(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+        
+        // Delete points from before current week
+        const old = all.filter(p => p.date < currentMonday);
+        for (const p of old) {
+            await dbDelete('points_bank', p.id);
+        }
+        
+        localStorage.setItem('lastBonusReset', currentMonday);
+    }
+}
+
+function getMonday(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+// Daily bonuses
+async function awardDailyBonuses(date) {
+    const today = date || getTodayKey();
+    
+    // Check if already awarded today
+    const checkInKey = `bonusAwarded_${today}`;
+    if (localStorage.getItem(checkInKey)) {
+        return; // Already awarded
+    }
+    
+    // Award 2 points for check-in
+    await addBonusPoints(2, 'Daily check-in', today);
+    
+    // Check if under budget yesterday
+    const yesterday = new Date(new Date(today).getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const yesterdayFoods = await getFoodsByDate(yesterday);
+    const yesterdayExercise = await getExerciseByDate(yesterday);
+    const foodPoints = yesterdayFoods.reduce((sum, f) => sum + f.points, 0);
+    const exercisePoints = yesterdayExercise.reduce((sum, e) => sum + e.points, 0);
+    const netPoints = foodPoints - exercisePoints;
+    
+    if (netPoints < (userSettings?.dailyPoints || 22)) {
+        // Was under budget! Award 2 bonus points
+        await addBonusPoints(2, 'Under budget yesterday', today);
+    }
+    
+    // Mark as awarded
+    localStorage.setItem(checkInKey, 'true');
+}
+
+// Auto-deduct when over
+async function handleOverBudget(overagePoints, date) {
+    const bonusAvailable = await getBonusPoints();
+    
+    if (bonusAvailable > 0) {
+        const toDeduct = Math.min(overagePoints, bonusAvailable);
+        await deductBonusPoints(toDeduct, 'Used for overage', date);
+        return toDeduct;
+    }
+    
+    return 0;
+}
+
+// Old functions (kept for compatibility)
 async function addToPointsBank(points, date, expires) {
-    return await dbAdd('points_bank', { points, date, expires, timestamp: Date.now() });
+    return await addBonusPoints(points, 'Legacy', date);
 }
 
 async function getPointsBank() {
-    const all = await dbGetAll('points_bank');
-    const today = new Date().toISOString().split('T')[0];
-    // Filter out expired
-    return all.filter(p => p.expires >= today);
+    return getBonusPoints();
 }
 
 async function clearExpiredPointsBank() {
-    const all = await dbGetAll('points_bank');
-    const today = new Date().toISOString().split('T')[0];
-    const expired = all.filter(p => p.expires < today);
-    for (const p of expired) {
-        await dbDelete('points_bank', p.id);
-    }
+    await resetWeeklyBonusIfNeeded();
 }
 
 // Recipes
@@ -511,18 +628,21 @@ async function importAllData(data) {
 // ============ DAILY MAINTENANCE ============
 
 async function performDailyMaintenance() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayKey(); // Use new 4am reset function
     const lastMaintenance = localStorage.getItem('lastMaintenance');
     
     if (lastMaintenance === today) return;
 
     console.log('🔧 Performing daily maintenance...');
 
-    // Clear expired points bank
-    await clearExpiredPointsBank();
+    // Reset weekly bonus on Monday
+    await resetWeeklyBonusIfNeeded();
 
-    // Bank unused points from yesterday
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    // Award daily bonuses (check-in + under budget)
+    await awardDailyBonuses(today);
+
+    // Check if yesterday was over budget - auto-use bonus points
+    const yesterday = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const settings = await getSettings();
     if (settings && settings.dailyPoints) {
         const yesterdayFoods = await getFoodsByDate(yesterday);
@@ -531,12 +651,11 @@ async function performDailyMaintenance() {
         const foodPoints = yesterdayFoods.reduce((sum, f) => sum + f.points, 0);
         const exercisePoints = yesterdayExercise.reduce((sum, e) => sum + e.points, 0);
         const netPoints = foodPoints - exercisePoints;
-        const unused = Math.max(0, settings.dailyPoints - netPoints);
+        const overage = Math.max(0, netPoints - settings.dailyPoints);
         
-        if (unused > 0) {
-            const expires = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
-            await addToPointsBank(unused, yesterday, expires);
-            console.log(`💰 Banked ${unused} unused points from ${yesterday}`);
+        if (overage > 0) {
+            const deducted = await handleOverBudget(overage, yesterday);
+            console.log(`🎯 Used ${deducted} bonus points for overage on ${yesterday}`);
         }
     }
 
