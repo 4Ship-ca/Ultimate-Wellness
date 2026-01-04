@@ -770,11 +770,7 @@ async function setSleepQuality(quality) {
 }
 
 // ============ NAP TIMER ============
-let napTimerMinutes = 0;
-let napTimerSeconds = 0;
-let napTimerInterval = null;
-let napTimerRunning = false;
-let napAlarmAudio = null;
+// ============ NAP TIMER ============
 
 function setNapTimer(minutes) {
     napTimerMinutes = minutes;
