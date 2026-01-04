@@ -62,11 +62,38 @@ let napAlarmAudio = null;
 // ============ INITIALIZATION ============
 async function init() {
     try {
+        // Check IndexedDB support
+        if (!window.indexedDB) {
+            alert('⚠️ Your browser does not support offline storage (IndexedDB).\n\nPlease use a modern browser like Chrome, Firefox, or Edge.');
+            return;
+        }
+        
+        console.log('🚀 Starting Ultimate Wellness initialization...');
+        
         // Check if we need to refresh (past 4am)
         checkDailyReset();
         
-        // Initialize database
-        await initDatabase();
+        // Initialize database with timeout
+        console.log('📦 Initializing database...');
+        const dbPromise = initDatabase();
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Database initialization timeout')), 10000)
+        );
+        
+        try {
+            await Promise.race([dbPromise, timeoutPromise]);
+            console.log('✅ Database ready');
+        } catch (dbErr) {
+            console.error('❌ Database initialization failed:', dbErr);
+            alert('Database initialization failed.\n\n' + 
+                  'Error: ' + dbErr.message + '\n\n' +
+                  'Please try:\n' +
+                  '1. Refresh the page\n' +
+                  '2. Clear browser cache\n' +
+                  '3. Use Chrome/Firefox/Edge\n' +
+                  '4. Check if storage is enabled');
+            throw dbErr;
+        }
         
         // Perform daily maintenance
         await performDailyMaintenance();
@@ -77,6 +104,7 @@ async function init() {
         if (!userSettings) {
             // Show setup screen
             document.getElementById('setupScreen').classList.add('active');
+            console.log('👋 New user - showing setup screen');
         } else {
             // Hide setup screen
             document.getElementById('setupScreen').classList.remove('active');
@@ -86,6 +114,8 @@ async function init() {
             
             // Load UI
             await updateAllUI();
+            
+            console.log('👤 Existing user loaded:', userSettings.name);
         }
         
         setupExerciseGrid();
@@ -93,25 +123,57 @@ async function init() {
         // Set up automatic daily reset check (every 5 minutes)
         setInterval(checkDailyReset, 5 * 60 * 1000);
         
+        console.log('✅ Initialization complete!');
+        
     } catch (err) {
-        console.error('Initialization error:', err);
-        alert('Error initializing app. Please refresh the page.');
+        console.error('💥 Initialization error:', err);
+        document.body.innerHTML = `
+            <div style="padding: 40px; text-align: center; font-family: system-ui;">
+                <h1 style="color: #ff6b6b;">⚠️ Initialization Failed</h1>
+                <p style="font-size: 18px; margin: 20px 0;">The app failed to start.</p>
+                <p style="color: #666;">${err.message}</p>
+                <button onclick="location.reload()" style="
+                    margin-top: 30px;
+                    padding: 15px 30px;
+                    font-size: 16px;
+                    background: #ff6b6b;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                ">🔄 Refresh Page</button>
+                <div style="margin-top: 30px; padding: 20px; background: #f5f5f5; border-radius: 8px; text-align: left;">
+                    <h3>Troubleshooting:</h3>
+                    <ol style="line-height: 2;">
+                        <li>Clear your browser cache</li>
+                        <li>Use Chrome, Firefox, or Edge</li>
+                        <li>Check if cookies/storage are enabled</li>
+                        <li>Try incognito/private mode</li>
+                        <li>Disable browser extensions</li>
+                    </ol>
+                </div>
+            </div>
+        `;
     }
 }
 
 // ============ SETUP & SETTINGS ============
 async function completeSetup() {
+    const setupButton = document.getElementById('setupButton');
+    const originalText = setupButton.innerHTML;
+    
     try {
         // Show loading state
-        const setupButton = document.getElementById('setupButton');
-        const originalText = setupButton.innerHTML;
         setupButton.disabled = true;
         setupButton.innerHTML = 'Setting up... ⏳';
+        
+        console.log('🔧 Starting setup...');
+        console.log('📊 Database status:', db ? 'Ready' : 'Not ready');
         
         // Wait for database to be ready (max 5 seconds)
         let attempts = 0;
         while (!db && attempts < 50) {
-            console.log('Waiting for database... attempt', attempts + 1);
+            console.log(`⏳ Waiting for database... attempt ${attempts + 1}/50`);
             await new Promise(resolve => setTimeout(resolve, 100));
             attempts++;
         }
@@ -119,9 +181,20 @@ async function completeSetup() {
         if (!db) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('Database initialization failed. Please refresh the page and try again.');
+            
+            console.error('❌ Database never initialized after 5 seconds');
+            
+            alert('❌ Database failed to initialize.\n\n' +
+                  'The app cannot start without storage.\n\n' +
+                  'Please:\n' +
+                  '1. Refresh the page (Ctrl+Shift+R)\n' +
+                  '2. Check console (F12) for errors\n' +
+                  '3. Try a different browser\n' +
+                  '4. Clear site data and try again');
             return;
         }
+        
+        console.log('✅ Database ready, proceeding with setup');
         
         const name = document.getElementById('setupName').value.trim();
         const email = document.getElementById('setupEmail').value.trim();
@@ -170,6 +243,7 @@ async function completeSetup() {
             joinDate: new Date().toISOString().split('T')[0]
         };
 
+        console.log('💾 Saving settings...', userSettings);
         await dbPut('settings', userSettings);
     
         // Log initial weight
