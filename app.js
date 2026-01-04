@@ -11,7 +11,7 @@ const CLAUDE_API_KEY = ''; // ✅ EMPTY - Key stored securely in Cloudflare!
 // Nobody can see it in your code, git history, or browser - completely secure! 🔒
 
 // ============ CONSTANTS ============
-const EXERCISES = ['Chores', 'Vacuum', 'Laundry', 'Elliptical', 'Walk', 'Yard Work'];
+const EXERCISES = ['Walk', 'Run', 'Bike', 'Swim', 'Yoga', 'Weights', 'Sports', 'Dance'];
 const EXERCISE_POINTS_PER_15MIN = 1;
 
 // High-water foods database
