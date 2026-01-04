@@ -9,18 +9,25 @@ let db = null;
 // Initialize IndexedDB
 async function initDatabase() {
     return new Promise((resolve, reject) => {
+        console.log('🔄 Opening database:', DB_NAME, 'version:', DB_VERSION);
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-        request.onerror = () => reject(request.error);
+        request.onerror = () => {
+            console.error('❌ Database error:', request.error);
+            reject(request.error);
+        };
+        
         request.onsuccess = () => {
             db = request.result;
-            console.log('✅ Database initialized');
+            console.log('✅ Database initialized successfully');
+            console.log('📋 Available tables:', Array.from(db.objectStoreNames));
             resolve(db);
         };
 
         request.onupgradeneeded = (event) => {
             db = event.target.result;
-            console.log('🔧 Creating database schema...');
+            console.log('🔧 Upgrading database from version', event.oldVersion, 'to', event.newVersion);
+            console.log('📋 Existing tables:', Array.from(db.objectStoreNames));
 
             // SETTINGS table (single row)
             if (!db.objectStoreNames.contains('settings')) {
@@ -120,9 +127,11 @@ async function initDatabase() {
             if (!db.objectStoreNames.contains('naps')) {
                 const napStore = db.createObjectStore('naps', { keyPath: 'id', autoIncrement: true });
                 napStore.createIndex('date', 'date', { unique: false });
+                console.log('   ✓ Created naps table');
             }
 
-            console.log('✅ Database schema created');
+            console.log('✅ Database schema complete');
+            console.log('📋 Final tables:', Array.from(db.objectStoreNames));
         };
     });
 }
