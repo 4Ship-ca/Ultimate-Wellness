@@ -62,6 +62,9 @@ let napAlarmAudio = null;
 // ============ INITIALIZATION ============
 async function init() {
     try {
+        // Check if we need to refresh (past 4am)
+        checkDailyReset();
+        
         // Initialize database
         await initDatabase();
         
@@ -86,6 +89,9 @@ async function init() {
         }
         
         setupExerciseGrid();
+        
+        // Set up automatic daily reset check (every 5 minutes)
+        setInterval(checkDailyReset, 5 * 60 * 1000);
         
     } catch (err) {
         console.error('Initialization error:', err);
@@ -462,7 +468,37 @@ function getNextWeighinDate() {
 
 // ============ FOOD LOGGING ============
 function getTodayKey() {
-    return new Date().toISOString().split('T')[0];
+    // Get current date/time
+    const now = new Date();
+    
+    // If before 4am, use yesterday's date
+    // (day doesn't "change" until 4am)
+    if (now.getHours() < 4) {
+        now.setDate(now.getDate() - 1);
+    }
+    
+    return now.toISOString().split('T')[0];
+}
+
+// Check if we need to refresh page (past 4am on new day)
+function checkDailyReset() {
+    const lastCheck = localStorage.getItem('lastDailyCheck');
+    const currentDay = getTodayKey();
+    
+    if (lastCheck && lastCheck !== currentDay) {
+        // New day has started (past 4am)!
+        console.log('🔄 New day detected - refreshing...');
+        
+        // Update last check
+        localStorage.setItem('lastDailyCheck', currentDay);
+        
+        // Show message and reload
+        alert('Good morning! Starting a new day... 🌅');
+        location.reload();
+    } else if (!lastCheck) {
+        // First time - set it
+        localStorage.setItem('lastDailyCheck', currentDay);
+    }
 }
 
 async function logFood(name, points, imageData = null) {
@@ -1392,24 +1428,19 @@ async function updatePointsDisplay() {
     const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
     const netPoints = foodPoints - exercisePoints;
     
-    const dailyAllowance = userSettings ? userSettings.dailyPoints : 26;
+    const dailyAllowance = userSettings ? userSettings.dailyPoints : 22;
     const remaining = dailyAllowance - netPoints;
     
     document.getElementById('pointsToday').textContent = netPoints;
     document.getElementById('pointsRemaining').textContent = `${remaining} remaining`;
     document.getElementById('dailyAllowance').textContent = dailyAllowance;
     
-    // Points bank
-    const bank = await getPointsBank();
-    const bankTotal = bank.reduce((sum, p) => sum + p.points, 0);
-    document.getElementById('pointsBank').textContent = bankTotal;
+    // Bonus points (new system)
+    const bonusPoints = await getBonusPoints();
+    document.getElementById('pointsBank').textContent = bonusPoints;
     
-    if (bank.length > 0) {
-        const oldestExpiry = bank.sort((a, b) => new Date(a.expires) - new Date(b.expires))[0].expires;
-        document.getElementById('bankExpiry').textContent = oldestExpiry;
-    } else {
-        document.getElementById('bankExpiry').textContent = '--';
-    }
+    // Show "Resets Monday" instead of expiry date
+    document.getElementById('bankExpiry').textContent = 'Resets Monday';
 }
 
 async function updateTodayLog() {
