@@ -48,6 +48,11 @@ let currentScanType = null;
 let processingInterval = null;
 let userSettings = null;
 let cameraStream = null;
+let cameraMode = 'photo';
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordingTimer = null;
+let recordingSeconds = 0;
 
 // ============ INITIALIZATION ============
 async function init() {
@@ -319,6 +324,102 @@ async function updateWeight() {
     message += `\nTo go: ${(weight - userSettings.goalWeight).toFixed(1)} lbs`;
     
     alert(message);
+}
+
+// Test API Connection
+async function testAPIConnection() {
+    const btn = document.getElementById('apiTestBtn');
+    const result = document.getElementById('apiTestResult');
+    
+    btn.disabled = true;
+    btn.textContent = '🔄 Testing...';
+    result.innerHTML = '<div style="color: var(--text-secondary);">⏳ Sending test request...</div>';
+    
+    try {
+        const testMessage = "Hello! Just testing the API connection.";
+        
+        const requestBody = {
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 50,
+            messages: [
+                { role: 'user', content: testMessage }
+            ]
+        };
+        
+        let response;
+        const startTime = Date.now();
+        
+        if (USE_PROXY) {
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            if (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
+                throw new Error('API key not configured');
+            }
+            
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
+        
+        const elapsed = Date.now() - startTime;
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        const aiResponse = data.content[0].text;
+        
+        result.innerHTML = `
+            <div style="color: var(--success); padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border-left: 3px solid var(--success);">
+                <strong>✅ API Connection Successful!</strong><br>
+                <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
+                    • Response time: ${elapsed}ms<br>
+                    • Model: claude-sonnet-4-20250514<br>
+                    • Proxy: ${USE_PROXY ? 'Enabled (Cloudflare Worker)' : 'Disabled (Direct API)'}<br>
+                    • Test response: "${aiResponse.substring(0, 50)}${aiResponse.length > 50 ? '...' : ''}"
+                </div>
+            </div>
+        `;
+        
+    } catch (error) {
+        console.error('API Test Error:', error);
+        
+        let helpText = '';
+        if (error.message.includes('CORS') || error.message.includes('blocked')) {
+            helpText = 'Fix: Update Cloudflare Worker CORS settings to allow your GitHub Pages domain.';
+        } else if (error.message.includes('API key')) {
+            helpText = 'Fix: Add your Claude API key to the Cloudflare Worker environment variables.';
+        } else if (error.message.includes('Failed to fetch')) {
+            helpText = 'Fix: Check your internet connection and Cloudflare Worker URL.';
+        }
+        
+        result.innerHTML = `
+            <div style="color: var(--danger); padding: 10px; background: rgba(244, 67, 54, 0.1); border-radius: 8px; border-left: 3px solid var(--danger);">
+                <strong>❌ API Connection Failed</strong><br>
+                <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
+                    Error: ${error.message}<br>
+                    ${helpText ? `<br><strong>${helpText}</strong>` : ''}
+                </div>
+            </div>
+        `;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🧪 Test API Connection';
+    }
 }
 
 function calculateWeeklyGoal() {
@@ -1529,6 +1630,31 @@ function isRecipeRequest(message) {
 function isMealLoggingRequest(message) {
     const lowerMsg = message.toLowerCase();
     
+    // Check for camera voice commands first
+    if (lowerMsg.includes('take a snapshot') || lowerMsg.includes('take snapshot')) {
+        openQuickScan('food');
+        setTimeout(() => startCamera('photo'), 500);
+        return false; // Not a meal logging request
+    }
+    
+    if (lowerMsg.includes('take a video') || lowerMsg.includes('take video') || lowerMsg.includes('record video')) {
+        openQuickScan('pantry');
+        setTimeout(() => {
+            document.getElementById('useCaseSelect').value = 'pantry-live';
+            startCamera('video');
+        }, 500);
+        return false; // Not a meal logging request
+    }
+    
+    if (lowerMsg.includes('go live') || lowerMsg.includes('start live')) {
+        openQuickScan('pantry');
+        setTimeout(() => {
+            document.getElementById('useCaseSelect').value = 'pantry-live';
+            startCamera('video');
+        }, 500);
+        return false; // Not a meal logging request
+    }
+    
     // Direct logging keywords
     const logKeywords = [
         'log meal', 'log food', 'record meal', 'record food', 'ate', 'had for',
@@ -1879,9 +2005,15 @@ function getSampleRecipe(pointsBudget) {
 }
 
 function buildSystemPrompt(context) {
+    const now = new Date();
+    const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const date = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+    
     return `You are a supportive AI wellness coach integrated into the Ultimate Wellness System app. 
 
 Current context:
+- Today: ${dayOfWeek}, ${date}${isWeekend ? ' (Weekend)' : ' (Weekday)'}
 - User: ${context.userName}
 - Current tab: ${context.currentTab}
 - Daily points allowance: ${context.dailyPoints}
@@ -1898,6 +2030,7 @@ Be encouraging, specific, and action-oriented. Keep responses concise (2-3 parag
 Use their name occasionally. Reference their current stats when relevant.
 For exercise questions, suggest specific activities with duration and expected points.
 For food questions, mention points and provide practical tips.
+${isWeekend ? 'Since it\'s the weekend, consider suggesting meal prep or family-friendly activities.' : 'Since it\'s a weekday, keep suggestions quick and practical for busy schedules.'}
 
 ${getTabSpecificGuidance(context.currentTab)}`;
 }
@@ -2535,37 +2668,60 @@ async function updateEmailReminders() {
 // ============ CAMERA & SCANNING FUNCTIONS ============
 
 // Start camera for scanning
-async function startCamera() {
+async function startCamera(mode = 'photo') {
+    cameraMode = mode;
     const container = document.getElementById('cameraContainer');
     const video = document.getElementById('scanVideo');
     const uploadOptions = document.querySelector('.upload-options');
     const useCaseSelector = document.getElementById('useCaseSelector');
+    const controls = document.getElementById('cameraControls');
+    const captureBtn = document.getElementById('captureBtn');
+    const recordBtn = document.getElementById('recordBtn');
     
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment' } // Use back camera on mobile
-        });
+        // Request camera with video constraints
+        const constraints = {
+            video: {
+                facingMode: 'environment', // Use back camera on mobile
+                width: { ideal: 1080 },
+                height: { ideal: 1920 } // 9:16 portrait
+            },
+            audio: mode === 'video' // Only request audio for video mode
+        };
+        
+        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
         
         video.srcObject = cameraStream;
         container.style.display = 'block';
+        controls.style.display = 'flex';
         uploadOptions.style.display = 'none';
         useCaseSelector.style.display = 'block';
         
-        // Add capture button
-        if (!document.getElementById('captureBtn')) {
-            const captureBtn = document.createElement('button');
-            captureBtn.id = 'captureBtn';
-            captureBtn.className = 'btn';
-            captureBtn.textContent = '📸 Capture';
-            captureBtn.onclick = capturePhoto;
-            captureBtn.style.marginTop = '10px';
-            captureBtn.style.width = '100%';
-            container.appendChild(captureBtn);
+        // Show appropriate button based on mode
+        if (mode === 'photo') {
+            captureBtn.style.display = 'flex';
+            recordBtn.style.display = 'none';
+        } else {
+            captureBtn.style.display = 'none';
+            recordBtn.style.display = 'flex';
         }
         
     } catch (error) {
         console.error('Camera error:', error);
-        alert('Could not access camera. Please grant camera permissions or use file upload.');
+        let errorMsg = 'Could not access camera. ';
+        
+        if (error.name === 'NotAllowedError') {
+            errorMsg += 'Please grant camera permissions in your browser settings.';
+        } else if (error.name === 'NotFoundError') {
+            errorMsg += 'No camera found on this device.';
+        } else if (error.name === 'NotReadableError') {
+            errorMsg += 'Camera is being used by another application.';
+        } else {
+            errorMsg += 'Please use file upload instead.';
+        }
+        
+        alert(errorMsg);
+        closeScan();
     }
 }
 
@@ -2575,10 +2731,29 @@ function stopCamera() {
         cameraStream.getTracks().forEach(track => track.stop());
         cameraStream = null;
     }
+    
+    // Stop recording if active
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+    }
+    
+    // Clear timer
+    if (recordingTimer) {
+        clearInterval(recordingTimer);
+        recordingTimer = null;
+    }
+    
     const video = document.getElementById('scanVideo');
+    const controls = document.getElementById('cameraControls');
+    const container = document.getElementById('cameraContainer');
+    const timer = document.getElementById('recordingTimer');
+    
     video.srcObject = null;
-    document.getElementById('cameraContainer').style.display = 'none';
-    document.querySelector('.upload-options').style.display = 'flex';
+    controls.style.display = 'none';
+    container.style.display = 'none';
+    timer.style.display = 'none';
+    
+    document.querySelector('.upload-options').style.display = 'grid';
 }
 
 // Capture photo from camera
@@ -2586,8 +2761,9 @@ function capturePhoto() {
     const video = document.getElementById('scanVideo');
     const canvas = document.getElementById('scanCanvas');
     const image = document.getElementById('scanImage');
+    const controls = document.getElementById('cameraControls');
     
-    // Set canvas size to match video
+    // Set canvas size to match video (9:16 portrait)
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
@@ -2596,22 +2772,182 @@ function capturePhoto() {
     ctx.drawImage(video, 0, 0);
     
     // Convert to data URL
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
     
     // Show captured image
     image.src = dataUrl;
     image.style.display = 'block';
     video.style.display = 'none';
+    controls.style.display = 'none';
     
     // Stop camera
     stopCamera();
     
-    // Remove capture button
-    const captureBtn = document.getElementById('captureBtn');
-    if (captureBtn) captureBtn.remove();
+    // Show use case selector if not already shown
+    document.getElementById('useCaseSelector').style.display = 'block';
     
     // Analyze the image
     analyzeImage(dataUrl);
+}
+
+// Toggle video recording
+function toggleRecording() {
+    const recordBtn = document.getElementById('recordBtn');
+    const timer = document.getElementById('recordingTimer');
+    const timerText = document.getElementById('timerText');
+    
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        // Start recording
+        recordedChunks = [];
+        recordingSeconds = 0;
+        
+        const video = document.getElementById('scanVideo');
+        mediaRecorder = new MediaRecorder(cameraStream, {
+            mimeType: 'video/webm;codecs=vp8,opus'
+        });
+        
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+        
+        mediaRecorder.onstop = () => {
+            // Create video blob
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            
+            // Convert to base64 or extract frames for analysis
+            analyzeVideo(blob);
+        };
+        
+        mediaRecorder.start();
+        recordBtn.classList.add('recording');
+        recordBtn.textContent = '⏹';
+        timer.style.display = 'block';
+        
+        // Start timer (max 15 seconds)
+        recordingTimer = setInterval(() => {
+            recordingSeconds++;
+            timerText.textContent = recordingSeconds + 's';
+            
+            if (recordingSeconds >= 15) {
+                // Auto-stop at 15 seconds
+                toggleRecording();
+            }
+        }, 1000);
+        
+    } else {
+        // Stop recording
+        mediaRecorder.stop();
+        recordBtn.classList.remove('recording');
+        recordBtn.textContent = '🔴';
+        timer.style.display = 'none';
+        
+        if (recordingTimer) {
+            clearInterval(recordingTimer);
+            recordingTimer = null;
+        }
+        
+        stopCamera();
+    }
+}
+
+// Analyze video (extract frames)
+async function analyzeVideo(videoBlob) {
+    const resultDiv = document.getElementById('scanResult');
+    resultDiv.innerHTML = '<div class="spinner"></div><p>Analyzing video...</p>';
+    
+    // For live pantry analysis, we'll extract frames and analyze
+    const useCase = document.getElementById('useCaseSelect').value;
+    
+    if (useCase === 'pantry-live') {
+        try {
+            // Extract key frames from video (start, middle, end)
+            const frames = await extractVideoFrames(videoBlob, 3);
+            
+            // Analyze each frame
+            const analyses = [];
+            for (const frame of frames) {
+                const result = await callClaudeVision(frame, getAnalysisPrompt('pantry'));
+                analyses.push(result);
+            }
+            
+            // Combine results
+            const combinedItems = [];
+            analyses.forEach(analysis => {
+                if (analysis.items) {
+                    analysis.items.forEach(item => {
+                        if (!combinedItems.find(i => i.name === item.name)) {
+                            combinedItems.push(item);
+                        }
+                    });
+                }
+            });
+            
+            displayScanResult({ items: combinedItems }, 'pantry');
+            
+        } catch (error) {
+            console.error('Video analysis error:', error);
+            resultDiv.innerHTML = `
+                <div style="color: var(--danger); padding: 20px; text-align: center;">
+                    <p>⚠️ Error analyzing video</p>
+                    <p style="font-size: 14px; margin-top: 10px;">${error.message}</p>
+                </div>
+            `;
+        }
+    } else {
+        resultDiv.innerHTML = `
+            <div style="color: var(--warning); padding: 20px; text-align: center;">
+                <p>📹 Video recorded (${recordingSeconds}s)</p>
+                <p style="font-size: 14px; margin-top: 10px;">Video analysis is only supported for live pantry scanning.</p>
+            </div>
+        `;
+    }
+}
+
+// Extract frames from video
+async function extractVideoFrames(videoBlob, numFrames = 3) {
+    return new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const frames = [];
+        
+        video.src = URL.createObjectURL(videoBlob);
+        
+        video.onloadedmetadata = () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const duration = video.duration;
+            const interval = duration / (numFrames + 1);
+            let currentFrame = 0;
+            
+            const captureFrame = () => {
+                if (currentFrame >= numFrames) {
+                    URL.revokeObjectURL(video.src);
+                    resolve(frames);
+                    return;
+                }
+                
+                const time = interval * (currentFrame + 1);
+                video.currentTime = time;
+            };
+            
+            video.onseeked = () => {
+                ctx.drawImage(video, 0, 0);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                frames.push(dataUrl.split(',')[1]); // Get base64 data
+                
+                currentFrame++;
+                captureFrame();
+            };
+            
+            captureFrame();
+        };
+        
+        video.onerror = () => reject(new Error('Failed to load video'));
+    });
 }
 
 // Handle file upload
@@ -2619,20 +2955,79 @@ function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
     
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const dataUrl = e.target.result;
-        const image = document.getElementById('scanImage');
-        image.src = dataUrl;
-        image.style.display = 'block';
-        document.getElementById('cameraContainer').style.display = 'block';
-        document.querySelector('.upload-options').style.display = 'none';
-        document.getElementById('useCaseSelector').style.display = 'block';
+    const resultDiv = document.getElementById('scanResult');
+    const useCaseSelector = document.getElementById('useCaseSelector');
+    const container = document.getElementById('cameraContainer');
+    const image = document.getElementById('scanImage');
+    const video = document.getElementById('scanVideo');
+    
+    // Check if file is video or image
+    if (file.type.startsWith('video/')) {
+        // Handle video file
+        resultDiv.innerHTML = '<div class="spinner"></div><p>Processing video...</p>';
         
-        // Analyze the image
-        analyzeImage(dataUrl);
-    };
-    reader.readAsDataURL(file);
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const videoBlob = new Blob([e.target.result], { type: file.type });
+                await analyzeVideo(videoBlob);
+            } catch (error) {
+                console.error('Video upload error:', error);
+                resultDiv.innerHTML = `
+                    <div style="color: var(--danger); padding: 20px; text-align: center;">
+                        <p>⚠️ Error processing video</p>
+                        <p style="font-size: 14px; margin-top: 10px;">${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        
+    } else if (file.type.startsWith('image/')) {
+        // Handle image file
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const dataUrl = e.target.result;
+                image.src = dataUrl;
+                image.style.display = 'block';
+                video.style.display = 'none';
+                container.style.display = 'block';
+                document.querySelector('.upload-options').style.display = 'none';
+                useCaseSelector.style.display = 'block';
+                
+                // Analyze the image
+                analyzeImage(dataUrl);
+            } catch (error) {
+                console.error('Image upload error:', error);
+                resultDiv.innerHTML = `
+                    <div style="color: var(--danger); padding: 20px; text-align: center;">
+                        <p>⚠️ Error loading image</p>
+                        <p style="font-size: 14px; margin-top: 10px;">${error.message}</p>
+                        <p style="font-size: 12px; margin-top: 5px;">Try taking a photo with the camera instead.</p>
+                    </div>
+                `;
+            }
+        };
+        reader.onerror = function(error) {
+            console.error('FileReader error:', error);
+            resultDiv.innerHTML = `
+                <div style="color: var(--danger); padding: 20px; text-align: center;">
+                    <p>⚠️ Failed to read file</p>
+                    <p style="font-size: 14px; margin-top: 10px;">Please try using the camera instead.</p>
+                </div>
+            `;
+        };
+        reader.readAsDataURL(file);
+        
+    } else {
+        resultDiv.innerHTML = `
+            <div style="color: var(--warning); padding: 20px; text-align: center;">
+                <p>⚠️ Unsupported file type</p>
+                <p style="font-size: 14px; margin-top: 10px;">Please upload an image or video file.</p>
+            </div>
+        `;
+    }
 }
 
 // Analyze image with Claude API
