@@ -101,63 +101,77 @@ async function init() {
 
 // ============ SETUP & SETTINGS ============
 async function completeSetup() {
-    const name = document.getElementById('setupName').value.trim();
-    const email = document.getElementById('setupEmail').value.trim();
-    const birthday = document.getElementById('setupBirthday').value;
-    const gender = document.getElementById('setupGender').value;
-    const weight = parseFloat(document.getElementById('setupWeight').value);
-    const goalWeight = parseFloat(document.getElementById('setupGoalWeight').value);
-    const heightFeet = parseInt(document.getElementById('setupHeightFeet').value);
-    const heightInches = parseInt(document.getElementById('setupHeightInches').value);
-    const activity = document.getElementById('setupActivity').value;
+    try {
+        // Check if database is ready
+        if (!db) {
+            alert('Database is initializing... Please wait a moment and try again.');
+            // Try to initialize
+            await initDatabase();
+            return;
+        }
+        
+        const name = document.getElementById('setupName').value.trim();
+        const email = document.getElementById('setupEmail').value.trim();
+        const birthday = document.getElementById('setupBirthday').value;
+        const gender = document.getElementById('setupGender').value;
+        const weight = parseFloat(document.getElementById('setupWeight').value);
+        const goalWeight = parseFloat(document.getElementById('setupGoalWeight').value);
+        const heightFeet = parseInt(document.getElementById('setupHeightFeet').value);
+        const heightInches = parseInt(document.getElementById('setupHeightInches').value);
+        const activity = document.getElementById('setupActivity').value;
 
-    if (!name || !email || !birthday || !weight || !goalWeight || !heightFeet) {
-        alert('Please fill in all fields');
-        return;
+        if (!name || !email || !birthday || !weight || !goalWeight || !heightFeet) {
+            alert('Please fill in all fields');
+            return;
+        }
+
+        // Validate email
+        if (!email.includes('@') || !email.includes('.')) {
+            alert('Please enter a valid email address');
+            return;
+        }
+
+        const heightInInches = (heightFeet * 12) + heightInches;
+        const age = calculateAge(birthday);
+        
+        // Calculate initial daily points
+        const dailyPoints = calculateDailyPoints(gender, age, weight, heightInInches, activity);
+
+        userSettings = {
+            id: 'user', // REQUIRED for IndexedDB
+            name,
+            email,
+            birthday,
+            gender,
+            currentWeight: weight,
+            goalWeight,
+            heightInInches,
+            activity,
+            dailyPoints,
+            lastPointsUpdate: new Date().toISOString().split('T')[0],
+            lastWeighIn: new Date().toISOString().split('T')[0],
+            joinDate: new Date().toISOString().split('T')[0]
+        };
+
+        await dbPut('settings', userSettings);
+    
+        // Log initial weight
+        await addWeightLog({
+            date: new Date().toISOString().split('T')[0],
+            weight: weight,
+            notes: 'Starting weight'
+        });
+
+        document.getElementById('setupScreen').classList.remove('active');
+        await updateAllUI();
+        
+        // Send welcome email
+        sendWelcomeEmail();
+        
+    } catch (err) {
+        console.error('Setup error:', err);
+        alert('Error saving settings: ' + err.message + '\n\nPlease refresh the page and try again.');
     }
-
-    // Validate email
-    if (!email.includes('@') || !email.includes('.')) {
-        alert('Please enter a valid email address');
-        return;
-    }
-
-    const heightInInches = (heightFeet * 12) + heightInches;
-    const age = calculateAge(birthday);
-    
-    // Calculate initial daily points
-    const dailyPoints = calculateDailyPoints(gender, age, weight, heightInInches, activity);
-
-    userSettings = {
-        id: 'user', // REQUIRED for IndexedDB
-        name,
-        email,
-        birthday,
-        gender,
-        currentWeight: weight,
-        goalWeight,
-        heightInInches,
-        activity,
-        dailyPoints,
-        lastPointsUpdate: new Date().toISOString().split('T')[0],
-        lastWeighIn: new Date().toISOString().split('T')[0],
-        joinDate: new Date().toISOString().split('T')[0]
-    };
-
-    await dbPut('settings', userSettings);
-    
-    // Log initial weight
-    await addWeightLog({
-        date: new Date().toISOString().split('T')[0],
-        weight: weight,
-        notes: 'Starting weight'
-    });
-
-    document.getElementById('setupScreen').classList.remove('active');
-    await updateAllUI();
-    
-    // Send welcome email
-    sendWelcomeEmail();
 }
 
 function calculateAge(birthday) {
