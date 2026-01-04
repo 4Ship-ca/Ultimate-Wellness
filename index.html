@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
-    <title>Ultimate Wellness System v1.0</title>
+    <title>Ultimate Wellness System v1.7</title>
     
     <!-- EmailJS for real email sending -->
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -434,11 +434,61 @@
         .camera-container {
             position: relative;
             width: 100%;
-            aspect-ratio: 4/3;
+            max-width: 400px;
+            aspect-ratio: 9/16; /* Portrait mode */
             background: #000;
             border-radius: 12px;
             overflow: hidden;
-            margin-bottom: 15px;
+            margin: 0 auto 15px auto;
+        }
+
+        .camera-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .camera-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .camera-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 4px solid white;
+            background: var(--primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: all 0.3s;
+        }
+
+        .camera-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .camera-btn:active {
+            transform: scale(0.95);
+        }
+
+        .recording {
+            animation: recordPulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes recordPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            50% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
         }
 
         video, canvas, img {
@@ -449,7 +499,7 @@
 
         .upload-options {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
             margin-bottom: 15px;
         }
@@ -463,6 +513,12 @@
             text-align: center;
             color: var(--text-primary);
             font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .upload-btn:hover {
+            background: var(--bg-card);
+            border-color: var(--accent);
         }
 
         input[type="file"] {
@@ -651,12 +707,37 @@
             border-top: 1px solid var(--bg-light);
             display: flex;
             gap: 10px;
+            align-items: flex-end;
         }
 
         .ai-chat-input textarea {
             flex: 1;
             resize: none;
             font-family: inherit;
+            min-width: 0; /* Prevents flex item from overflowing */
+        }
+
+        .ai-send-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .ai-send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
+        }
+
+        .ai-send-btn:active {
+            transform: translateY(0);
         }
 
         .ai-quick-actions {
@@ -1274,6 +1355,17 @@
                 </div>
 
                 <button class="btn" onclick="saveSettings()">Save Settings</button>
+                
+                <div class="card" style="margin-top: 20px; background: var(--bg-light);">
+                    <h4 style="margin-bottom: 10px;">🔧 API Connection Test</h4>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 15px;">
+                        Test if the AI (Claude API via Cloudflare Worker) is connected and working.
+                    </p>
+                    <button class="btn btn-secondary" onclick="testAPIConnection()" id="apiTestBtn">
+                        🧪 Test API Connection
+                    </button>
+                    <div id="apiTestResult" style="margin-top: 10px; font-size: 13px;"></div>
+                </div>
 
                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--bg-light);">
                     <button class="btn btn-secondary" onclick="exportData()">📥 Export All Data</button>
@@ -1342,7 +1434,7 @@
                 <span id="voiceIcon">🎤</span>
             </button>
             <textarea id="aiChatInput" placeholder="Ask me anything about wellness, recipes, exercise..." rows="2"></textarea>
-            <button class="btn" onclick="sendAIMessage()" style="margin: 0;">Send</button>
+            <button class="ai-send-btn" onclick="sendAIMessage()">Send</button>
         </div>
         <div class="ai-quick-actions">
             <button class="quick-action-btn" onclick="quickAIPrompt('recipe')">🍳 Recipe Ideas</button>
@@ -1365,13 +1457,16 @@
 
             <div class="upload-options">
                 <label for="fileUpload" class="upload-btn">
-                    📁 Choose File
+                    📁 Upload Photo
                 </label>
-                <div class="upload-btn" onclick="startCamera()">
-                    📷 Use Camera
+                <div class="upload-btn" onclick="startCamera('photo')">
+                    📸 Snapshot
+                </div>
+                <div class="upload-btn" onclick="startCamera('video')">
+                    🎥 Video (15s)
                 </div>
             </div>
-            <input type="file" id="fileUpload" accept="image/*" onchange="handleFileUpload(event)">
+            <input type="file" id="fileUpload" accept="image/*,video/*" onchange="handleFileUpload(event)">
 
             <div id="useCaseSelector" style="display: none; margin-bottom: 15px;">
                 <label>What are you scanning?</label>
@@ -1379,15 +1474,30 @@
                     <option value="barcode">Food Barcode</option>
                     <option value="grocery">Grocery Receipt</option>
                     <option value="restaurant">Restaurant Receipt</option>
-                    <option value="pantry">Pantry/Fridge</option>
+                    <option value="pantry">Pantry/Fridge (Snapshot)</option>
+                    <option value="pantry-live">Pantry/Fridge (Live 15s)</option>
                     <option value="medication">Medication Label</option>
                 </select>
             </div>
 
             <div class="camera-container" id="cameraContainer" style="display: none;">
-                <video id="scanVideo" autoplay playsinline></video>
+                <video id="scanVideo" autoplay playsinline muted></video>
+                <div class="camera-controls" id="cameraControls" style="display: none;">
+                    <button class="camera-btn" id="captureBtn" onclick="capturePhoto()" title="Capture photo">
+                        📸
+                    </button>
+                    <button class="camera-btn" id="recordBtn" onclick="toggleRecording()" title="Record video">
+                        🔴
+                    </button>
+                    <button class="camera-btn" onclick="stopCamera()" title="Cancel">
+                        ❌
+                    </button>
+                </div>
                 <canvas id="scanCanvas" style="display: none;"></canvas>
                 <img id="scanImage" style="display: none;">
+                <div id="recordingTimer" style="position: absolute; top: 20px; left: 20px; color: white; font-size: 18px; font-weight: bold; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 8px; display: none;">
+                    ⏺ <span id="timerText">0s</span>
+                </div>
             </div>
 
             <div id="scanResult"></div>
