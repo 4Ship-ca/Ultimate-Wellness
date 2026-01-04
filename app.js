@@ -53,6 +53,11 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let recordingTimer = null;
 let recordingSeconds = 0;
+let napTimerMinutes = 0;
+let napTimerSeconds = 0;
+let napTimerInterval = null;
+let napTimerRunning = false;
+let napAlarmAudio = null;
 
 // ============ INITIALIZATION ============
 async function init() {
@@ -764,6 +769,257 @@ async function setSleepQuality(quality) {
     }
 }
 
+// ============ NAP TIMER ============
+let napTimerMinutes = 0;
+let napTimerSeconds = 0;
+let napTimerInterval = null;
+let napTimerRunning = false;
+let napAlarmAudio = null;
+
+function setNapTimer(minutes) {
+    napTimerMinutes = minutes;
+    napTimerSeconds = minutes * 60;
+    document.getElementById('napTimerDisplay').style.display = 'block';
+    document.getElementById('napAlarm').style.display = 'none';
+    updateNapTimerDisplay();
+    
+    // Calculate end time
+    const endTime = new Date(Date.now() + minutes * 60 * 1000);
+    document.getElementById('napEndTime').textContent = 
+        `Ends at ${endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function setCustomNapTimer() {
+    const minutes = parseInt(document.getElementById('customNapMinutes').value);
+    if (minutes && minutes > 0 && minutes <= 180) {
+        setNapTimer(minutes);
+        document.getElementById('customNapMinutes').value = '';
+    } else {
+        alert('Please enter a valid time between 1-180 minutes');
+    }
+}
+
+function updateNapTimerDisplay() {
+    const mins = Math.floor(napTimerSeconds / 60);
+    const secs = napTimerSeconds % 60;
+    document.getElementById('napTimeLeft').textContent = 
+        `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function toggleNapTimer() {
+    if (napTimerRunning) {
+        // Pause
+        napTimerRunning = false;
+        clearInterval(napTimerInterval);
+        document.getElementById('napStartStop').innerHTML = '▶️ Resume';
+    } else {
+        // Start/Resume
+        napTimerRunning = true;
+        document.getElementById('napStartStop').innerHTML = '⏸️ Pause';
+        
+        napTimerInterval = setInterval(() => {
+            if (napTimerSeconds > 0) {
+                napTimerSeconds--;
+                updateNapTimerDisplay();
+            } else {
+                // Timer finished - trigger alarm
+                triggerNapAlarm();
+            }
+        }, 1000);
+    }
+}
+
+function resetNapTimer() {
+    napTimerRunning = false;
+    napTimerSeconds = napTimerMinutes * 60;
+    clearInterval(napTimerInterval);
+    updateNapTimerDisplay();
+    document.getElementById('napStartStop').innerHTML = '▶️ Start';
+}
+
+function triggerNapAlarm() {
+    napTimerRunning = false;
+    clearInterval(napTimerInterval);
+    
+    // Hide timer, show alarm
+    document.getElementById('napTimerDisplay').style.display = 'none';
+    document.getElementById('napAlarm').style.display = 'block';
+    
+    // Play alarm sound
+    playNapAlarm();
+}
+
+function playNapAlarm() {
+    const soundType = document.getElementById('napAlarmSound').value;
+    
+    // Create audio context for generating tones
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Different melodies for each alarm type
+    const melodies = {
+        gentle: [
+            { freq: 523.25, duration: 0.3 }, // C5
+            { freq: 659.25, duration: 0.3 }, // E5
+            { freq: 783.99, duration: 0.3 }, // G5
+            { freq: 1046.50, duration: 0.6 } // C6
+        ],
+        birds: [
+            { freq: 1000, duration: 0.1 },
+            { freq: 1200, duration: 0.1 },
+            { freq: 800, duration: 0.1 },
+            { freq: 1100, duration: 0.1 },
+            { freq: 900, duration: 0.1 },
+            { freq: 1300, duration: 0.2 }
+        ],
+        bells: [
+            { freq: 880, duration: 0.4 },  // A5
+            { freq: 880, duration: 0.4 },
+            { freq: 880, duration: 0.4 },
+            { freq: 1046.50, duration: 0.8 } // C6
+        ]
+    };
+    
+    const melody = melodies[soundType] || melodies.gentle;
+    let time = audioContext.currentTime;
+    
+    // Play melody 3 times
+    for (let repeat = 0; repeat < 3; repeat++) {
+        melody.forEach(note => {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = note.freq;
+            oscillator.type = soundType === 'birds' ? 'sine' : 'triangle';
+            
+            // Envelope
+            gainNode.gain.setValueAtTime(0, time);
+            gainNode.gain.linearRampToValueAtTime(0.3, time + 0.01);
+            gainNode.gain.linearRampToValueAtTime(0, time + note.duration);
+            
+            oscillator.start(time);
+            oscillator.stop(time + note.duration);
+            
+            time += note.duration + 0.05; // Small gap between notes
+        });
+        
+        time += 0.3; // Gap between repetitions
+    }
+    
+    // Vibrate if supported
+    if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 200]);
+    }
+}
+
+function stopNapAlarm() {
+    // Stop any playing audio
+    if (napAlarmAudio) {
+        napAlarmAudio.pause();
+        napAlarmAudio = null;
+    }
+    
+    // Hide alarm, show timer display
+    document.getElementById('napAlarm').style.display = 'none';
+    document.getElementById('napTimerDisplay').style.display = 'block';
+    
+    // Reset timer
+    napTimerSeconds = 0;
+    updateNapTimerDisplay();
+}
+
+async function logNap(quality) {
+    const today = getTodayKey();
+    
+    // Log as a nap entry
+    await dbAdd('naps', {
+        date: today,
+        duration: napTimerMinutes,
+        quality: quality,
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    });
+    
+    // Also add to daily sleep notes
+    const sleep = await getSleepByDate(today);
+    if (sleep) {
+        const napNote = `Nap: ${napTimerMinutes}min (${quality})`;
+        const existingNotes = sleep.notes || '';
+        await updateSleep(sleep.id, { 
+            notes: existingNotes ? `${existingNotes}\n${napNote}` : napNote 
+        });
+    } else {
+        // Create new sleep entry for nap
+        await addSleep({
+            date: today,
+            notes: `Nap: ${napTimerMinutes}min (${quality})`
+        });
+    }
+    
+    stopNapAlarm();
+    await updateAllUI();
+    
+    // Show success message
+    const qualityMessages = {
+        'refreshed': '😊 Great nap! Feeling refreshed!',
+        'okay': '😐 Decent nap. Hope it helped!',
+        'groggy': '😴 Feeling groggy? Maybe next time try a shorter nap!',
+        'didnt-sleep': '😞 Couldn\'t sleep? That\'s okay, rest is still beneficial!'
+    };
+    
+    alert(qualityMessages[quality] || 'Nap logged!');
+}
+
+async function updateNapLog() {
+    const container = document.getElementById('napLog');
+    const allNaps = await dbGetAll('naps');
+    
+    if (!allNaps || allNaps.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    // Group by date, show last 7 days
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    const recentNaps = allNaps.filter(nap => new Date(nap.date) >= weekAgo)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    if (recentNaps.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    let html = '<h4 style="margin: 20px 0 10px;">Recent Naps</h4>';
+    
+    recentNaps.slice(0, 5).forEach(nap => {
+        const qualityIcon = {
+            'refreshed': '😊',
+            'okay': '😐',
+            'groggy': '😴',
+            'didnt-sleep': '😞'
+        }[nap.quality] || '💤';
+        
+        const date = new Date(nap.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        html += `
+            <div style="padding: 10px; background: var(--bg-light); border-radius: 8px; margin-bottom: 8px; font-size: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>${qualityIcon} ${nap.duration} min</strong>
+                        <span style="color: var(--text-secondary); margin-left: 10px;">${nap.time}</span>
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 12px;">${date}</div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
 // ============ TASKS ============
 async function addTask(type) {
     const input = document.getElementById(type + 'Input');
@@ -785,6 +1041,158 @@ async function addTask(type) {
 async function updateTaskStatus(type, id, status) {
     await updateTask(id, { status });
     await updateAllUI();
+}
+
+// Defer a task
+async function deferTask(id) {
+    await updateTask(id, { status: 'deferred', deferredDate: getTodayKey() });
+    await updateAllUI();
+}
+
+// Reactivate a deferred task
+async function reactivateTask(id) {
+    await updateTask(id, { status: 'active', deferredDate: null });
+    await updateAllUI();
+}
+
+// Delete a deferred task
+async function deleteDeferredTask(id) {
+    if (confirm('Permanently delete this task?')) {
+        await deleteTask(id);
+        await updateAllUI();
+    }
+}
+
+// Calculate weekly accomplishments
+async function refreshWeeklyWins() {
+    await updateWeeklyWins();
+}
+
+async function updateWeeklyWins() {
+    const container = document.getElementById('weeklyAccomplishments');
+    
+    // Get date 7 days ago
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    // Get all completed tasks from the past week
+    const allTasks = await getAllTasks();
+    const completedThisWeek = allTasks.filter(task => {
+        if (task.status !== 'complete') return false;
+        const taskDate = new Date(task.date);
+        return taskDate >= weekAgo && taskDate <= today;
+    });
+    
+    if (completedThisWeek.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
+                <p style="font-size: 14px;">No completed tasks this week yet.</p>
+                <p style="font-size: 12px; margin-top: 5px;">Keep going - you've got this! 💪</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Group by type
+    const byType = {
+        want: completedThisWeek.filter(t => t.type === 'want').length,
+        need: completedThisWeek.filter(t => t.type === 'need').length,
+        grateful: completedThisWeek.filter(t => t.type === 'grateful').length
+    };
+    
+    let html = `
+        <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div style="font-size: 24px; font-weight: bold; color: var(--success);">
+                    ${completedThisWeek.length}
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-weight: 600;">Total Wins</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">This Week</div>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 13px;">
+                <div style="text-align: center; padding: 8px; background: var(--bg-light); border-radius: 6px;">
+                    <div style="font-weight: bold;">${byType.want}</div>
+                    <div style="font-size: 11px; color: var(--text-secondary);">Wants</div>
+                </div>
+                <div style="text-align: center; padding: 8px; background: var(--bg-light); border-radius: 6px;">
+                    <div style="font-weight: bold;">${byType.need}</div>
+                    <div style="font-size: 11px; color: var(--text-secondary);">Needs</div>
+                </div>
+                <div style="text-align: center; padding: 8px; background: var(--bg-light); border-radius: 6px;">
+                    <div style="font-weight: bold;">${byType.grateful}</div>
+                    <div style="font-size: 11px; color: var(--text-secondary);">Grateful</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Show recent completed tasks (up to 5)
+    const recent = completedThisWeek.slice(0, 5);
+    html += '<div style="font-size: 13px;">';
+    html += '<div style="font-weight: 600; margin-bottom: 8px;">Recent Wins:</div>';
+    recent.forEach(task => {
+        const icon = task.type === 'want' ? '🎯' : task.type === 'need' ? '✅' : '🙏';
+        html += `
+            <div style="padding: 8px; background: var(--bg-light); border-radius: 6px; margin-bottom: 5px; display: flex; align-items: center; gap: 8px;">
+                <span>${icon}</span>
+                <span style="flex: 1;">${task.text}</span>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    if (completedThisWeek.length > 5) {
+        html += `<div style="text-align: center; font-size: 12px; color: var(--text-secondary); margin-top: 10px;">+ ${completedThisWeek.length - 5} more wins!</div>`;
+    }
+    
+    container.innerHTML = html;
+}
+
+async function updateDeferredTasks() {
+    const container = document.getElementById('deferredList');
+    const noTasks = document.getElementById('noDeferredTasks');
+    
+    const allTasks = await getAllTasks();
+    const deferred = allTasks.filter(task => task.status === 'deferred');
+    
+    if (deferred.length === 0) {
+        container.innerHTML = '';
+        noTasks.style.display = 'block';
+        return;
+    }
+    
+    noTasks.style.display = 'none';
+    
+    let html = '';
+    deferred.forEach(task => {
+        const icon = task.type === 'want' ? '🎯' : task.type === 'need' ? '✅' : '🙏';
+        const daysDeferred = Math.floor((new Date() - new Date(task.deferredDate)) / (1000 * 60 * 60 * 24));
+        
+        html += `
+            <div class="task-item" style="background: var(--bg-card); padding: 12px; border-radius: 8px; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <span style="font-size: 20px;">${icon}</span>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 500;">${task.text}</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">Deferred ${daysDeferred} day${daysDeferred !== 1 ? 's' : ''} ago</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn" onclick="reactivateTask(${task.id})" style="flex: 1; font-size: 13px; padding: 8px;">
+                        ▶️ Reactivate
+                    </button>
+                    <button class="btn btn-secondary" onclick="deleteDeferredTask(${task.id})" style="flex: 1; font-size: 13px; padding: 8px;">
+                        🗑️ Delete
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
 }
 
 // ============ MEDICATIONS ============
@@ -964,17 +1372,6 @@ function startCamera() {}
 function handleFileUpload(event) {}
 
 // ============ UI UPDATES ============
-async function updateAllUI() {
-    await updateWeightDisplay();
-    await updatePointsDisplay();
-    await updateTodayLog();
-    await updateWaterDisplay();
-    await updateExercisePoints();
-    await updateSleepLog();
-    await updateTasksDisplay();
-    await updateMedsDisplay();
-}
-
 async function updateWeightDisplay() {
     if (!userSettings) return;
     
@@ -1094,8 +1491,8 @@ async function updateTasksDisplay() {
                 <div class="task-item">
                     <div>${task.text}</div>
                     <div class="task-buttons">
-                        <button class="task-btn done" onclick="updateTaskStatus('${type}', ${task.id}, 'done')">Done</button>
-                        <button class="task-btn defer" onclick="updateTaskStatus('${type}', ${task.id}, 'deferred')">Defer</button>
+                        <button class="task-btn done" onclick="updateTaskStatus('${type}', ${task.id}, 'complete')">✓ Done</button>
+                        <button class="task-btn defer" onclick="deferTask(${task.id})">⏸️ Defer</button>
                     </div>
                 </div>
             `).join('');
@@ -2641,6 +3038,9 @@ async function updateAllUI() {
     await updateTasksDisplay();
     await updateMedsDisplay();
     await updateEmailReminders();
+    await updateDeferredTasks();
+    await updateWeeklyWins();
+    await updateNapLog();
 }
 
 async function updateEmailReminders() {
