@@ -10,128 +10,179 @@ let db = null;
 async function initDatabase() {
     return new Promise((resolve, reject) => {
         console.log('🔄 Opening database:', DB_NAME, 'version:', DB_VERSION);
+        
+        // Add timeout
+        const timeout = setTimeout(() => {
+            reject(new Error('Database open timeout after 10 seconds'));
+        }, 10000);
+        
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onerror = () => {
+            clearTimeout(timeout);
             console.error('❌ Database error:', request.error);
+            console.error('❌ Error name:', request.error?.name);
+            console.error('❌ Error message:', request.error?.message);
             reject(request.error);
         };
         
+        request.onblocked = () => {
+            clearTimeout(timeout);
+            console.warn('⚠️ Database blocked - close other tabs using this app');
+            reject(new Error('Database blocked by another tab. Please close other tabs and refresh.'));
+        };
+        
         request.onsuccess = () => {
+            clearTimeout(timeout);
             db = request.result;
+            
+            // Add error handler to database
+            db.onerror = (event) => {
+                console.error('❌ Database error event:', event);
+            };
+            
+            db.onversionchange = () => {
+                console.warn('⚠️ Database version change detected');
+                db.close();
+                alert('Database updated. Please refresh the page.');
+            };
+            
             console.log('✅ Database initialized successfully');
             console.log('📋 Available tables:', Array.from(db.objectStoreNames));
+            console.log('🔢 Table count:', db.objectStoreNames.length);
             resolve(db);
         };
 
         request.onupgradeneeded = (event) => {
+            clearTimeout(timeout);
             db = event.target.result;
             console.log('🔧 Upgrading database from version', event.oldVersion, 'to', event.newVersion);
             console.log('📋 Existing tables:', Array.from(db.objectStoreNames));
 
-            // SETTINGS table (single row)
-            if (!db.objectStoreNames.contains('settings')) {
-                db.createObjectStore('settings', { keyPath: 'id' });
-            }
+            try {
+                // SETTINGS table (single row)
+                if (!db.objectStoreNames.contains('settings')) {
+                    db.createObjectStore('settings', { keyPath: 'id' });
+                    console.log('   ✓ Created settings table');
+                }
 
-            // FOODS table (daily food logs)
-            if (!db.objectStoreNames.contains('foods')) {
-                const foodStore = db.createObjectStore('foods', { keyPath: 'id', autoIncrement: true });
-                foodStore.createIndex('date', 'date', { unique: false });
-                foodStore.createIndex('name', 'name', { unique: false });
-            }
+                // FOODS table (daily food logs)
+                if (!db.objectStoreNames.contains('foods')) {
+                    const foodStore = db.createObjectStore('foods', { keyPath: 'id', autoIncrement: true });
+                    foodStore.createIndex('date', 'date', { unique: false });
+                    foodStore.createIndex('name', 'name', { unique: false });
+                    console.log('   ✓ Created foods table');
+                }
 
-            // EXERCISE table (daily exercise logs)
-            if (!db.objectStoreNames.contains('exercise')) {
-                const exerciseStore = db.createObjectStore('exercise', { keyPath: 'id', autoIncrement: true });
-                exerciseStore.createIndex('date', 'date', { unique: false });
-                exerciseStore.createIndex('activity', 'activity', { unique: false });
-            }
+                // EXERCISE table (daily exercise logs)
+                if (!db.objectStoreNames.contains('exercise')) {
+                    const exerciseStore = db.createObjectStore('exercise', { keyPath: 'id', autoIncrement: true });
+                    exerciseStore.createIndex('date', 'date', { unique: false });
+                    exerciseStore.createIndex('activity', 'activity', { unique: false });
+                    console.log('   ✓ Created exercise table');
+                }
 
-            // SLEEP table (daily sleep logs)
-            if (!db.objectStoreNames.contains('sleep')) {
-                const sleepStore = db.createObjectStore('sleep', { keyPath: 'id', autoIncrement: true });
-                sleepStore.createIndex('date', 'date', { unique: false });
-            }
+                // SLEEP table (daily sleep logs)
+                if (!db.objectStoreNames.contains('sleep')) {
+                    const sleepStore = db.createObjectStore('sleep', { keyPath: 'id', autoIncrement: true });
+                    sleepStore.createIndex('date', 'date', { unique: false });
+                    console.log('   ✓ Created sleep table');
+                }
 
-            // MEDICATIONS table (medication definitions)
-            if (!db.objectStoreNames.contains('medications')) {
-                db.createObjectStore('medications', { keyPath: 'id', autoIncrement: true });
-            }
+                // MEDICATIONS table (medication definitions)
+                if (!db.objectStoreNames.contains('medications')) {
+                    db.createObjectStore('medications', { keyPath: 'id', autoIncrement: true });
+                    console.log('   ✓ Created medications table');
+                }
 
-            // MED_LOGS table (daily medication tracking)
-            if (!db.objectStoreNames.contains('med_logs')) {
-                const medLogStore = db.createObjectStore('med_logs', { keyPath: 'id', autoIncrement: true });
-                medLogStore.createIndex('date', 'date', { unique: false });
-                medLogStore.createIndex('medId', 'medId', { unique: false });
-            }
+                // MED_LOGS table (daily medication tracking)
+                if (!db.objectStoreNames.contains('med_logs')) {
+                    const medLogStore = db.createObjectStore('med_logs', { keyPath: 'id', autoIncrement: true });
+                    medLogStore.createIndex('date', 'date', { unique: false });
+                    medLogStore.createIndex('medId', 'medId', { unique: false });
+                    console.log('   ✓ Created med_logs table');
+                }
 
-            // WATER table (daily water intake)
-            if (!db.objectStoreNames.contains('water')) {
-                const waterStore = db.createObjectStore('water', { keyPath: 'id', autoIncrement: true });
-                waterStore.createIndex('date', 'date', { unique: false });
-            }
+                // WATER table (daily water intake)
+                if (!db.objectStoreNames.contains('water')) {
+                    const waterStore = db.createObjectStore('water', { keyPath: 'id', autoIncrement: true });
+                    waterStore.createIndex('date', 'date', { unique: false });
+                    console.log('   ✓ Created water table');
+                }
 
-            // TASKS table (daily tasks)
-            if (!db.objectStoreNames.contains('tasks')) {
-                const taskStore = db.createObjectStore('tasks', { keyPath: 'id', autoIncrement: true });
-                taskStore.createIndex('date', 'date', { unique: false });
-                taskStore.createIndex('type', 'type', { unique: false });
-            }
+                // TASKS table (daily tasks)
+                if (!db.objectStoreNames.contains('tasks')) {
+                    const taskStore = db.createObjectStore('tasks', { keyPath: 'id', autoIncrement: true });
+                    taskStore.createIndex('date', 'date', { unique: false });
+                    taskStore.createIndex('type', 'type', { unique: false });
+                    console.log('   ✓ Created tasks table');
+                }
 
-            // PHOTOS table (all photos - base64 or blob URLs)
-            if (!db.objectStoreNames.contains('photos')) {
-                const photoStore = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
-                photoStore.createIndex('date', 'date', { unique: false });
-                photoStore.createIndex('type', 'type', { unique: false }); // barcode, receipt, pantry
-            }
+                // PHOTOS table (all photos - base64 or blob URLs)
+                if (!db.objectStoreNames.contains('photos')) {
+                    const photoStore = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+                    photoStore.createIndex('date', 'date', { unique: false });
+                    photoStore.createIndex('type', 'type', { unique: false }); // barcode, receipt, pantry
+                    console.log('   ✓ Created photos table');
+                }
 
-            // PANTRY table (pantry items from receipts/snapshots)
-            if (!db.objectStoreNames.contains('pantry')) {
-                const pantryStore = db.createObjectStore('pantry', { keyPath: 'id', autoIncrement: true });
-                pantryStore.createIndex('date', 'date', { unique: false });
-                pantryStore.createIndex('name', 'name', { unique: false });
-            }
+                // PANTRY table (pantry items from receipts/snapshots)
+                if (!db.objectStoreNames.contains('pantry')) {
+                    const pantryStore = db.createObjectStore('pantry', { keyPath: 'id', autoIncrement: true });
+                    pantryStore.createIndex('date', 'date', { unique: false });
+                    pantryStore.createIndex('name', 'name', { unique: false });
+                    console.log('   ✓ Created pantry table');
+                }
 
-            // PREFERENCES table (food likes/dislikes, no-go foods)
-            if (!db.objectStoreNames.contains('preferences')) {
-                db.createObjectStore('preferences', { keyPath: 'id' });
-            }
+                // PREFERENCES table (food likes/dislikes, no-go foods)
+                if (!db.objectStoreNames.contains('preferences')) {
+                    db.createObjectStore('preferences', { keyPath: 'id' });
+                    console.log('   ✓ Created preferences table');
+                }
 
-            // WEIGHT_LOGS table (weight tracking history)
-            if (!db.objectStoreNames.contains('weight_logs')) {
-                const weightStore = db.createObjectStore('weight_logs', { keyPath: 'id', autoIncrement: true });
-                weightStore.createIndex('date', 'date', { unique: false });
-            }
+                // WEIGHT_LOGS table (weight tracking history)
+                if (!db.objectStoreNames.contains('weight_logs')) {
+                    const weightStore = db.createObjectStore('weight_logs', { keyPath: 'id', autoIncrement: true });
+                    weightStore.createIndex('date', 'date', { unique: false });
+                    console.log('   ✓ Created weight_logs table');
+                }
 
-            // RECIPES table (saved/favorite recipes)
-            if (!db.objectStoreNames.contains('recipes')) {
-                const recipeStore = db.createObjectStore('recipes', { keyPath: 'id', autoIncrement: true });
-                recipeStore.createIndex('name', 'name', { unique: false });
-            }
+                // RECIPES table (saved/favorite recipes)
+                if (!db.objectStoreNames.contains('recipes')) {
+                    const recipeStore = db.createObjectStore('recipes', { keyPath: 'id', autoIncrement: true });
+                    recipeStore.createIndex('name', 'name', { unique: false });
+                    console.log('   ✓ Created recipes table');
+                }
 
-            // STORES table (grocery store history)
-            if (!db.objectStoreNames.contains('stores')) {
-                const storeStore = db.createObjectStore('stores', { keyPath: 'id', autoIncrement: true });
-                storeStore.createIndex('date', 'date', { unique: false });
-                storeStore.createIndex('store', 'store', { unique: false });
-            }
+                // STORES table (grocery store history)
+                if (!db.objectStoreNames.contains('stores')) {
+                    const storeStore = db.createObjectStore('stores', { keyPath: 'id', autoIncrement: true });
+                    storeStore.createIndex('date', 'date', { unique: false });
+                    storeStore.createIndex('store', 'store', { unique: false });
+                    console.log('   ✓ Created stores table');
+                }
 
-            // POINTS_BANK table (banked points with expiry)
-            if (!db.objectStoreNames.contains('points_bank')) {
-                const bankStore = db.createObjectStore('points_bank', { keyPath: 'id', autoIncrement: true });
-                bankStore.createIndex('date', 'date', { unique: false });
-                bankStore.createIndex('expires', 'expires', { unique: false });
-            }
-            
-            if (!db.objectStoreNames.contains('naps')) {
-                const napStore = db.createObjectStore('naps', { keyPath: 'id', autoIncrement: true });
-                napStore.createIndex('date', 'date', { unique: false });
-                console.log('   ✓ Created naps table');
-            }
+                // POINTS_BANK table (banked points with expiry)
+                if (!db.objectStoreNames.contains('points_bank')) {
+                    const bankStore = db.createObjectStore('points_bank', { keyPath: 'id', autoIncrement: true });
+                    bankStore.createIndex('date', 'date', { unique: false });
+                    bankStore.createIndex('expires', 'expires', { unique: false });
+                    console.log('   ✓ Created points_bank table');
+                }
+                
+                if (!db.objectStoreNames.contains('naps')) {
+                    const napStore = db.createObjectStore('naps', { keyPath: 'id', autoIncrement: true });
+                    napStore.createIndex('date', 'date', { unique: false });
+                    console.log('   ✓ Created naps table');
+                }
 
-            console.log('✅ Database schema complete');
-            console.log('📋 Final tables:', Array.from(db.objectStoreNames));
+                console.log('✅ Database schema complete');
+                console.log('📋 Final tables:', Array.from(db.objectStoreNames));
+                
+            } catch (upgradeError) {
+                console.error('❌ Error during database upgrade:', upgradeError);
+                reject(upgradeError);
+            }
         };
     });
 }
