@@ -116,6 +116,11 @@ async function initDatabase() {
                 bankStore.createIndex('date', 'date', { unique: false });
                 bankStore.createIndex('expires', 'expires', { unique: false });
             }
+            
+            if (!db.objectStoreNames.contains('naps')) {
+                const napStore = db.createObjectStore('naps', { keyPath: 'id', autoIncrement: true });
+                napStore.createIndex('date', 'date', { unique: false });
+            }
 
             console.log('✅ Database schema created');
         };
