@@ -136,8 +136,9 @@ async function init() {
             // Update version display
             await updateVersionDisplay();
             
-            // Check if points recalculation is needed (every 4 weeks)
-            await checkPointsRecalculation();
+            // Check 12-week points period boundary (or initialize if missing)
+            checkPointsPeriodBoundary();
+            await saveSettings(userSettings);
             
             // Load UI
             await updateAllUI();
@@ -252,7 +253,8 @@ async function completeSetup() {
         const age = calculateAge(birthday);
         
         // Calculate initial daily points
-        const dailyPoints = calculateDailyPoints(gender, age, weight, heightInInches, activity);
+        const pointsResult = calculateDailyPoints(gender, age, weight, heightInInches, activity);
+        const dailyPoints = pointsResult.points;
 
         userSettings = {
             id: 'user', // REQUIRED for IndexedDB
@@ -272,6 +274,10 @@ async function completeSetup() {
         };
 
         console.log('💾 Saving settings...', userSettings);
+        await saveSettings(userSettings);
+        
+        // Start first 12-week points period (LOCKED)
+        startNewPointsPeriod();
         await saveSettings(userSettings);
     
         // Log initial weight
@@ -312,46 +318,407 @@ function calculateAge(birthday) {
     return age;
 }
 
-function calculateDailyPoints(gender, age, weight, heightInInches, activity) {
-    // Weight Watchers-style points calculation
-    // Base points: Gender + Age + Weight + Height + Activity
+function calculateDailyPoints(gender, age, weight, heightInInches, activity, customFloor = null) {
+    // Weight Watchers Classic Points Formula (v2.0 - 12-Week Locked Period)
+    // Points are calculated to achieve 12-week goal at 1-2 lbs/week
+    // LOCKED for 12 weeks - only recalculate at period boundaries
     
-    let points = 0;
+    // Use custom floor if provided, otherwise use stored floor, otherwise default to 23
+    const floor = customFloor !== null ? customFloor : (userSettings?.pointsFloor || 23);
     
-    // Gender base
-    points += gender === 'female' ? 2 : 8;
-    
-    // Age
-    if (age >= 18 && age <= 20) points += 5;
-    else if (age >= 21 && age <= 35) points += 4;
-    else if (age >= 36 && age <= 50) points += 3;
-    else if (age >= 51 && age <= 65) points += 2;
-    else points += 1;
-    
-    // Weight (simplified: 1 point per 10 lbs over 100 lbs)
-    points += Math.floor((weight - 100) / 10);
-    
-    // Height bonus
-    if (heightInInches < 61) points += 1;
-    else points += 2;
-    
-    // Activity level
-    const activityPoints = {
-        'sedentary': 0,
-        'light': 1,
-        'moderate': 2,
-        'active': 4,
-        'very_active': 6
+    let breakdown = {
+        sex: 0,
+        age: 0,
+        weight: 0,
+        height: 0,
+        activity: 0,
+        subtotal: 0,
+        floor: floor,
+        final: 0,
+        // NEW: Burn rate factors
+        targetWeeklyLoss: 0,
+        targetDeficit: 0,
+        burnRateAdjustment: 0
     };
-    points += activityPoints[activity] || 0;
     
-    // Enforce guardrails: 22-28 points per day
-    points = Math.max(22, Math.min(28, points));
+    // S: Sex
+    if (gender === 'female') {
+        breakdown.sex = 2;
+    } else if (gender === 'male') {
+        breakdown.sex = 8;
+    }
     
-    return points;
+    // A: Age brackets
+    if (age >= 17 && age <= 26) {
+        breakdown.age = 4;
+    } else if (age >= 27 && age <= 37) {
+        breakdown.age = 3;
+    } else if (age >= 38 && age <= 47) {
+        breakdown.age = 2;
+    } else if (age >= 48 && age <= 58) {
+        breakdown.age = 1;
+    } else { // 59+
+        breakdown.age = 0;
+    }
+    
+    // W: Weight (first two digits of lbs)
+    // Example: 175 lbs → 17, 240 lbs → 24
+    breakdown.weight = Math.floor(weight / 10);
+    
+    // H: Height
+    if (heightInInches < 61) { // Under 5'1"
+        breakdown.height = 0;
+    } else if (heightInInches <= 70) { // 5'1" to 5'10"
+        breakdown.height = 1;
+    } else { // Over 5'10"
+        breakdown.height = 2;
+    }
+    
+    // E: Daily Activity Level (NEAT - Non-Exercise Activity Thermogenesis)
+    const activityPoints = {
+        'sedentary': 0,      // Mostly sitting
+        'light': 2,          // Occasional standing, light housework
+        'moderate': 4,       // Walking most of the time
+        'active': 6,         // Physically strenuous job
+        'very_active': 6     // Manual labor
+    };
+    breakdown.activity = activityPoints[activity] || 0;
+    
+    // Calculate subtotal using classic formula
+    breakdown.subtotal = breakdown.sex + breakdown.age + breakdown.weight + breakdown.height + breakdown.activity;
+    
+    // NEW: Calculate 12-week target burn rate (if userSettings available)
+    if (userSettings && userSettings.goalWeight) {
+        const weightDelta = weight - userSettings.goalWeight;
+        breakdown.targetWeeklyLoss = Math.max(0, Math.min(2, weightDelta / 12)); // Cap at 2 lbs/week
+        
+        // 1 lb = 3500 calories, so weekly loss * 3500 / 7 days = daily deficit
+        breakdown.targetDeficit = Math.round((breakdown.targetWeeklyLoss * 3500) / 7);
+        
+        // This is informational - we don't adjust classic formula
+        // Instead, we LOCK the points at period start
+    }
+    
+    // Apply floor (minimum safe points)
+    // User can adjust floor in settings (typically 23-30 depending on "era")
+    breakdown.final = Math.max(breakdown.floor, breakdown.subtotal);
+    
+    return {
+        points: breakdown.final,
+        breakdown: breakdown
+    };
 }
 
-async function checkPointsRecalculation() {
+// Get points breakdown for display
+function getPointsBreakdown() {
+    if (!userSettings) return null;
+    
+    const age = new Date().getFullYear() - new Date(userSettings.birthday).getFullYear();
+    const result = calculateDailyPoints(
+        userSettings.gender,
+        age,
+        userSettings.currentWeight,
+        userSettings.heightInInches,
+        userSettings.activity
+    );
+    
+    return result.breakdown;
+}
+
+// ============ 12-WEEK POINTS PERIOD SYSTEM ============
+// Points are LOCKED for 12-week periods to provide stable goals
+// Only recalculate at period boundaries or when goal is reached
+
+function startNewPointsPeriod() {
+    if (!userSettings) return;
+    
+    const today = new Date();
+    const periodEnd = new Date(today);
+    periodEnd.setDate(periodEnd.getDate() + (12 * 7)); // 12 weeks = 84 days
+    
+    // Calculate points for this period
+    const age = calculateAge(userSettings.birthday);
+    const result = calculateDailyPoints(
+        userSettings.gender,
+        age,
+        userSettings.currentWeight,
+        userSettings.heightInInches,
+        userSettings.activity
+    );
+    
+    // Calculate target weekly loss for this period
+    const weightDelta = userSettings.currentWeight - userSettings.goalWeight;
+    const targetWeeklyLoss = Math.max(0, Math.min(2, weightDelta / 12)); // Cap at 2 lbs/week
+    
+    // LOCK these values for 12 weeks
+    userSettings.pointsPeriodStart = today.toISOString().split('T')[0];
+    userSettings.pointsPeriodEnd = periodEnd.toISOString().split('T')[0];
+    userSettings.lockedPoints = result.points;
+    userSettings.dailyPoints = result.points;
+    userSettings.targetWeeklyLoss = targetWeeklyLoss;
+    userSettings.periodStartWeight = userSettings.currentWeight;
+    userSettings.maintenanceMode = false;
+    userSettings.sixWeekCheckpointDone = false; // Reset for new period
+    
+    console.log(`🔒 Started new 12-week points period:`);
+    console.log(`   Points locked: ${result.points}/day`);
+    console.log(`   Target: ${targetWeeklyLoss} lbs/week`);
+    console.log(`   Period: ${userSettings.pointsPeriodStart} → ${userSettings.pointsPeriodEnd}`);
+    
+    return result.points;
+}
+
+function checkPointsPeriodBoundary() {
+    if (!userSettings) return false;
+    
+    // If no period set, start one
+    if (!userSettings.pointsPeriodStart || !userSettings.pointsPeriodEnd) {
+        startNewPointsPeriod();
+        return true;
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    const periodEnd = userSettings.pointsPeriodEnd;
+    const periodStart = userSettings.pointsPeriodStart;
+    
+    // Check if we're past the period end (12 weeks)
+    if (today >= periodEnd) {
+        console.log('📅 Reached 12-week boundary - recalculating points');
+        startNewPointsPeriod();
+        return true;
+    }
+    
+    // NEW: Check for 6-week mid-period checkpoint
+    const startDate = new Date(periodStart);
+    const sixWeeksLater = new Date(startDate);
+    sixWeeksLater.setDate(sixWeeksLater.getDate() + (6 * 7)); // 42 days
+    const sixWeekStr = sixWeeksLater.toISOString().split('T')[0];
+    
+    // If we're at 6-week mark and haven't done checkpoint yet
+    if (today >= sixWeekStr && !userSettings.sixWeekCheckpointDone) {
+        console.log('📊 6-week checkpoint - checking progress');
+        performSixWeekCheckpoint();
+        return true;
+    }
+    
+    return false;
+}
+
+async function performSixWeekCheckpoint() {
+    if (!userSettings) return;
+    
+    console.log('📊 Performing 6-week mid-period checkpoint');
+    
+    // Calculate actual burn rate from weight logs
+    const periodStart = new Date(userSettings.pointsPeriodStart);
+    const today = new Date();
+    const daysSinceStart = Math.max(1, (today - periodStart) / (1000 * 60 * 60 * 24));
+    const weeksSinceStart = daysSinceStart / 7;
+    
+    // Get all weight logs since period start
+    const allLogs = await getAllWeightLogs();
+    const periodLogs = allLogs.filter(log => log.date >= userSettings.pointsPeriodStart)
+                              .sort((a, b) => a.date.localeCompare(b.date));
+    
+    if (periodLogs.length < 2) {
+        console.log('⚠️ Not enough weight data for checkpoint');
+        userSettings.sixWeekCheckpointDone = true;
+        await saveSettings(userSettings);
+        return;
+    }
+    
+    // Calculate actual loss
+    const startWeight = userSettings.periodStartWeight || periodLogs[0].weight;
+    const currentWeight = userSettings.currentWeight;
+    const actualLoss = startWeight - currentWeight;
+    const actualWeeklyRate = actualLoss / weeksSinceStart;
+    
+    // Target rate
+    const targetWeeklyRate = userSettings.targetWeeklyLoss || 1.5;
+    
+    // Calculate expected loss at 6 weeks
+    const expectedLoss = targetWeeklyRate * weeksSinceStart;
+    const variance = actualLoss - expectedLoss; // Negative = behind, Positive = ahead
+    
+    console.log(`   Start weight: ${startWeight} lbs`);
+    console.log(`   Current weight: ${currentWeight} lbs`);
+    console.log(`   Actual loss: ${actualLoss.toFixed(1)} lbs (${actualWeeklyRate.toFixed(2)} lbs/week)`);
+    console.log(`   Expected loss: ${expectedLoss.toFixed(1)} lbs (${targetWeeklyRate.toFixed(2)} lbs/week)`);
+    console.log(`   Variance: ${variance > 0 ? '+' : ''}${variance.toFixed(1)} lbs`);
+    
+    // Determine if adjustment needed (> 0.5 lbs/week off target)
+    const weeklyVariance = Math.abs(actualWeeklyRate - targetWeeklyRate);
+    
+    if (weeklyVariance < 0.5) {
+        // On track - no adjustment needed
+        console.log('✅ On track! No adjustment needed.');
+        alert(
+            `📊 6-Week Progress Check\n\n` +
+            `You're on track! 🎉\n\n` +
+            `Lost: ${actualLoss.toFixed(1)} lbs (${actualWeeklyRate.toFixed(1)} lbs/week)\n` +
+            `Target: ${expectedLoss.toFixed(1)} lbs (${targetWeeklyRate.toFixed(1)} lbs/week)\n\n` +
+            `Your points stay at ${userSettings.lockedPoints}/day.\n` +
+            `Keep up the great work!`
+        );
+    } else {
+        // Off track - suggest minor adjustment
+        // Calculate needed adjustment (1-3 points max)
+        // ~500 cal deficit = 1 lb/week, ~35 cal/point
+        const calorieDeficitNeeded = weeklyVariance * 500; // Extra deficit per week
+        const dailyCalDeficitNeeded = calorieDeficitNeeded / 7;
+        const pointsAdjustment = Math.round(dailyCalDeficitNeeded / 35);
+        
+        // Cap adjustment at ±3 points
+        const cappedAdjustment = Math.max(-3, Math.min(3, pointsAdjustment));
+        
+        // Behind = need more deficit = reduce points (negative adjustment)
+        // Ahead = need less deficit = increase points (positive adjustment)
+        const finalAdjustment = actualWeeklyRate < targetWeeklyRate ? -Math.abs(cappedAdjustment) : Math.abs(cappedAdjustment);
+        
+        if (finalAdjustment === 0) {
+            // Very minor variance, no adjustment
+            console.log('✅ Minor variance - no adjustment needed');
+            alert(
+                `📊 6-Week Progress Check\n\n` +
+                `Lost: ${actualLoss.toFixed(1)} lbs (${actualWeeklyRate.toFixed(1)} lbs/week)\n` +
+                `Target: ${expectedLoss.toFixed(1)} lbs (${targetWeeklyRate.toFixed(1)} lbs/week)\n\n` +
+                `Minor variance - no adjustment needed.\n` +
+                `Your points stay at ${userSettings.lockedPoints}/day.`
+            );
+        } else {
+            // Show adjustment confirmation
+            const newPoints = userSettings.lockedPoints + finalAdjustment;
+            const direction = finalAdjustment > 0 ? 'increased' : 'decreased';
+            const reason = finalAdjustment > 0 ? 'ahead of pace' : 'behind pace';
+            
+            const confirmed = confirm(
+                `📊 6-Week Mid-Period Check-In\n\n` +
+                `Progress: ${actualLoss.toFixed(1)} lbs lost (${actualWeeklyRate.toFixed(1)} lbs/week)\n` +
+                `Target: ${expectedLoss.toFixed(1)} lbs (${targetWeeklyRate.toFixed(1)} lbs/week)\n\n` +
+                `You're ${reason} by ${Math.abs(variance).toFixed(1)} lbs.\n\n` +
+                `We recommend fine-tuning your budget:\n` +
+                `${userSettings.lockedPoints} → ${newPoints} points/day (${finalAdjustment > 0 ? '+' : ''}${finalAdjustment})\n\n` +
+                `This small adjustment will help you reach your 12-week goal.\n\n` +
+                `Accept adjustment?`
+            );
+            
+            if (confirmed) {
+                const oldPoints = userSettings.lockedPoints;
+                userSettings.lockedPoints = newPoints;
+                userSettings.dailyPoints = newPoints;
+                
+                console.log(`   Adjusted: ${oldPoints} → ${newPoints} (${finalAdjustment > 0 ? '+' : ''}${finalAdjustment})`);
+                
+                alert(
+                    `Points ${direction} to ${newPoints}/day! 🎯\n\n` +
+                    `This fine-tuning will help you stay on track to reach your goal.`
+                );
+            } else {
+                console.log('   User declined adjustment');
+                alert(
+                    `No problem! Your points stay at ${userSettings.lockedPoints}/day.\n\n` +
+                    `Consider increasing activity if you want to get back on track.`
+                );
+            }
+        }
+    }
+    
+    // Mark checkpoint as done
+    userSettings.sixWeekCheckpointDone = true;
+    userSettings.sixWeekCheckpointDate = new Date().toISOString().split('T')[0];
+    await saveSettings(userSettings);
+    
+    console.log('✅ 6-week checkpoint complete');
+}
+
+function calculateActualBurnRate() {
+    if (!userSettings) return null;
+    
+    // Need at least 2 weeks of data
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0];
+    
+    // Get weight logs from last 2 weeks
+    getAllWeightLogs().then(logs => {
+        const recentLogs = logs.filter(log => log.date >= twoWeeksAgoStr).sort((a, b) => a.date.localeCompare(b.date));
+        
+        if (recentLogs.length < 2) {
+            return null;
+        }
+        
+        const oldestRecent = recentLogs[0];
+        const newestRecent = recentLogs[recentLogs.length - 1];
+        
+        const weightChange = oldestRecent.weight - newestRecent.weight; // Positive = loss
+        const daysBetween = Math.max(1, (new Date(newestRecent.date) - new Date(oldestRecent.date)) / (1000 * 60 * 60 * 24));
+        const weeksBetween = daysBetween / 7;
+        
+        const actualWeeklyLoss = weightChange / weeksBetween;
+        
+        return {
+            actualWeeklyLoss: Math.round(actualWeeklyLoss * 10) / 10,
+            targetWeeklyLoss: userSettings.targetWeeklyLoss || 0,
+            onTrack: Math.abs(actualWeeklyLoss - (userSettings.targetWeeklyLoss || 0)) < 0.5,
+            behind: actualWeeklyLoss < (userSettings.targetWeeklyLoss || 0) - 0.5,
+            ahead: actualWeeklyLoss > (userSettings.targetWeeklyLoss || 0) + 0.5
+        };
+    });
+}
+
+async function suggestActivityAdjustment() {
+    const burnRate = await calculateActualBurnRate();
+    
+    if (!burnRate || !burnRate.behind) return null;
+    
+    const deficit = (userSettings.targetWeeklyLoss - burnRate.actualWeeklyLoss) * 3500 / 7; // Daily calorie deficit needed
+    const exerciseMinutes = Math.round(deficit / 5); // Rough: 5 cal/min moderate activity
+    
+    return {
+        message: `You're ${(userSettings.targetWeeklyLoss - burnRate.actualWeeklyLoss).toFixed(1)} lbs/week behind target`,
+        suggestion: `Add ${exerciseMinutes} minutes of daily activity`,
+        keepPoints: true,
+        dontReducePoints: '⚠️ We recommend more activity instead of reducing your points budget'
+    };
+}
+
+function enterMaintenanceMode() {
+    if (!userSettings) return;
+    
+    const weightDelta = Math.abs(userSettings.currentWeight - userSettings.goalWeight);
+    
+    // Within 2 lbs of goal = maintenance mode
+    if (weightDelta <= 2) {
+        console.log('🎉 Goal reached! Entering maintenance mode');
+        
+        // Increase points to maintenance level (no deficit)
+        const age = calculateAge(userSettings.birthday);
+        const result = calculateDailyPoints(
+            userSettings.gender,
+            age,
+            userSettings.currentWeight,
+            userSettings.heightInInches,
+            userSettings.activity
+        );
+        
+        // Add back the deficit (~5 points for 500 cal)
+        const maintenancePoints = result.points + 5;
+        
+        userSettings.maintenanceMode = true;
+        userSettings.lockedPoints = maintenancePoints;
+        userSettings.dailyPoints = maintenancePoints;
+        
+        console.log(`   Maintenance points: ${maintenancePoints}/day`);
+        
+        return maintenancePoints;
+    }
+    
+    return null;
+}
+
+// ============ END 12-WEEK POINTS PERIOD SYSTEM ============
+
+// Get points breakdown for display
     if (!userSettings) return;
     
     const today = new Date().toISOString().split('T')[0];
@@ -361,7 +728,7 @@ async function checkPointsRecalculation() {
     // Recalculate every 28 days (4 weeks)
     if (daysSinceUpdate >= 28) {
         const age = calculateAge(userSettings.birthday);
-        const newPoints = calculateDailyPoints(
+        const result = calculateDailyPoints(
             userSettings.gender,
             age,
             userSettings.currentWeight,
@@ -369,7 +736,7 @@ async function checkPointsRecalculation() {
             userSettings.activity
         );
         
-        userSettings.dailyPoints = newPoints;
+        userSettings.dailyPoints = result.points;
         userSettings.lastPointsUpdate = today;
         await saveSettings(userSettings);
         
@@ -398,25 +765,187 @@ async function saveSettings() {
 
     const heightInInches = (heightFeet * 12) + heightInches;
     
+    // Check if activity or goal changed (these affect points calculation)
+    const activityChanged = userSettings.activity !== activity;
+    const goalChanged = Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
+    
     userSettings.name = name;
     userSettings.email = email;
     userSettings.goalWeight = goalWeight;
     userSettings.heightInInches = heightInInches;
     userSettings.activity = activity;
     
-    // Recalculate points with new settings
-    const age = calculateAge(userSettings.birthday);
-    userSettings.dailyPoints = calculateDailyPoints(
-        userSettings.gender,
-        age,
-        userSettings.currentWeight,
-        heightInInches,
-        activity
-    );
+    // If significant changes, offer to restart 12-week period
+    if ((activityChanged || goalChanged) && userSettings.pointsPeriodStart) {
+        const confirm = window.confirm(
+            `You changed your ${activityChanged ? 'activity level' : 'goal weight'}.\n\n` +
+            `Would you like to restart your 12-week points period with new calculations?\n\n` +
+            `Current period: ${userSettings.lockedPoints} pts/day until ${userSettings.pointsPeriodEnd}\n\n` +
+            `Choose:\n` +
+            `✓ OK = Restart period with new points\n` +
+            `✗ Cancel = Keep current locked points`
+        );
+        
+        if (confirm) {
+            startNewPointsPeriod();
+            alert(`New 12-week period started!\n\nPoints: ${userSettings.lockedPoints}/day`);
+        } else {
+            alert('Settings saved. Points remain locked at ' + userSettings.lockedPoints + '/day');
+        }
+    }
 
     await saveSettings(userSettings);
     await updateAllUI();
-    alert('Settings saved!');
+    
+    if (!activityChanged && !goalChanged) {
+        alert('Settings saved!');
+    }
+}
+
+// Display points breakdown in settings (v2.0 Beta)
+async function displayPointsBreakdown() {
+    const breakdown = getPointsBreakdown();
+    const breakdownDiv = document.getElementById('pointsBreakdown');
+    
+    if (!breakdown || !breakdownDiv) return;
+    
+    // Calculate days remaining in period
+    let periodInfo = '';
+    if (userSettings.pointsPeriodStart && userSettings.pointsPeriodEnd) {
+        const today = new Date();
+        const periodEnd = new Date(userSettings.pointsPeriodEnd);
+        const periodStart = new Date(userSettings.pointsPeriodStart);
+        const daysRemaining = Math.max(0, Math.ceil((periodEnd - today) / (1000 * 60 * 60 * 24)));
+        const weeksRemaining = Math.floor(daysRemaining / 7);
+        
+        // Calculate 6-week checkpoint date
+        const sixWeeks = new Date(periodStart);
+        sixWeeks.setDate(sixWeeks.getDate() + (6 * 7));
+        const sixWeekStr = sixWeeks.toISOString().split('T')[0];
+        const sixWeekPassed = today.toISOString().split('T')[0] >= sixWeekStr;
+        
+        let checkpointInfo = '';
+        if (userSettings.sixWeekCheckpointDone) {
+            checkpointInfo = `<div style="font-size: 11px; opacity: 0.7; margin-top: 5px;">✅ 6-week checkpoint completed ${userSettings.sixWeekCheckpointDate ? `on ${new Date(userSettings.sixWeekCheckpointDate).toLocaleDateString()}` : ''}</div>`;
+        } else if (sixWeekPassed) {
+            checkpointInfo = `<div style="font-size: 11px; color: #ffd700; margin-top: 5px;">⏰ 6-week checkpoint ready - log weight to check progress</div>`;
+        } else {
+            const daysToCheckpoint = Math.ceil((sixWeeks - today) / (1000 * 60 * 60 * 24));
+            checkpointInfo = `<div style="font-size: 11px; opacity: 0.7; margin-top: 5px;">📅 6-week check-in: ${sixWeeks.toLocaleDateString()} (${daysToCheckpoint} days)</div>`;
+        }
+        
+        periodInfo = `
+            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; margin-top: 15px;">
+                <div style="font-weight: bold; margin-bottom: 5px;">🔒 Points Locked Until:</div>
+                <div style="font-size: 14px;">${new Date(userSettings.pointsPeriodEnd).toLocaleDateString()}</div>
+                <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">
+                    ${weeksRemaining} weeks, ${daysRemaining % 7} days remaining
+                </div>
+                ${checkpointInfo}
+                ${userSettings.targetWeeklyLoss ? `
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
+                        <div style="font-size: 12px;">Target: ${userSettings.targetWeeklyLoss.toFixed(1)} lbs/week</div>
+                        <div style="font-size: 11px; opacity: 0.7;">Minor fine-tuning at 6-week mark</div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    }
+    
+    // Show maintenance mode if active
+    let maintenanceInfo = '';
+    if (userSettings.maintenanceMode) {
+        maintenanceInfo = `
+            <div style="background: rgba(0,200,0,0.2); padding: 12px; border-radius: 6px; margin-top: 15px; border: 2px solid rgba(0,255,0,0.3);">
+                <div style="font-weight: bold; margin-bottom: 5px;">🎉 Maintenance Mode</div>
+                <div style="font-size: 12px;">Goal reached! Points set for weight maintenance.</div>
+            </div>
+        `;
+    }
+    
+    breakdownDiv.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 10px;">
+            <div><strong>S</strong> (Sex):</div>
+            <div style="text-align: right;">${breakdown.sex} pts</div>
+            
+            <div><strong>A</strong> (Age):</div>
+            <div style="text-align: right;">${breakdown.age} pts</div>
+            
+            <div><strong>W</strong> (Weight):</div>
+            <div style="text-align: right;">${breakdown.weight} pts</div>
+            
+            <div><strong>H</strong> (Height):</div>
+            <div style="text-align: right;">${breakdown.height} pts</div>
+            
+            <div><strong>E</strong> (Activity):</div>
+            <div style="text-align: right;">${breakdown.activity} pts</div>
+            
+            <div style="border-top: 2px solid rgba(255,255,255,0.3); padding-top: 8px; font-weight: bold;">Subtotal:</div>
+            <div style="border-top: 2px solid rgba(255,255,255,0.3); padding-top: 8px; text-align: right; font-weight: bold;">${breakdown.subtotal} pts</div>
+            
+            <div style="opacity: 0.8;">Floor Applied:</div>
+            <div style="text-align: right; opacity: 0.8;">${breakdown.floor} pts</div>
+            
+            ${breakdown.targetWeeklyLoss ? `
+                <div style="opacity: 0.8; font-size: 12px;">Target Loss:</div>
+                <div style="text-align: right; opacity: 0.8; font-size: 12px;">${breakdown.targetWeeklyLoss.toFixed(1)} lbs/wk</div>
+            ` : ''}
+            
+            <div style="font-size: 18px; font-weight: bold; color: #fff; padding-top: 8px; border-top: 2px solid #fff;">Daily Total:</div>
+            <div style="font-size: 18px; font-weight: bold; color: #fff; text-align: right; padding-top: 8px; border-top: 2px solid #fff;">${breakdown.final} pts</div>
+        </div>
+        ${maintenanceInfo}
+        ${periodInfo}
+    `;
+    
+    // Update floor input if it exists
+    const floorInput = document.getElementById('pointsFloor');
+    if (floorInput) {
+        floorInput.value = breakdown.floor;
+    }
+}
+
+// Recalculate points with custom floor
+async function recalculatePoints() {
+    if (!userSettings) {
+        alert('No user settings found');
+        return;
+    }
+    
+    // Get custom floor value
+    const floorInput = document.getElementById('pointsFloor');
+    const customFloor = floorInput ? parseInt(floorInput.value) : 23;
+    
+    if (customFloor < 20 || customFloor > 35) {
+        alert('Floor must be between 20 and 35 points');
+        return;
+    }
+    
+    // Temporarily update breakdown floor for calculation
+    const age = calculateAge(userSettings.birthday);
+    const result = calculateDailyPoints(
+        userSettings.gender,
+        age,
+        userSettings.currentWeight,
+        userSettings.heightInInches,
+        userSettings.activity
+    );
+    
+    // Override floor
+    result.breakdown.floor = customFloor;
+    result.breakdown.final = Math.max(customFloor, result.breakdown.subtotal);
+    result.points = result.breakdown.final;
+    
+    // Update user settings
+    userSettings.dailyPoints = result.points;
+    userSettings.pointsFloor = customFloor; // Store custom floor
+    
+    await saveSettings(userSettings);
+    await displayPointsBreakdown();
+    await updatePointsDisplay();
+    
+    alert(`Points recalculated!\n\nNew daily total: ${result.points} pts\nFloor: ${customFloor} pts`);
 }
 
 async function updateWeight() {
@@ -447,26 +976,38 @@ async function updateWeight() {
     });
 
     // Update current weight in settings
+    const oldWeight = userSettings.currentWeight;
     userSettings.currentWeight = weight;
     userSettings.lastWeighIn = today;
     
-    // Recalculate points based on new weight
-    const age = calculateAge(userSettings.birthday);
-    userSettings.dailyPoints = calculateDailyPoints(
-        userSettings.gender,
-        age,
-        weight,
-        userSettings.heightInInches,
-        userSettings.activity
-    );
+    // === 12-WEEK LOCKED SYSTEM ===
+    // Check if we've reached 12-week boundary
+    const boundaryReached = checkPointsPeriodBoundary();
+    
+    // Check if goal reached (maintenance mode)
+    const maintenancePoints = enterMaintenanceMode();
+    
+    // Points only change at boundaries or maintenance mode
+    let pointsChanged = false;
+    let pointsMessage = '';
+    
+    if (maintenancePoints) {
+        pointsChanged = true;
+        pointsMessage = `\n\n🎉 GOAL REACHED! Entering maintenance mode.\nDaily points increased to ${maintenancePoints} (no deficit).`;
+    } else if (boundaryReached) {
+        pointsChanged = true;
+        pointsMessage = `\n\n📅 12-week period ended. Points recalculated to ${userSettings.lockedPoints}.`;
+    } else {
+        pointsMessage = `\n\n🔒 Points locked at ${userSettings.lockedPoints}/day until ${userSettings.pointsPeriodEnd}`;
+    }
 
     await saveSettings(userSettings);
     await updateAllUI();
     
-    const weightChange = existingToday ? weight - existingToday.weight : 0;
+    const weightChange = oldWeight ? weight - oldWeight : 0;
     const weeklyGoal = calculateWeeklyGoal();
     
-    let message = `Weight updated to ${weight} lbs! Daily points adjusted to ${userSettings.dailyPoints}.`;
+    let message = `Weight updated to ${weight} lbs!`;
     
     if (weightChange !== 0) {
         message += `\n\nChange: ${weightChange > 0 ? '+' : ''}${weightChange.toFixed(1)} lbs`;
@@ -474,6 +1015,7 @@ async function updateWeight() {
     
     message += `\nWeekly goal: ${weeklyGoal.toFixed(1)} lbs/week`;
     message += `\nTo go: ${(weight - userSettings.goalWeight).toFixed(1)} lbs`;
+    message += pointsMessage;
     
     alert(message);
 }
@@ -900,56 +1442,350 @@ async function resetExercise(activity) {
     }
 }
 
-// ============ SLEEP TRACKING ============
-async function logSleep(type) {
-    const today = getTodayKey();
+// ============ SLEEP TRACKING V2.0 ============
+// Enhanced with time pickers and manual override
+
+let sleepSessionContext = {
+    mode: null,
+    pickedTime: null,
+    calculatedHours: null,
+    callback: null
+};
+
+async function goodNightButton() {
+    try {
+        // Check for incomplete session
+        const incomplete = await getIncompleteSleepSession();
+        
+        if (incomplete) {
+            // Scenario 3: Forgot to press Good Morning
+            console.log('⚠️ Incomplete session found:', incomplete);
+            showTimePickerDialog(
+                "Last sleep not ended. When did you wake up?",
+                async (time) => await handleRetroactiveEnd(incomplete, time)
+            );
+        } else {
+            // Scenario 1: Normal flow - start new session
+            await startSleepSession();
+            alert('Starting sleep session. Good night! 😴');
+            await updateSleepUI();
+        }
+    } catch (err) {
+        console.error('Good night error:', err);
+        alert('Error starting sleep session: ' + err.message);
+    }
+}
+
+async function goodMorningButton() {
+    try {
+        const incomplete = await getIncompleteSleepSession();
+        
+        if (incomplete) {
+            // Scenario 1: Normal flow - end existing session
+            const start = new Date(incomplete.start_datetime);
+            const now = new Date();
+            const hours = (now - start) / (1000 * 60 * 60);
+            
+            console.log('📊 Sleep duration:', hours, 'hours');
+            
+            if (hours > 14) {
+                // Too long - probably forgot
+                console.log('⚠️ Duration > 14 hours, asking for wake time');
+                showTimePickerDialog(
+                    "Session > 14 hours. When did you wake up?",
+                    async (time) => await handleEndWithTime(incomplete, time)
+                );
+            } else {
+                // Valid duration - show confirmation
+                showHoursConfirmDialog(hours, async (manualHours) => {
+                    await endSleepSession(null, manualHours);
+                    alert('Sleep logged! Good morning! ☀️');
+                    await updateSleepUI();
+                });
+            }
+        } else {
+            // Scenario 2: Forgot to press Good Night
+            console.log('⚠️ No active session, asking for sleep time');
+            showTimePickerDialog(
+                "Sleep not started. When did you fall asleep?",
+                async (time) => await handleRetroactiveStart(time)
+            );
+        }
+    } catch (err) {
+        console.error('Good morning error:', err);
+        alert('Error ending sleep session: ' + err.message);
+    }
+}
+
+function showTimePickerDialog(title, callback) {
+    const dialog = document.getElementById('timePickerDialog');
+    const titleEl = document.getElementById('timePickerTitle');
+    const input = document.getElementById('timePickerInput');
     
-    if (type === 'night') {
-        let sleep = await getSleepByDate(today);
-        if (!sleep) {
-            await addSleep({
-                date: today,
-                bedtime: new Date().toISOString()
-            });
-        } else {
-            sleep.bedtime = new Date().toISOString();
-            await updateSleep(sleep.id, { bedtime: sleep.bedtime });
-        }
-        alert('Good night! Sleep well! 😴');
-        
-    } else if (type === 'morning') {
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-        let sleep = await getSleepByDate(yesterday);
-        
-        if (sleep && sleep.bedtime && !sleep.wakeup) {
-            await updateSleep(sleep.id, { wakeup: new Date().toISOString() });
-            document.getElementById('sleepQuality').style.display = 'block';
-        } else {
-            alert('Good morning! ☀️');
-        }
+    titleEl.textContent = title;
+    
+    // Set default to current time
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    input.value = `${hours}:${minutes}`;
+    
+    dialog.style.display = 'flex';
+    sleepSessionContext.callback = callback;
+}
+
+function confirmTimePicker() {
+    const time = document.getElementById('timePickerInput').value;
+    if (!time) {
+        alert('Please select a time');
+        return;
     }
     
-    await updateAllUI();
+    document.getElementById('timePickerDialog').style.display = 'none';
+    
+    if (sleepSessionContext.callback) {
+        sleepSessionContext.callback(time);
+    }
+}
+
+function cancelTimePicker() {
+    document.getElementById('timePickerDialog').style.display = 'none';
+    sleepSessionContext.callback = null;
+}
+
+function showHoursConfirmDialog(calculatedHours, confirmCallback) {
+    const rounded = Math.round(calculatedHours * 10) / 10;
+    const dialog = document.getElementById('hoursConfirmDialog');
+    const calculatedSpan = document.getElementById('calculatedHours');
+    const manualInput = document.getElementById('manualHours');
+    
+    calculatedSpan.textContent = rounded;
+    manualInput.value = rounded;
+    
+    dialog.style.display = 'flex';
+    sleepSessionContext.confirmCallback = confirmCallback;
+    sleepSessionContext.calculatedHours = rounded;
+}
+
+function confirmHours(useCalculated) {
+    const dialog = document.getElementById('hoursConfirmDialog');
+    
+    if (useCalculated) {
+        // Use calculated hours
+        sleepSessionContext.confirmCallback(null);
+    } else {
+        // Use manual hours
+        const manual = parseFloat(document.getElementById('manualHours').value);
+        if (isNaN(manual) || manual < 0 || manual > 16) {
+            alert('Hours must be between 0 and 16');
+            return;
+        }
+        sleepSessionContext.confirmCallback(manual);
+    }
+    
+    dialog.style.display = 'none';
+}
+
+function cancelHoursConfirm() {
+    document.getElementById('hoursConfirmDialog').style.display = 'none';
+    sleepSessionContext.confirmCallback = null;
+}
+
+async function handleRetroactiveStart(time) {
+    try {
+        // User selected when they fell asleep
+        const now = new Date();
+        const [hours, minutes] = time.split(':');
+        const startTime = new Date(now);
+        startTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        
+        // If time is in the future, assume it was yesterday
+        if (startTime > now) {
+            startTime.setDate(startTime.getDate() - 1);
+        }
+        
+        console.log('🛏️ Retroactive start:', startTime.toISOString());
+        
+        // Start session with past time
+        await startSleepSession(startTime.toISOString());
+        
+        // Calculate duration to now
+        const duration = (now - startTime) / (1000 * 60 * 60);
+        
+        // Show confirmation
+        showHoursConfirmDialog(duration, async (manualHours) => {
+            await endSleepSession(null, manualHours);
+            alert('Sleep logged! Good morning! ☀️');
+            await updateSleepUI();
+        });
+    } catch (err) {
+        console.error('Retroactive start error:', err);
+        alert('Error: ' + err.message);
+    }
+}
+
+async function handleRetroactiveEnd(session, time) {
+    try {
+        // User selected when they woke up
+        const [hours, minutes] = time.split(':');
+        const endTime = new Date();
+        endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        
+        const startTime = new Date(session.start_datetime);
+        
+        // If end time is before start, it's the next day
+        if (endTime <= startTime) {
+            endTime.setDate(endTime.getDate() + 1);
+        }
+        
+        console.log('⏰ Retroactive end:', endTime.toISOString());
+        
+        // Calculate duration
+        const duration = (endTime - startTime) / (1000 * 60 * 60);
+        
+        if (duration > 14) {
+            alert('Duration > 14 hours. Please check your times.');
+            return;
+        }
+        
+        // Show confirmation
+        showHoursConfirmDialog(duration, async (manualHours) => {
+            await endSleepSession(endTime.toISOString(), manualHours);
+            
+            // Now start a new session for tonight
+            await startSleepSession();
+            alert('Previous sleep logged! Starting new session. Good night! 😴');
+            await updateSleepUI();
+        });
+    } catch (err) {
+        console.error('Retroactive end error:', err);
+        alert('Error: ' + err.message);
+    }
+}
+
+async function handleEndWithTime(session, time) {
+    try {
+        // User selected when they woke up (for > 14hr session)
+        const [hours, minutes] = time.split(':');
+        const endTime = new Date();
+        endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        
+        const startTime = new Date(session.start_datetime);
+        
+        // If end time is before start, it's the next day
+        if (endTime <= startTime) {
+            endTime.setDate(endTime.getDate() + 1);
+        }
+        
+        console.log('⏰ End with time:', endTime.toISOString());
+        
+        // Calculate duration
+        const duration = (endTime - startTime) / (1000 * 60 * 60);
+        
+        if (duration > 14) {
+            alert('Duration still > 14 hours. Please check your times.');
+            return;
+        }
+        
+        // Show confirmation
+        showHoursConfirmDialog(duration, async (manualHours) => {
+            await endSleepSession(endTime.toISOString(), manualHours);
+            alert('Sleep logged! Good morning! ☀️');
+            await updateSleepUI();
+        });
+    } catch (err) {
+        console.error('End with time error:', err);
+        alert('Error: ' + err.message);
+    }
+}
+
+async function updateSleepUI() {
+    try {
+        const incomplete = await getIncompleteSleepSession();
+        const recent = await getRecentSleepSessions(7);
+        
+        const statusDiv = document.getElementById('sleepStatus');
+        
+        if (!statusDiv) return; // Element not on page
+        
+        if (incomplete) {
+            const start = new Date(incomplete.start_datetime);
+            const now = new Date();
+            const duration = (now - start) / (1000 * 60 * 60);
+            
+            statusDiv.innerHTML = `
+                <div style="padding: 15px; background: var(--primary); border-radius: 8px; margin: 10px 0;">
+                    <p style="font-weight: bold; margin: 0 0 5px 0;">😴 Currently Sleeping</p>
+                    <p style="margin: 0;">Started: ${start.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}</p>
+                    <p style="margin: 5px 0 0 0;">Duration: ${Math.round(duration * 10) / 10} hours</p>
+                </div>
+            `;
+        } else {
+            if (recent.length > 0) {
+                const last = recent[0];
+                const lastStart = new Date(last.start_datetime);
+                statusDiv.innerHTML = `
+                    <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
+                        <p style="font-weight: bold; margin: 0 0 5px 0;">Last Sleep</p>
+                        <p style="margin: 0;">${last.duration_hours} hours</p>
+                        <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.7;">
+                            ${lastStart.toLocaleDateString()} ${lastStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}
+                        </p>
+                    </div>
+                `;
+            } else {
+                statusDiv.innerHTML = `
+                    <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
+                        <p style="margin: 0; opacity: 0.7;">No sleep logged yet</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Show history
+        const historyDiv = document.getElementById('sleepHistory');
+        if (historyDiv && recent.length > 0) {
+            const avgHours = recent.reduce((sum, s) => sum + s.duration_hours, 0) / recent.length;
+            
+            historyDiv.innerHTML = `
+                <h3 style="margin: 20px 0 10px 0;">Recent Sleep (7 days)</h3>
+                <div style="padding: 15px; background: var(--bg-light); border-radius: 8px;">
+                    ${recent.map(s => {
+                        const start = new Date(s.start_datetime);
+                        return `
+                            <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                <span style="font-weight: 500;">${start.toLocaleDateString()}</span>
+                                <span style="float: right; color: var(--primary); font-weight: bold;">${s.duration_hours} hrs</span>
+                            </div>
+                        `;
+                    }).join('')}
+                    <div style="padding: 10px 0 0 0; font-weight: bold;">
+                        Average: ${Math.round(avgHours * 10) / 10} hours
+                    </div>
+                </div>
+            `;
+        }
+    } catch (err) {
+        console.error('Update sleep UI error:', err);
+    }
+}
+
+// Legacy function for compatibility
+async function logSleep(type) {
+    if (type === 'night') {
+        await goodNightButton();
+    } else if (type === 'morning') {
+        await goodMorningButton();
+    }
 }
 
 async function setSleepQuality(quality) {
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-    const sleep = await getSleepByDate(yesterday);
-    
-    if (sleep) {
-        await updateSleep(sleep.id, { quality });
-        await updateAllUI();
-        document.getElementById('sleepQuality').style.display = 'none';
-        
-        // Visual feedback
-        document.querySelectorAll('.quality-btn').forEach(btn => btn.classList.remove('selected'));
-        if (event && event.target) {
-            event.target.classList.add('selected');
-        }
-        
-        setTimeout(() => {
-            document.querySelectorAll('.quality-btn').forEach(btn => btn.classList.remove('selected'));
-        }, 2000);
+    // Quality can be added to most recent session
+    const recent = await getRecentSleepSessions(1);
+    if (recent.length > 0) {
+        await updateSleepSession(recent[0].id, { quality });
+        await updateSleepUI();
+        alert('Sleep quality updated!');
     }
 }
 
@@ -2712,6 +3548,9 @@ function switchTab(tab) {
         document.getElementById('settingsHeightFeet').value = feet;
         document.getElementById('settingsHeightInches').value = inches;
         document.getElementById('settingsActivity').value = userSettings.activity || 'moderate';
+        
+        // Display points breakdown (v2.0)
+        displayPointsBreakdown();
     }
 }
 
@@ -3227,6 +4066,7 @@ async function updateAllUI() {
     await updateWaterDisplay();
     await updateExercisePoints();
     await updateSleepLog();
+    await updateSleepUI(); // v2.0 - Update sleep status and history
     await updateTasksDisplay();
     await updateMedsDisplay();
     await updateEmailReminders();
