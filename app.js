@@ -718,32 +718,6 @@ function enterMaintenanceMode() {
 
 // ============ END 12-WEEK POINTS PERIOD SYSTEM ============
 
-// Get points breakdown for display
-    if (!userSettings) return;
-    
-    const today = new Date().toISOString().split('T')[0];
-    const lastUpdate = new Date(userSettings.lastPointsUpdate);
-    const daysSinceUpdate = Math.floor((new Date(today) - lastUpdate) / (1000 * 60 * 60 * 24));
-    
-    // Recalculate every 28 days (4 weeks)
-    if (daysSinceUpdate >= 28) {
-        const age = calculateAge(userSettings.birthday);
-        const result = calculateDailyPoints(
-            userSettings.gender,
-            age,
-            userSettings.currentWeight,
-            userSettings.heightInInches,
-            userSettings.activity
-        );
-        
-        userSettings.dailyPoints = result.points;
-        userSettings.lastPointsUpdate = today;
-        await saveSettings(userSettings);
-        
-        console.log(`📊 Points recalculated: ${newPoints} (every 4 weeks)`);
-    }
-}
-
 async function saveSettings() {
     const name = document.getElementById('settingsName').value.trim();
     const email = document.getElementById('settingsEmail').value.trim();
