@@ -1,10 +1,10 @@
 // ============ DATABASE LAYER - IndexedDB ============
 // Handles all data persistence for multi-year tracking
-// Tables: settings, foods, exercise, sleep, medications, water, tasks, photos, pantry, preferences, weightLogs
+// v2.0 - Full timestamp architecture with 4AM reset awareness
 
-const APP_VERSION = '1.9.6'; // Single source - update here when deploying
+const APP_VERSION = '2.0.0'; // v2.0 - Timestamp architecture
 const DB_NAME = 'UltimateWellnessDB';
-const DB_VERSION = 3; // Bumped for upc_cache table
+const DB_VERSION = 4; // v2.0 - Added timestamps, sleep_sessions table
 let db = null;
 
 // Initialize IndexedDB
@@ -184,6 +184,19 @@ async function initDatabase() {
                     upcStore.createIndex('verified', 'verified', { unique: false });
                     console.log('   ✓ Created upc_cache table');
                 }
+                
+                // SLEEP_SESSIONS table (v2.0 - proper sleep tracking with start/end)
+                if (!db.objectStoreNames.contains('sleep_sessions')) {
+                    const sleepSessionStore = db.createObjectStore('sleep_sessions', { keyPath: 'id', autoIncrement: true });
+                    sleepSessionStore.createIndex('start_datetime', 'start_datetime', { unique: false });
+                    sleepSessionStore.createIndex('end_datetime', 'end_datetime', { unique: false });
+                    sleepSessionStore.createIndex('valid', 'valid', { unique: false });
+                    console.log('   ✓ Created sleep_sessions table');
+                }
+                
+                // NOTE: v2.0 adds 'timestamp' field to foods, exercise, water, med_logs, pantry
+                // These columns are added dynamically when new records are created
+                // Existing records without timestamps will use their 'date' field as fallback
 
                 console.log('✅ Database schema complete');
                 console.log('📋 Final tables:', Array.from(db.objectStoreNames));
@@ -433,6 +446,84 @@ async function updateSleep(id, updates) {
     }
 }
 
+// Sleep Sessions (v2.0 - proper start/end tracking)
+async function startSleepSession(startDatetime) {
+    // Check for incomplete session
+    const incomplete = await getIncompleteSleepSession();
+    if (incomplete) {
+        // Overwrite it
+        await dbDelete('sleep_sessions', incomplete.id);
+        console.log('⚠️ Overwrote incomplete sleep session');
+    }
+    
+    const session = {
+        start_datetime: startDatetime || new Date().toISOString(),
+        end_datetime: null,
+        duration_hours: null,
+        valid: false,
+        quality: null,
+        notes: ''
+    };
+    
+    return await dbAdd('sleep_sessions', session);
+}
+
+async function endSleepSession(endDatetime, manualDurationHours = null) {
+    const incomplete = await getIncompleteSleepSession();
+    if (!incomplete) {
+        throw new Error('No active sleep session to end');
+    }
+    
+    const end = endDatetime ? new Date(endDatetime) : new Date();
+    const start = new Date(incomplete.start_datetime);
+    
+    // Calculate duration
+    let durationHours = (end - start) / (1000 * 60 * 60);
+    
+    // Allow manual override
+    if (manualDurationHours !== null && manualDurationHours >= 0) {
+        durationHours = manualDurationHours;
+    }
+    
+    // Validate
+    const valid = durationHours > 0 && durationHours <= 14;
+    
+    incomplete.end_datetime = end.toISOString();
+    incomplete.duration_hours = Math.round(durationHours * 10) / 10; // Round to 1 decimal
+    incomplete.valid = valid;
+    
+    return await dbPut('sleep_sessions', incomplete);
+}
+
+async function getIncompleteSleepSession() {
+    const sessions = await dbGetAll('sleep_sessions');
+    return sessions.find(s => s.end_datetime === null) || null;
+}
+
+async function getRecentSleepSessions(limit = 30) {
+    const sessions = await dbGetAll('sleep_sessions');
+    return sessions
+        .filter(s => s.valid)
+        .sort((a, b) => new Date(b.start_datetime) - new Date(a.start_datetime))
+        .slice(0, limit);
+}
+
+async function getSleepSessionById(id) {
+    return await dbGet('sleep_sessions', id);
+}
+
+async function updateSleepSession(id, updates) {
+    const session = await dbGet('sleep_sessions', id);
+    if (session) {
+        Object.assign(session, updates);
+        return await dbPut('sleep_sessions', session);
+    }
+}
+
+async function deleteSleepSession(id) {
+    return await dbDelete('sleep_sessions', id);
+}
+
 // Medications
 async function addMedication(med) {
     return await dbAdd('medications', med);
@@ -499,6 +590,9 @@ async function addFoodWaterToDate(date, ml) {
 // Tasks
 async function addTask(task) {
     task.timestamp = Date.now();
+    task.start_datetime = new Date().toISOString(); // v2.0 - track when created
+    task.end_datetime = null; // v2.0 - track when completed
+    task.age_hours = null; // v2.0 - calculated on completion
     return await dbAdd('tasks', task);
 }
 
@@ -513,6 +607,18 @@ async function getAllTasks() {
 async function updateTask(id, updates) {
     const task = await dbGet('tasks', id);
     if (task) {
+        // v2.0 - if marking as completed, set end_datetime
+        if (updates.completed && !task.completed && !task.end_datetime) {
+            updates.end_datetime = new Date().toISOString();
+            
+            // Calculate age in hours
+            if (task.start_datetime) {
+                const start = new Date(task.start_datetime);
+                const end = new Date(updates.end_datetime);
+                updates.age_hours = Math.round((end - start) / (1000 * 60 * 60) * 10) / 10;
+            }
+        }
+        
         Object.assign(task, updates);
         return await dbPut('tasks', task);
     }
@@ -538,8 +644,45 @@ async function getPhotosByDate(date) {
 
 // Pantry
 async function addPantryItem(item) {
-    item.timestamp = Date.now();
+    // Prevent future timestamps
+    item.added_timestamp = preventFutureTimestamp(item.added_timestamp || new Date().toISOString());
+    item.timestamp = Date.now(); // Legacy field
+    item.quantity_remaining = item.quantity || 0;
+    item.last_used_timestamp = null;
     return await dbAdd('pantry', item);
+}
+
+async function deductFromPantry(itemName, quantity, timestamp = null) {
+    const items = await getAllPantryItems();
+    const item = items.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+    
+    if (!item) {
+        throw new Error(`Pantry item not found: ${itemName}`);
+    }
+    
+    if (item.quantity_remaining < quantity) {
+        throw new Error(`Not enough ${itemName}. Have: ${item.quantity_remaining}, Need: ${quantity}`);
+    }
+    
+    item.quantity_remaining -= quantity;
+    item.last_used_timestamp = preventFutureTimestamp(timestamp || new Date().toISOString());
+    
+    await dbPut('pantry', item);
+    
+    console.log(`📦 Deducted ${quantity} ${item.unit || 'unit(s)'} of ${itemName}`);
+    return item;
+}
+
+async function updatePantryItem(id, updates) {
+    const item = await dbGet('pantry', id);
+    if (item) {
+        Object.assign(item, updates);
+        return await dbPut('pantry', item);
+    }
+}
+
+async function deletePantryItem(id) {
+    return await dbDelete('pantry', id);
 }
 
 async function getAllPantryItems() {
@@ -811,6 +954,141 @@ async function deleteUPCProduct(upc) {
     return await dbDelete('upc_cache', upc);
 }
 
+// ============ V2.0 UTILITY FUNCTIONS ============
+
+// Log yesterday's water total at 4AM
+async function logDailyWaterTotal(date) {
+    try {
+        const water = await getWaterByDate(date);
+        if (!water) return;
+        
+        const manualMl = (water.drops || 0) * 250;
+        const foodMl = water.foodWater || 0;
+        const totalMl = manualMl + foodMl;
+        
+        // Update water record with final logged total
+        water.daily_total_ml = totalMl;
+        water.logged_at_4am = new Date().toISOString();
+        
+        await dbPut('water', water);
+        
+        console.log(`💧 Logged water total for ${date}: ${totalMl}ml`);
+    } catch (err) {
+        console.error('Error logging daily water total:', err);
+    }
+}
+
+// Get current day state for bot awareness
+async function getCurrentDayState() {
+    const today = getTodayKey();
+    const settings = await getSettings();
+    
+    if (!settings) return null;
+    
+    // Get today's data
+    const foods = await getFoodsByDate(today);
+    const exercise = await getExerciseByDate(today);
+    const water = await getWaterByDate(today);
+    const tasks = await getTasksByDate(today);
+    const medLogs = await getMedLogsByDate(today);
+    const pantryItems = await getAllPantryItems();
+    const bonusPoints = await getBonusPoints();
+    
+    // Calculate points
+    const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
+    const exercisePoints = exercise.reduce((sum, e) => sum + e.points, 0);
+    const netPoints = foodPoints - exercisePoints;
+    
+    const dailyPointsAllowed = settings.dailyPoints;
+    const dailyPointsUsed = foodPoints;
+    const bonusPointsAvailable = bonusPoints.total || 0;
+    const pointsRemaining = dailyPointsAllowed - netPoints + bonusPointsAvailable;
+    
+    // Calculate water
+    const manualMl = (water?.drops || 0) * 250;
+    const foodMl = water?.foodWater || 0;
+    const totalMl = manualMl + foodMl;
+    
+    // Calculate next reset time
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(4, 0, 0, 0);
+    const hoursUntilReset = (tomorrow - now) / (1000 * 60 * 60);
+    
+    return {
+        // Date/Time
+        currentDate: today,
+        currentTime: now.toISOString(),
+        currentTimestamp: Date.now(),
+        nextReset: tomorrow.toISOString(),
+        hoursUntilReset: Math.round(hoursUntilReset * 10) / 10,
+        
+        // Points
+        dailyPointsAllowed,
+        dailyPointsUsed,
+        bonusPointsAvailable,
+        pointsRemaining,
+        exercisePoints,
+        netPoints,
+        
+        // Meals Today
+        mealsToday: foods.map(f => ({
+            name: f.name,
+            points: f.points,
+            time: f.time,
+            timestamp: f.timestamp
+        })),
+        
+        // Exercise Today
+        exerciseToday: exercise.map(e => ({
+            activity: e.activity,
+            minutes: e.minutes,
+            points: e.points,
+            timestamp: e.timestamp
+        })),
+        
+        // Water
+        waterDrops: water?.drops || 0,
+        waterFoodMl: foodMl,
+        waterTotalMl: totalMl,
+        waterGoalMl: 2000,
+        
+        // Tasks
+        tasksTotal: tasks.length,
+        tasksCompleted: tasks.filter(t => t.completed).length,
+        
+        // Meds
+        medsTotal: await dbGetAll('medications').then(m => m.length),
+        medsTaken: medLogs.filter(m => m.taken).length,
+        
+        // Pantry
+        pantryItems: pantryItems.map(p => ({
+            name: p.name,
+            quantity: p.quantity,
+            unit: p.unit,
+            added: p.added_timestamp
+        })),
+        
+        // User Info
+        userName: settings.name,
+        userEmail: settings.email
+    };
+}
+
+// Prevent future timestamps
+function preventFutureTimestamp(timestamp) {
+    const now = Date.now();
+    const ts = new Date(timestamp).getTime();
+    
+    if (ts > now) {
+        console.warn('⚠️ Future timestamp detected, using current time');
+        return new Date().toISOString();
+    }
+    
+    return timestamp;
+}
+
 // ============ DAILY MAINTENANCE ============
 
 async function performDailyMaintenance() {
@@ -844,6 +1122,9 @@ async function performDailyMaintenance() {
             console.log(`🎯 Used ${deducted} bonus points for overage on ${yesterday}`);
         }
     }
+    
+    // Log yesterday's final water total (v2.0)
+    await logDailyWaterTotal(yesterday);
 
     localStorage.setItem('lastMaintenance', today);
     console.log('✅ Daily maintenance complete');
