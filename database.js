@@ -2,8 +2,9 @@
 // Handles all data persistence for multi-year tracking
 // Tables: settings, foods, exercise, sleep, medications, water, tasks, photos, pantry, preferences, weightLogs
 
+const APP_VERSION = '1.9.6';
 const DB_NAME = 'UltimateWellnessDB';
-const DB_VERSION = 2; // Bumped for naps table
+const DB_VERSION = 3; // Bumped for upc_cache table
 let db = null;
 
 // Initialize IndexedDB
@@ -175,6 +176,14 @@ async function initDatabase() {
                     napStore.createIndex('date', 'date', { unique: false });
                     console.log('   ✓ Created naps table');
                 }
+                
+                // UPC_CACHE table (barcode product lookup cache)
+                if (!db.objectStoreNames.contains('upc_cache')) {
+                    const upcStore = db.createObjectStore('upc_cache', { keyPath: 'upc' });
+                    upcStore.createIndex('product_name', 'product_name', { unique: false });
+                    upcStore.createIndex('verified', 'verified', { unique: false });
+                    console.log('   ✓ Created upc_cache table');
+                }
 
                 console.log('✅ Database schema complete');
                 console.log('📋 Final tables:', Array.from(db.objectStoreNames));
@@ -305,7 +314,72 @@ async function getSettings() {
 
 async function saveSettings(settings) {
     settings.id = 'user';
-    return await dbPut('settings', settings);
+    
+    // Save to database
+    await dbPut('settings', settings);
+    
+    // BACKUP to localStorage (survives cache clears)
+    try {
+        localStorage.setItem('userSettingsBackup', JSON.stringify({
+            name: settings.name,
+            email: settings.email,
+            birthday: settings.birthday,
+            gender: settings.gender,
+            currentWeight: settings.currentWeight,
+            goalWeight: settings.goalWeight,
+            heightInInches: settings.heightInInches,
+            activity: settings.activity,
+            dailyPoints: settings.dailyPoints,
+            joinDate: settings.joinDate,
+            appVersion: settings.appVersion, // Include version in backup
+            lastBackup: Date.now()
+        }));
+        console.log('✅ User settings backed up to localStorage');
+    } catch (err) {
+        console.error('⚠️ Failed to backup settings:', err);
+    }
+    
+    return settings;
+}
+
+// Update app version in user settings
+async function updateAppVersion() {
+    const settings = await getSettings();
+    if (settings) {
+        const oldVersion = settings.appVersion || 'unknown';
+        if (oldVersion !== APP_VERSION) {
+            console.log(`📦 Updating app version: ${oldVersion} → ${APP_VERSION}`);
+            settings.appVersion = APP_VERSION;
+            settings.lastUpdated = new Date().toISOString();
+            await saveSettings(settings);
+        }
+    }
+}
+
+// Restore settings from localStorage backup if database is empty
+async function restoreSettingsFromBackup() {
+    try {
+        const backup = localStorage.getItem('userSettingsBackup');
+        if (!backup) {
+            return null;
+        }
+        
+        const settings = JSON.parse(backup);
+        console.log('📦 Found settings backup from localStorage');
+        
+        // Restore to database
+        settings.id = 'user';
+        settings.lastPointsUpdate = settings.lastPointsUpdate || getTodayKey();
+        settings.lastWeighIn = settings.lastWeighIn || getTodayKey();
+        
+        await dbPut('settings', settings);
+        console.log('✅ Restored user settings from backup');
+        
+        return settings;
+    } catch (err) {
+        console.error('❌ Failed to restore from backup:', err);
+        return null;
+    }
 }
 
 // Foods
@@ -711,6 +785,30 @@ async function importAllData(data) {
     }
 
     console.log('✅ Data imported successfully');
+}
+
+// ============ UPC BARCODE CACHE ============
+
+async function getUPCProduct(upc) {
+    try {
+        return await dbGet('upc_cache', upc);
+    } catch (err) {
+        return null; // Not in cache
+    }
+}
+
+async function saveUPCProduct(upcData) {
+    // upcData: { upc, product_name, brand, points, nutrition, verified, last_updated }
+    upcData.last_updated = Date.now();
+    return await dbPut('upc_cache', upcData);
+}
+
+async function getAllUPCProducts() {
+    return await dbGetAll('upc_cache');
+}
+
+async function deleteUPCProduct(upc) {
+    return await dbDelete('upc_cache', upc);
 }
 
 // ============ DAILY MAINTENANCE ============
