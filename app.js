@@ -1,5 +1,8 @@
 // ============ MAIN APPLICATION LOGIC ============
-// Ultimate Wellness System v1.0
+// Ultimate Wellness System - Version auto-managed in database
+
+// ============ APP VERSION ============
+const APP_VERSION = '1.9.6'; // Update this when deploying new features
 
 // ============ SECURE API CONFIGURATION ============
 // Cloudflare Worker proxy - API key is now 100% hidden and secure!
@@ -101,13 +104,38 @@ async function init() {
         // Load user settings
         userSettings = await getSettings();
         
+        // If no settings found, try to restore from localStorage backup
+        if (!userSettings) {
+            console.log('🔍 No user settings found, checking for backup...');
+            userSettings = await restoreSettingsFromBackup();
+            
+            if (userSettings) {
+                console.log('✅ User settings restored from backup!');
+                alert('👋 Welcome back!\n\nYour settings were automatically restored from backup.');
+            }
+        }
+        
         if (!userSettings) {
             // Show setup screen
             document.getElementById('setupScreen').classList.add('active');
             console.log('👋 New user - showing setup screen');
+            
+            // Show current app version on setup screen
+            await updateVersionDisplay();
         } else {
             // Hide setup screen
             document.getElementById('setupScreen').classList.remove('active');
+            
+            // Check if app version needs updating
+            if (userSettings.appVersion !== APP_VERSION) {
+                const oldVersion = userSettings.appVersion || 'unknown';
+                console.log(`🔄 Updating app version: ${oldVersion} → ${APP_VERSION}`);
+                userSettings.appVersion = APP_VERSION;
+                await saveSettings(userSettings);
+            }
+            
+            // Update version display
+            await updateVersionDisplay();
             
             // Check if points recalculation is needed (every 4 weeks)
             await checkPointsRecalculation();
@@ -240,11 +268,12 @@ async function completeSetup() {
             dailyPoints,
             lastPointsUpdate: new Date().toISOString().split('T')[0],
             lastWeighIn: new Date().toISOString().split('T')[0],
-            joinDate: new Date().toISOString().split('T')[0]
+            joinDate: new Date().toISOString().split('T')[0],
+            appVersion: APP_VERSION // Track version in database
         };
 
         console.log('💾 Saving settings...', userSettings);
-        await dbPut('settings', userSettings);
+        await saveSettings(userSettings);
     
         // Log initial weight
         await addWeightLog({
@@ -343,7 +372,7 @@ async function checkPointsRecalculation() {
         
         userSettings.dailyPoints = newPoints;
         userSettings.lastPointsUpdate = today;
-        await dbPut('settings', userSettings);
+        await saveSettings(userSettings);
         
         console.log(`📊 Points recalculated: ${newPoints} (every 4 weeks)`);
     }
@@ -386,7 +415,7 @@ async function saveSettings() {
         activity
     );
 
-    await dbPut('settings', userSettings);
+    await saveSettings(userSettings);
     await updateAllUI();
     alert('Settings saved!');
 }
@@ -432,7 +461,7 @@ async function updateWeight() {
         userSettings.activity
     );
 
-    await dbPut('settings', userSettings);
+    await saveSettings(userSettings);
     await updateAllUI();
     
     const weightChange = existingToday ? weight - existingToday.weight : 0;
@@ -720,33 +749,40 @@ async function fillWaterDrop(dropNum) {
 async function updateWaterDisplay() {
     const today = getTodayKey();
     const water = await getWaterByDate(today);
-    const filled = water.drops || 0;
+    const manualDrops = water.drops || 0; // Manually clicked drops
     const foodWaterMl = water.foodWater || 0;
     
+    // Calculate total water in ml
+    const manualMl = manualDrops * 250;
+    const totalMl = manualMl + foodWaterMl;
+    
+    // Calculate how many drops SHOULD be filled based on total
+    const totalDropsFromWater = Math.floor(totalMl / 250);
+    const dropsToShow = Math.min(8, totalDropsFromWater); // Max 8 drops
+    
+    // Fill drops based on total water
     for (let i = 1; i <= 8; i++) {
         const drop = document.getElementById(`drop${i}`);
         if (drop) {
-            if (i <= filled) {
+            if (i <= dropsToShow) {
                 drop.classList.add('filled');
             } else {
                 drop.classList.remove('filled');
             }
         }
     }
-
-    const directMl = filled * 250;
-    const totalMl = directMl + foodWaterMl;
     
+    // Show detailed breakdown
     const totalDiv = document.getElementById('waterTotal');
     if (foodWaterMl > 0) {
         totalDiv.innerHTML = `
             <div style="font-weight: 600;">${totalMl}ml / 2000ml</div>
             <div style="font-size: 10px; opacity: 0.7;">
-                Drinks: ${directMl}ml (${filled}/8) + Food: ${foodWaterMl}ml
+                💧 Direct: ${manualMl}ml (${manualDrops} cups) + 🍽️ Food: ${foodWaterMl}ml
             </div>
         `;
     } else {
-        totalDiv.textContent = `${totalMl}ml / 2000ml (${filled}/8 cups)`;
+        totalDiv.textContent = `${totalMl}ml / 2000ml (${dropsToShow}/8 cups)`;
     }
 }
 
@@ -3168,6 +3204,23 @@ You're doing great! Keep going! 💪
     });
 }
 
+// Update version display from database
+async function updateVersionDisplay() {
+    const version = userSettings?.appVersion || APP_VERSION;
+    
+    // Update header version
+    const headerVersion = document.querySelector('.version');
+    if (headerVersion) {
+        headerVersion.textContent = `v${version}`;
+    }
+    
+    // Update about section version
+    const aboutVersion = document.getElementById('aboutVersion');
+    if (aboutVersion) {
+        aboutVersion.textContent = `Ultimate Wellness System v${version}`;
+    }
+}
+
 async function updateAllUI() {
     await updateWeightDisplay();
     await updatePointsDisplay();
@@ -3582,6 +3635,41 @@ async function analyzeImage(imageDataUrl) {
     const base64Data = imageDataUrl.split(',')[1];
     
     try {
+        // For barcode scanning, use UPC lookup instead of just AI
+        if (useCase === 'barcode') {
+            resultDiv.innerHTML = '<div class="spinner"></div><p>Reading barcode...</p>';
+            
+            // First, use AI to extract the UPC code
+            const upcPrompt = `Look at this image and extract any UPC, EAN, or barcode number you see. 
+            
+Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, return the longest one. If no barcode is visible, respond with "NONE".`;
+            
+            const upcResponse = await callClaudeVision(base64Data, upcPrompt);
+            const upcText = upcResponse.rawText || upcResponse.toString();
+            const upcMatch = upcText.match(/\d{8,14}/); // Match 8-14 digit codes (UPC/EAN)
+            
+            if (!upcMatch) {
+                // No UPC found, fall back to regular AI analysis
+                resultDiv.innerHTML = '<div class="spinner"></div><p>No barcode detected, analyzing product visually...</p>';
+                const prompt = getAnalysisPrompt(useCase);
+                const response = await callClaudeVision(base64Data, prompt);
+                displayScanResult(response, useCase);
+                return;
+            }
+            
+            const upc = upcMatch[0];
+            console.log(`📊 Extracted UPC: ${upc}`);
+            
+            // Lookup UPC in database/API
+            resultDiv.innerHTML = '<div class="spinner"></div><p>Looking up product database...</p>';
+            const productData = await lookupUPC(upc);
+            
+            // Show UPC product interface
+            await showUPCProduct(productData, upc);
+            return;
+        }
+        
+        // For other scan types, use regular AI analysis
         const prompt = getAnalysisPrompt(useCase);
         const response = await callClaudeVision(base64Data, prompt);
         
@@ -3758,6 +3846,293 @@ async function callClaudeVision(base64Image, prompt) {
     }
     
     return { rawText: text };
+}
+
+// ============ UPC BARCODE LOOKUP MODULE ============
+
+// Lookup product in Open Food Facts database
+async function lookupUPC(upc) {
+    try {
+        console.log(`🔍 Looking up UPC: ${upc}`);
+        
+        // Check local cache first
+        const cached = await getUPCProduct(upc);
+        if (cached) {
+            console.log('✅ Found in local cache');
+            return cached;
+        }
+        
+        // Lookup in Open Food Facts API
+        console.log('🌐 Querying Open Food Facts API...');
+        const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${upc}.json`);
+        
+        if (!response.ok) {
+            throw new Error('API request failed');
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 0) {
+            console.log('❌ Product not found in database');
+            return null; // Not found
+        }
+        
+        const product = data.product;
+        
+        // Calculate SmartPoints from nutrition
+        const nutrition = {
+            calories: product.nutriments?.['energy-kcal_100g'] || 0,
+            protein: product.nutriments?.proteins_100g || 0,
+            carbs: product.nutriments?.carbohydrates_100g || 0,
+            sugar: product.nutriments?.sugars_100g || 0,
+            fat: product.nutriments?.fat_100g || 0,
+            saturated_fat: product.nutriments?.['saturated-fat_100g'] || 0,
+            fiber: product.nutriments?.fiber_100g || 0
+        };
+        
+        const points = calculateSmartPoints(nutrition);
+        const servingSize = product.serving_size || '100g';
+        
+        // Build product data
+        const productData = {
+            upc: upc,
+            product_name: product.product_name || 'Unknown Product',
+            brand: product.brands || '',
+            points: points,
+            nutrition: nutrition,
+            serving_size: servingSize,
+            image_url: product.image_url || '',
+            verified: false, // User hasn't verified yet
+            source: 'openfoodfacts'
+        };
+        
+        console.log('✅ Product found:', productData.product_name);
+        
+        // Don't save to cache yet - wait for user verification
+        return productData;
+        
+    } catch (error) {
+        console.error('UPC lookup error:', error);
+        return null;
+    }
+}
+
+// Calculate SmartPoints from nutrition info
+function calculateSmartPoints(nutrition) {
+    // SmartPoints formula (simplified WW algorithm)
+    // Points = (calories * 0.0305) + (saturated_fat * 0.275) + (sugar * 0.12) - (protein * 0.098)
+    
+    const calories = nutrition.calories || 0;
+    const protein = nutrition.protein || 0;
+    const sugar = nutrition.sugar || 0;
+    const saturated_fat = nutrition.saturated_fat || 0;
+    
+    let points = (calories * 0.0305) + (saturated_fat * 0.275) + (sugar * 0.12) - (protein * 0.098);
+    
+    // Minimum 0 points
+    points = Math.max(0, points);
+    
+    // Round to nearest whole number
+    return Math.round(points);
+}
+
+// Show UPC product with editable points
+async function showUPCProduct(productData, upc) {
+    const resultDiv = document.getElementById('scanResult');
+    
+    if (!productData) {
+        // Product not found - allow manual entry
+        resultDiv.innerHTML = `
+            <div class="card" style="margin-top: 15px; border: 2px solid var(--warning);">
+                <h3>⚠️ UPC Not Found</h3>
+                <p style="color: var(--text-secondary);">UPC: ${upc}</p>
+                <p style="margin: 15px 0;">This barcode is not in our database. Please enter product details:</p>
+                
+                <div style="margin: 15px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Product Name:</label>
+                    <input type="text" id="manualProductName" placeholder="e.g., Organic Milk" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text);">
+                </div>
+                
+                <div style="margin: 15px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Brand (optional):</label>
+                    <input type="text" id="manualBrand" placeholder="e.g., Organic Valley" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text);">
+                </div>
+                
+                <div style="margin: 15px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">SmartPoints:</label>
+                    <input type="number" id="manualPoints" value="0" min="0" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text);">
+                </div>
+                
+                <button class="btn" onclick="saveManualUPC('${upc}')">
+                    💾 Save to Local Database
+                </button>
+                <button class="btn btn-secondary" style="margin-left: 10px;" onclick="closeScan()">
+                    Cancel
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    // Product found - show with editable points
+    const pointsStatus = productData.verified ? '✓ Verified' : '⚠️ Unverified';
+    const statusColor = productData.verified ? 'var(--success)' : 'var(--warning)';
+    
+    resultDiv.innerHTML = `
+        <div class="card" style="margin-top: 15px;">
+            <h3>${productData.product_name}</h3>
+            ${productData.brand ? `<p style="color: var(--text-secondary);">${productData.brand}</p>` : ''}
+            <p style="font-size: 12px; color: var(--text-secondary);">UPC: ${upc}</p>
+            
+            ${productData.image_url ? `
+                <img src="${productData.image_url}" alt="${productData.product_name}" style="max-width: 200px; max-height: 200px; margin: 15px 0; border-radius: 8px;">
+            ` : ''}
+            
+            <div style="margin: 15px 0;">
+                <div style="font-size: 14px; color: ${statusColor}; margin-bottom: 10px;">
+                    ${pointsStatus}
+                </div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">SmartPoints per ${productData.serving_size}:</label>
+                <input type="number" id="upcPoints" value="${productData.points}" min="0" 
+                    onchange="highlightPointsChange('${upc}', ${productData.points})"
+                    style="width: 100px; padding: 10px; font-size: 24px; font-weight: bold; border: 2px solid var(--primary); border-radius: 8px; background: var(--bg-light); color: var(--primary); text-align: center;">
+            </div>
+            
+            ${productData.nutrition ? `
+                <div style="font-size: 14px; color: var(--text-secondary); margin: 15px 0; padding: 15px; background: var(--bg-light); border-radius: 8px;">
+                    <strong>Nutrition per 100g:</strong><br>
+                    ${Math.round(productData.nutrition.calories)} cal | 
+                    ${Math.round(productData.nutrition.protein)}g protein | 
+                    ${Math.round(productData.nutrition.carbs)}g carbs | 
+                    ${Math.round(productData.nutrition.fat)}g fat
+                </div>
+            ` : ''}
+            
+            <div id="pointsChangeWarning" style="display: none; margin: 15px 0; padding: 15px; background: var(--warning); color: #000; border-radius: 8px; font-weight: bold;">
+                ⚠️ Points changed from ${productData.points} to <span id="newPoints"></span>
+            </div>
+            
+            <button class="btn" onclick="confirmUPCProduct('${upc}', ${JSON.stringify(productData).replace(/"/g, '&quot;')})">
+                ✓ Confirm & Log Food
+            </button>
+            <button class="btn btn-secondary" style="margin-left: 10px;" onclick="closeScan()">
+                Cancel
+            </button>
+        </div>
+    `;
+}
+
+// Highlight when points are changed
+function highlightPointsChange(upc, originalPoints) {
+    const newPoints = parseInt(document.getElementById('upcPoints').value);
+    const warning = document.getElementById('pointsChangeWarning');
+    const newPointsSpan = document.getElementById('newPoints');
+    
+    if (newPoints !== originalPoints) {
+        warning.style.display = 'block';
+        newPointsSpan.textContent = newPoints;
+    } else {
+        warning.style.display = 'none';
+    }
+}
+
+// Confirm UPC product and save to cache
+async function confirmUPCProduct(upc, productData) {
+    const points = parseInt(document.getElementById('upcPoints').value);
+    const originalPoints = productData.points;
+    
+    // Check if points were changed
+    if (points !== originalPoints) {
+        const confirmed = confirm(`UPC ${upc}: Change points from ${originalPoints} to ${points}?\n\nThis will be saved for future scans.`);
+        if (!confirmed) {
+            return;
+        }
+    }
+    
+    // Update points
+    productData.points = points;
+    productData.verified = true;
+    
+    // Save to local cache
+    await saveUPCProduct(productData);
+    console.log(`✅ Saved UPC ${upc} with ${points} points to local cache`);
+    
+    // Log food
+    await logFood(productData.product_name, points, null);
+    
+    // Show success
+    const resultDiv = document.getElementById('scanResult');
+    resultDiv.innerHTML = `
+        <div class="card" style="margin-top: 15px; text-align: center;">
+            <h3 style="color: var(--success);">✅ Logged Successfully!</h3>
+            <p>${productData.product_name}</p>
+            <p style="font-size: 32px; font-weight: bold; color: var(--primary);">${points} pts</p>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-top: 10px;">
+                UPC ${upc} saved to local database
+            </p>
+            <button class="btn" style="margin-top: 20px;" onclick="closeScan()">
+                Done
+            </button>
+        </div>
+    `;
+    
+    // Update UI
+    await updateAllUI();
+}
+
+// Save manual UPC entry
+async function saveManualUPC(upc) {
+    const productName = document.getElementById('manualProductName').value.trim();
+    const brand = document.getElementById('manualBrand').value.trim();
+    const points = parseInt(document.getElementById('manualPoints').value);
+    
+    if (!productName) {
+        alert('Please enter a product name');
+        return;
+    }
+    
+    if (points < 0) {
+        alert('Points must be 0 or greater');
+        return;
+    }
+    
+    const productData = {
+        upc: upc,
+        product_name: productName,
+        brand: brand,
+        points: points,
+        nutrition: null,
+        serving_size: 'serving',
+        verified: true,
+        source: 'manual'
+    };
+    
+    // Save to local cache
+    await saveUPCProduct(productData);
+    console.log(`✅ Saved manual UPC ${upc} to local cache`);
+    
+    // Log food
+    await logFood(productName, points, null);
+    
+    // Show success
+    const resultDiv = document.getElementById('scanResult');
+    resultDiv.innerHTML = `
+        <div class="card" style="margin-top: 15px; text-align: center;">
+            <h3 style="color: var(--success);">✅ Saved & Logged!</h3>
+            <p>${productName}</p>
+            <p style="font-size: 32px; font-weight: bold; color: var(--primary);">${points} pts</p>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-top: 10px;">
+                UPC ${upc} saved to local database<br>
+                Next time you scan this, it will use ${points} points
+            </p>
+            <button class="btn" style="margin-top: 20px;" onclick="closeScan()">
+                Done
+            </button>
+        </div>
+    `;
+    
+    // Update UI
+    await updateAllUI();
 }
 
 // Display scan results
