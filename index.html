@@ -1239,33 +1239,49 @@
         <!-- SLEEP TAB -->
         <div id="sleepTab" class="tab-content">
             <div class="card">
-                <h3 style="margin-bottom: 15px;">😴 Sleep Tracker</h3>
+                <h3 style="margin-bottom: 15px;">😴 Sleep Tracker v2.0</h3>
+                
+                <!-- Sleep Status Display -->
+                <div id="sleepStatus">
+                    <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
+                        <p style="margin: 0; opacity: 0.7;">Loading...</p>
+                    </div>
+                </div>
+                
+                <!-- Sleep Buttons -->
                 <div class="sleep-buttons">
-                    <button class="sleep-btn night" onclick="logSleep('night')">
+                    <button class="sleep-btn night" onclick="goodNightButton()">
                         🌙<br>Good Night
                     </button>
-                    <button class="sleep-btn morning" onclick="logSleep('morning')">
+                    <button class="sleep-btn morning" onclick="goodMorningButton()">
                         ☀️<br>Good Morning
                     </button>
                 </div>
                 
+                <!-- Sleep Quality (legacy, kept for compatibility) -->
                 <div id="sleepQuality" style="display: none;">
                     <h4 style="margin-bottom: 10px;">How did you sleep?</h4>
                     <div class="quality-buttons">
-                        <div class="quality-btn" onclick="setSleepQuality('zonked')">
-                            😴 Zonked<br><small>Can't remember!</small>
+                        <div class="quality-btn" onclick="setSleepQuality(1)">
+                            😞 Poor
                         </div>
-                        <div class="quality-btn" onclick="setSleepQuality('good')">
-                            😊 Good<br><small>Felt great</small>
+                        <div class="quality-btn" onclick="setSleepQuality(2)">
+                            😐 OK
                         </div>
-                        <div class="quality-btn" onclick="setSleepQuality('restless')">
-                            😐 Restless<br><small>Tossed & turned</small>
+                        <div class="quality-btn" onclick="setSleepQuality(3)">
+                            😊 Good
                         </div>
-                        <div class="quality-btn" onclick="setSleepQuality('poor')">
-                            😞 Poor<br><small>Barely slept</small>
+                        <div class="quality-btn" onclick="setSleepQuality(4)">
+                            😁 Great
+                        </div>
+                        <div class="quality-btn" onclick="setSleepQuality(5)">
+                            🌟 Amazing
                         </div>
                     </div>
                 </div>
+
+                <!-- Sleep History -->
+                <div id="sleepHistory"></div>
 
                 <div id="sleepLog" style="margin-top: 20px;"></div>
             </div>
@@ -1477,6 +1493,30 @@
                     </select>
                 </div>
 
+                <!-- POINTS CALCULATION BREAKDOWN (v2.0 - Beta Display) -->
+                <div class="card" style="margin: 20px 0; background: var(--primary); padding: 15px;">
+                    <h4 style="margin: 0 0 15px 0;">📊 Daily Points Calculation (Beta)</h4>
+                    <p style="font-size: 12px; opacity: 0.8; margin: 0 0 15px 0;">
+                        Classic WW Formula: S + A + W + H + E = Points
+                    </p>
+                    
+                    <div id="pointsBreakdown" style="font-size: 14px; line-height: 1.8;">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                    
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Minimum Points Floor:</label>
+                        <input type="number" id="pointsFloor" value="23" min="20" max="35" style="width: 80px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-light); color: var(--text);">
+                        <span style="font-size: 12px; opacity: 0.8; margin-left: 10px;">
+                            (Typical: 23-30 depending on "era")
+                        </span>
+                    </div>
+                    
+                    <button class="btn" style="margin-top: 15px; background: var(--bg); color: var(--text);" onclick="recalculatePoints()">
+                        🔄 Recalculate Points
+                    </button>
+                </div>
+
                 <button class="btn" onclick="saveSettings()">Save Settings</button>
                 
                 <div class="card" style="margin-top: 20px; background: var(--bg-light);">
@@ -1624,6 +1664,35 @@
             </div>
 
             <div id="scanResult"></div>
+        </div>
+    </div>
+
+    <!-- V2.0 Sleep Dialogs -->
+    <!-- Time Picker Dialog -->
+    <div id="timePickerDialog" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: var(--bg); border-radius: 12px; padding: 30px; max-width: 400px; width: 90%;">
+            <h3 id="timePickerTitle" style="margin: 0 0 20px 0; color: var(--text);">Select Time</h3>
+            <input type="time" id="timePickerInput" style="width: 100%; padding: 15px; font-size: 18px; border: 2px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text); margin-bottom: 20px;">
+            <div style="display: flex; gap: 10px;">
+                <button onclick="confirmTimePicker()" class="btn" style="flex: 1;">Confirm</button>
+                <button onclick="cancelTimePicker()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hours Confirmation Dialog -->
+    <div id="hoursConfirmDialog" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: var(--bg); border-radius: 12px; padding: 30px; max-width: 400px; width: 90%;">
+            <h3 style="margin: 0 0 20px 0; color: var(--text);">Logging <span id="calculatedHours" style="color: var(--primary);">0</span> hrs sleep, correct?</h3>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--text);">Or update hours (0-16):</label>
+                <input type="number" id="manualHours" min="0" max="16" step="0.5" style="width: 100%; padding: 15px; font-size: 18px; border: 2px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text);">
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="confirmHours(true)" class="btn" style="flex: 1;">✓ Yes</button>
+                <button onclick="confirmHours(false)" class="btn" style="flex: 1; background: var(--secondary);">Update</button>
+                <button onclick="cancelHoursConfirm()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+            </div>
         </div>
     </div>
 
