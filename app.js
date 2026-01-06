@@ -825,7 +825,6 @@ async function displayPointsBreakdown() {
             </div>
         `;
     }
-    }
     
     // Show maintenance mode if active
     let maintenanceInfo = '';
