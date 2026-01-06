@@ -1,8 +1,7 @@
 // ============ MAIN APPLICATION LOGIC ============
-// Ultimate Wellness System - Version auto-managed in database
+// Ultimate Wellness System - Version managed in database.js
 
-// ============ APP VERSION ============
-const APP_VERSION = '1.9.6'; // Update this when deploying new features
+// APP_VERSION is defined in database.js (loads first)
 
 // ============ SECURE API CONFIGURATION ============
 // Cloudflare Worker proxy - API key is now 100% hidden and secure!
