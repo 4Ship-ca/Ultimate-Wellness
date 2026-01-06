@@ -2,7 +2,7 @@
 // Handles all data persistence for multi-year tracking
 // Tables: settings, foods, exercise, sleep, medications, water, tasks, photos, pantry, preferences, weightLogs
 
-const APP_VERSION = '1.9.6';
+const APP_VERSION = '1.9.6'; // Single source - update here when deploying
 const DB_NAME = 'UltimateWellnessDB';
 const DB_VERSION = 3; // Bumped for upc_cache table
 let db = null;
