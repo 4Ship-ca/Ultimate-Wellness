@@ -388,13 +388,167 @@ async function calculateTodayPoints() {
 
 // ============ UI HELPERS ============
 
+// ============ UI FUNCTIONS ============
+
 function initializeUI() {
-    // Build main navigation
-    // Build tab content
-    // Initialize event listeners
-    // This would be extensive - showing structure only
     console.log('Initializing UI...');
+    // UI is now in HTML, just need to set up event handlers
+    refreshStats();
+    refreshFoodLog();
+    refreshExerciseLog();
+    refreshWaterCount();
 }
+
+// Tab Switching
+function switchTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+    });
+    
+    // Remove active class from all buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.style.background = '#2d2d2d';
+        btn.classList.remove('active');
+    });
+    
+    // Show selected tab
+    const tab = document.getElementById(tabName + 'Tab');
+    if (tab) tab.style.display = 'block';
+    
+    // Highlight active button
+    event.target.style.background = '#4CAF50';
+    event.target.classList.add('active');
+}
+
+// Food Functions
+async function addFood() {
+    const name = document.getElementById('foodInput').value;
+    const points = parseInt(document.getElementById('pointsInput').value) || 0;
+    
+    if (!name) {
+        alert('Please enter food name');
+        return;
+    }
+    
+    const userId = getCurrentUserId();
+    const now = new Date();
+    
+    const food = {
+        userId: userId,
+        name: name,
+        points: points,
+        date: getTodayKey(),
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now.toISOString(),
+        isZeroPoint: points === 0
+    };
+    
+    await dbPut('food_logs', food);
+    
+    // Clear inputs
+    document.getElementById('foodInput').value = '';
+    document.getElementById('pointsInput').value = '';
+    
+    // Refresh
+    await refreshStats();
+    await refreshFoodLog();
+}
+
+// Exercise Functions
+async function addExercise() {
+    const name = document.getElementById('exerciseInput').value;
+    const duration = parseInt(document.getElementById('durationInput').value) || 0;
+    
+    if (!name || !duration) {
+        alert('Please enter exercise and duration');
+        return;
+    }
+    
+    const userId = getCurrentUserId();
+    const now = new Date();
+    const pointsEarned = Math.floor(duration / 30); // 1 point per 30 min
+    
+    const exercise = {
+        userId: userId,
+        name: name,
+        duration: duration,
+        pointsEarned: pointsEarned,
+        date: getTodayKey(),
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now.toISOString()
+    };
+    
+    await dbPut('exercise_logs', exercise);
+    
+    // Clear inputs
+    document.getElementById('exerciseInput').value = '';
+    document.getElementById('durationInput').value = '';
+    
+    // Refresh
+    await refreshStats();
+    await refreshExerciseLog();
+}
+
+// Water Functions
+async function addWater() {
+    const userId = getCurrentUserId();
+    const now = new Date();
+    
+    const water = {
+        userId: userId,
+        date: getTodayKey(),
+        timestamp: now.toISOString(),
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    };
+    
+    await dbPut('water_logs', water);
+    await refreshWaterCount();
+}
+
+async function refreshWaterCount() {
+    const userId = getCurrentUserId();
+    const today = getTodayKey();
+    const waters = await dbGetByIndex('water_logs', 'date', today);
+    const count = waters.filter(w => w.userId === userId).length;
+    
+    const el = document.getElementById('waterCount');
+    if (el) el.textContent = count;
+}
+
+// Sleep Functions
+async function logSleep() {
+    const hours = parseFloat(document.getElementById('sleepInput').value);
+    
+    if (!hours || hours < 0 || hours > 24) {
+        alert('Please enter valid sleep hours (0-24)');
+        return;
+    }
+    
+    const userId = getCurrentUserId();
+    const now = new Date();
+    
+    const sleep = {
+        userId: userId,
+        hours: hours,
+        date: getTodayKey(),
+        timestamp: now.toISOString()
+    };
+    
+    await dbPut('sleep_logs', sleep);
+    
+    // Clear input
+    document.getElementById('sleepInput').value = '';
+    
+    alert(`Logged ${hours} hours of sleep!`);
+}
+
+// Export functions
+window.switchTab = switchTab;
+window.addFood = addFood;
+window.addExercise = addExercise;
+window.addWater = addWater;
+window.logSleep = logSleep;
 
 async function refreshStats() {
     const points = await calculateTodayPoints();
