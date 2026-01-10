@@ -132,32 +132,33 @@ async function init() {
         // Check if we need to refresh (past 4am)
         checkDailyReset();
         
-        // Initialize database with timeout
-        console.log('📦 Initializing database...');
-        const dbPromise = initDatabase();
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Database initialization timeout')), 10000)
-        );
-        
-        try {
-            await Promise.race([dbPromise, timeoutPromise]);
-            console.log('✅ Database ready');
-        } catch (dbErr) {
-            console.error('❌ Database initialization failed:', dbErr);
-            alert('Database initialization failed.\n\n' + 
-                  'Error: ' + dbErr.message + '\n\n' +
-                  'Please try:\n' +
-                  '1. Refresh the page\n' +
-                  '2. Clear browser cache\n' +
-                  '3. Use Chrome/Firefox/Edge\n' +
-                  '4. Check if storage is enabled');
-            throw dbErr;
-        }
-        
-        // Perform daily maintenance
-        await performDailyMaintenance();
-        
-        // Load user settings
+        // Database already initialized by wrapper - skip this section
+//         // Initialize database with timeout
+//         console.log('📦 Initializing database...');
+//         const dbPromise = initDatabase();
+//         const timeoutPromise = new Promise((_, reject) => 
+//             setTimeout(() => reject(new Error('Database initialization timeout')), 10000)
+//         );
+//         
+//         try {
+//             await Promise.race([dbPromise, timeoutPromise]);
+//             console.log('✅ Database ready');
+//         } catch (dbErr) {
+//             console.error('❌ Database initialization failed:', dbErr);
+//             alert('Database initialization failed.\n\n' + 
+//                   'Error: ' + dbErr.message + '\n\n' +
+//                   'Please try:\n' +
+//                   '1. Refresh the page\n' +
+//                   '2. Clear browser cache\n' +
+//                   '3. Use Chrome/Firefox/Edge\n' +
+//                   '4. Check if storage is enabled');
+//             throw dbErr;
+//         }
+//         
+//         // Perform daily maintenance
+//         await performDailyMaintenance();
+//         
+//         // Load user settings
         userSettings = await getSettings();
         
         // If no settings found, try to restore from localStorage backup
@@ -2621,7 +2622,7 @@ async function handleImport(event) {
 
 // ============ START APPLICATION ============
 document.addEventListener('DOMContentLoaded', init);
-setInterval(performDailyMaintenance, 60000); // Check daily maintenance every minute
+// setInterval(performDailyMaintenance, 60000); // Check daily maintenance every minute
 setInterval(checkWeeklyReminders, 3600000); // Check weekly reminders every hour
 
 // ============ AI WELLNESS COACH ============

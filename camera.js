@@ -23,7 +23,6 @@ let flashMode = 'auto';
 let videoTrack = null;
 let capabilities = null;
 
- */
 async function initCamera(videoElementId = 'cameraPreview') {
     console.log('📷 Initializing camera...');
     
