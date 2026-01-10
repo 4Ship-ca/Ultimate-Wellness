@@ -151,14 +151,13 @@ async function init() {
 //         } catch (dbErr) {
 //             console.error('❌ Database initialization failed:', dbErr);
 //             alert('Database initialization failed.\n\n' + 
-                  'Error: ' + dbErr.message + '\n\n' +
-                  'Please try:\n' +
-                  '1. Refresh the page\n' +
-                  '2. Clear browser cache\n' +
-                  '3. Use Chrome/Firefox/Edge\n' +
-                  '4. Check if storage is enabled');
-            throw dbErr;
-        }
+//                   'Error: ' + dbErr.message + '\n\n' +
+//                   'Please try:\n' +
+//                   '1. Refresh the page\n' +
+//                   '2. Clear browser cache\n' +
+//                   '3. Use Chrome/Firefox/Edge\n' +
+//                   '4. Check if storage is enabled');
+//             throw dbErr;
         
         // Perform daily maintenance
 //         await performDailyMaintenance();

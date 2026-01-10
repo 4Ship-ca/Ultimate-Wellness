@@ -32,8 +32,6 @@ let capabilities = null;
 
 
 // Camera capabilities
-let videoTrack = null;
-let capabilities = null;
 
 // ============ CAMERA INITIALIZATION ============
 
