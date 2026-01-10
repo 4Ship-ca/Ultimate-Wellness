@@ -397,18 +397,18 @@ async function calculateDataCompleteness() {
 // ============ INITIALIZATION ============
 
 // Track login on app load
-document.addEventListener('DOMContentLoaded', async () => {
-    // Track this login
-    await trackUserLogin();
-    
-    // Set first login date if not set
-    if (!localStorage.getItem('firstLoginDate')) {
-        localStorage.setItem('firstLoginDate', new Date().toISOString());
-    }
-    
-    // Initialize improvement log UI
-    initImprovementLogUI();
-});
+// document.addEventListener('DOMContentLoaded', async () => {
+//     // Track this login
+//     await trackUserLogin();
+//     
+//     // Set first login date if not set
+//     if (!localStorage.getItem('firstLoginDate')) {
+//         localStorage.setItem('firstLoginDate', new Date().toISOString());
+//     }
+//     
+//     // Initialize improvement log UI
+//     initImprovementLogUI();
+// });
 
 // ============ EXPORT ============
 window.LoginTracking = {

@@ -5,17 +5,5 @@
   "start_url": "/Ultimate-Wellness/",
   "display": "standalone",
   "background_color": "#1a1a1a",
-  "theme_color": "#4CAF50",
-  "icons": [
-    {
-      "src": "/Ultimate-Wellness/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/Ultimate-Wellness/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
+  "theme_color": "#4CAF50"
 }
