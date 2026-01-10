@@ -1,0 +1,90 @@
+# Git Setup Commands
+
+## Initial Repository Setup
+
+```bash
+# Navigate to your project directory
+cd /path/to/ultimate-wellness
+
+# Initialize git
+git init
+
+# Add all files
+git add .
+
+# Initial commit
+git commit -m "Initial commit - Ultimate Wellness v2.2.1"
+
+# Add remote (replace with your repo URL)
+git remote add origin https://github.com/yourusername/ultimate-wellness.git
+
+# Push to main branch
+git branch -M main
+git push -u origin main
+```
+
+## File Structure
+
+```
+ultimate-wellness/
+├── index.html              # Main app
+├── database.js             # Multi-user database
+├── auth.js                 # Authentication
+├── session.js              # Session management
+├── sync.js                 # Cloud sync (ready)
+├── app.js                  # Core app logic
+├── styles.css              # Main UI styles
+├── camera.js               # Camera module
+├── camera-styles.css       # Camera UI
+├── bot-api-complete.js     # Bot data access
+├── recipe-intelligence.js  # Recipe scoring
+├── email-system.js         # Email templates
+├── login-tracking.js       # Analytics
+├── recipe-pdf-scraper.js   # PDF export
+├── admin-complete.html     # Admin panel
+├── admin-complete.js       # Admin logic
+├── data/
+│   ├── zero-point-foods.json
+│   └── bot-scenarios.json
+├── .gitignore
+└── README.md
+```
+
+## Version Tags (Optional)
+
+```bash
+# Tag current version
+git tag -a v2.2.1 -m "v2.2.1 - Multi-user, camera enhancements"
+git push origin v2.2.1
+```
+
+## Common Git Commands
+
+```bash
+# Check status
+git status
+
+# View changes
+git diff
+
+# Add specific file
+git add filename.js
+
+# Commit with message
+git commit -m "Description of changes"
+
+# Push changes
+git push
+
+# Pull latest
+git pull
+
+# Create new branch
+git checkout -b feature-name
+
+# Switch branch
+git checkout main
+
+# Merge branch
+git merge feature-name
+```

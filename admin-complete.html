@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔧 Ultimate Wellness - Complete Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg: #1a1a1a;
+            --bg-light: #2a2a2a;
+            --text: #ffffff;
+            --text-secondary: #aaaaaa;
+            --primary: #4CAF50;
+            --danger: #ff6b6b;
+            --warning: #ffa500;
+            --info: #2196F3;
+            --border: #444;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: var(--danger);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .dev-badge {
+            background: var(--warning);
+            color: black;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .warning {
+            background: rgba(255, 107, 107, 0.1);
+            border: 2px solid var(--danger);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            padding-bottom: 10px;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            background: var(--bg-light);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        
+        .tab:hover {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .tab.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .card {
+            background: var(--bg-light);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: var(--bg);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .stat-card h3 {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+        
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
+        .stat-card .subtitle {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        button:hover {
+            opacity: 0.9;
+        }
+        
+        button.secondary {
+            background: #555;
+        }
+        
+        button.danger {
+            background: var(--danger);
+        }
+        
+        button.info {
+            background: var(--info);
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        thead {
+            background: var(--primary);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        tbody tr:hover {
+            background: rgba(76, 175, 80, 0.1);
+        }
+        
+        .search-box {
+            margin-bottom: 15px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 10px;
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .badge.zero {
+            background: rgba(76, 175, 80, 0.2);
+            color: var(--primary);
+        }
+        
+        .badge.warning {
+            background: rgba(255, 165, 0, 0.2);
+            color: var(--warning);
+        }
+        
+        .badge.info {
+            background: rgba(33, 150, 243, 0.2);
+            color: var(--info);
+        }
+        
+        .data-quality {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .quality-indicator {
+            flex: 1;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .quality-indicator.good {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid var(--primary);
+        }
+        
+        .quality-indicator.warning {
+            background: rgba(255, 165, 0, 0.2);
+            border: 1px solid var(--warning);
+        }
+        
+        .quality-indicator.poor {
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid var(--danger);
+        }
+        
+        .json-view {
+            background: var(--bg);
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .insight-card {
+            background: var(--bg);
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid var(--info);
+            margin-bottom: 10px;
+        }
+        
+        .insight-card h4 {
+            color: var(--info);
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>
+            🔧 Ultimate Wellness - Dev Admin Panel
+            <span class="dev-badge">INTERNAL BETA</span>
+        </h1>
+        
+        <div class="warning">
+            <strong>🔬 Development Mode:</strong> Complete visibility into ALL tracked data. 
+            This view shows everything behind the curtain - what's working, what's weird, what's being tracked.
+        </div>
+        
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</div>
+            <div class="tab" onclick="switchTab('sleep')">😴 Sleep Logs</div>
+            <div class="tab" onclick="switchTab('tasks')">✅ Tasks</div>
+            <div class="tab" onclick="switchTab('weight')">⚖️ Weight History</div>
+            <div class="tab" onclick="switchTab('water')">💧 Water Intake</div>
+            <div class="tab" onclick="switchTab('meds')">💊 Medications</div>
+            <div class="tab" onclick="switchTab('foods')">🍽️ Food Logs</div>
+            <div class="tab" onclick="switchTab('exercise')">💪 Exercise</div>
+            <div class="tab" onclick="switchTab('pantry')">🏪 Pantry</div>
+            <div class="tab" onclick="switchTab('photos')">📸 Photos</div>
+            <div class="tab" onclick="switchTab('settings')">⚙️ Settings</div>
+            <div class="tab" onclick="switchTab('zpf')">🌟 Zero-Point Foods</div>
+            <div class="tab" onclick="switchTab('upc')">📊 UPC Database</div>
+            <div class="tab" onclick="switchTab('bot')">🤖 Bot Scenarios</div>
+            <div class="tab" onclick="switchTab('insights')">💡 Dev Insights</div>
+        </div>
+        
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Sleep Logs</h3>
+                    <div class="value" id="statSleep">0</div>
+                    <div class="subtitle">Total entries</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Tasks</h3>
+                    <div class="value" id="statTasks">0</div>
+                    <div class="subtitle">Active tasks</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Weight Logs</h3>
+                    <div class="value" id="statWeight">0</div>
+                    <div class="subtitle">Data points</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Water Logs</h3>
+                    <div class="value" id="statWater">0</div>
+                    <div class="subtitle">Days tracked</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Medications</h3>
+                    <div class="value" id="statMeds">0</div>
+                    <div class="subtitle">Active meds</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Food Logs</h3>
+                    <div class="value" id="statFoods">0</div>
+                    <div class="subtitle">Meals logged</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Exercise Logs</h3>
+                    <div class="value" id="statExercise">0</div>
+                    <div class="subtitle">Workouts</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Photos</h3>
+                    <div class="value" id="statPhotos">0</div>
+                    <div class="subtitle">Stored photos</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Quick Actions</h2>
+                <div class="btn-group">
+                    <button onclick="exportAllData()">📥 Export All Data</button>
+                    <button onclick="viewDataStructure()">🔍 View Data Structure</button>
+                    <button class="secondary" onclick="refreshStats()">🔄 Refresh Stats</button>
+                    <button class="info" onclick="testBotAccess()">🤖 Test Bot Access</button>
+                    <button class="danger" onclick="clearAllData()">🗑️ Clear All Data</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Sleep Tab -->
+        <div id="sleep" class="tab-content">
+            <div class="card">
+                <h2>Sleep Logs</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    View all sleep tracking data including duration, quality, timestamps
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('sleep')">📊 Load Data</button>
+                    <button onclick="exportTable('sleep')">📥 Export CSV</button>
+                    <button onclick="addSleepEntry()">➕ Add Entry</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchSleep" placeholder="🔍 Search sleep logs..." oninput="filterTable('sleep')">
+                </div>
+                <div class="table-container">
+                    <table id="tableSleep">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Sleep Time</th>
+                                <th>Wake Time</th>
+                                <th>Duration (hrs)</th>
+                                <th>Quality</th>
+                                <th>Scenario</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tasks Tab -->
+        <div id="tasks" class="tab-content">
+            <div class="card">
+                <h2>Tasks (Want/Need/Grateful)</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    View all task data - wants, needs, grateful entries with status tracking
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('tasks')">📊 Load Data</button>
+                    <button onclick="exportTable('tasks')">📥 Export CSV</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchTasks" placeholder="🔍 Search tasks..." oninput="filterTable('tasks')">
+                </div>
+                <div class="table-container">
+                    <table id="tableTasks">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Text</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Weight Tab -->
+        <div id="weight" class="tab-content">
+            <div class="card">
+                <h2>Weight History</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    Complete weight tracking with trends, deltas, goal progress
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('weight')">📊 Load Data</button>
+                    <button onclick="exportTable('weight')">📥 Export CSV</button>
+                    <button class="info" onclick="showWeightChart()">📈 View Chart</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchWeight" placeholder="🔍 Search weight logs..." oninput="filterTable('weight')">
+                </div>
+                <div class="table-container">
+                    <table id="tableWeight">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Weight (lbs)</th>
+                                <th>Change</th>
+                                <th>BMI</th>
+                                <th>To Goal</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Water Tab -->
+        <div id="water" class="tab-content">
+            <div class="card">
+                <h2>Water Intake Logs</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    Daily water tracking: drops (8oz glasses) + food water (ml)
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('water')">📊 Load Data</button>
+                    <button onclick="exportTable('water')">📥 Export CSV</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchWater" placeholder="🔍 Search water logs..." oninput="filterTable('water')">
+                </div>
+                <div class="table-container">
+                    <table id="tableWater">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Drops (8oz)</th>
+                                <th>Food Water (ml)</th>
+                                <th>Total (ml)</th>
+                                <th>% of Goal</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Medications Tab -->
+        <div id="meds" class="tab-content">
+            <div class="card">
+                <h2>Medications</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    Medication schedules, times, completion tracking
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('meds')">📊 Load Data</button>
+                    <button onclick="exportTable('meds')">📥 Export CSV</button>
+                </div>
+                <div class="table-container">
+                    <table id="tableMeds">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Dosage</th>
+                                <th>Times</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Foods Tab -->
+        <div id="foods" class="tab-content">
+            <div class="card">
+                <h2>Food Logs</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    All meals logged with points, timestamps, source (manual/ai/scan)
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('foods')">📊 Load Data</button>
+                    <button onclick="exportTable('foods')">📥 Export CSV</button>
+                    <button class="info" onclick="analyzeFood()">📊 Analyze Patterns</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchFoods" placeholder="🔍 Search food logs..." oninput="filterTable('foods')">
+                </div>
+                <div class="table-container">
+                    <table id="tableFoods">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Time</th>
+                                <th>Food</th>
+                                <th>Points</th>
+                                <th>Source</th>
+                                <th>Zero-Point?</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Exercise Tab -->
+        <div id="exercise" class="tab-content">
+            <div class="card">
+                <h2>Exercise Logs</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    All workouts with type, duration, points earned, timestamps
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('exercise')">📊 Load Data</button>
+                    <button onclick="exportTable('exercise')">📥 Export CSV</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchExercise" placeholder="🔍 Search exercise logs..." oninput="filterTable('exercise')">
+                </div>
+                <div class="table-container">
+                    <table id="tableExercise">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>Duration (min)</th>
+                                <th>Points Earned</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pantry Tab -->
+        <div id="pantry" class="tab-content">
+            <div class="card">
+                <h2>Pantry Inventory</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    Current inventory with UPC codes, persistent points, quantities
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadTable('pantry')">📊 Load Data</button>
+                    <button onclick="exportTable('pantry')">📥 Export CSV</button>
+                </div>
+                <div class="table-container">
+                    <table id="tablePantry">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>UPC</th>
+                                <th>Quantity</th>
+                                <th>Unit</th>
+                                <th>Points/Serving</th>
+                                <th>Serving Size</th>
+                                <th>Zero-Point?</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Photos Tab -->
+        <div id="photos" class="tab-content">
+            <div class="card">
+                <h2>Photo Library</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    All stored photos (food, progress, receipts) with metadata
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadPhotos()">📊 Load Photos</button>
+                    <button onclick="exportTable('photos')">📥 Export Metadata</button>
+                    <button class="danger" onclick="clearPhotos()">🗑️ Clear Photos</button>
+                </div>
+                <div id="photoGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 20px;">
+                    <!-- Photos populated here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Settings Tab -->
+        <div id="settings" class="tab-content">
+            <div class="card">
+                <h2>User Settings & Configuration</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    Complete app configuration and user profile
+                </p>
+                <div class="btn-group">
+                    <button onclick="loadSettings()">📊 Load Settings</button>
+                    <button onclick="exportSettings()">📥 Export JSON</button>
+                </div>
+                <div class="json-view" id="settingsView">
+                    <!-- Settings displayed here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Zero-Point Foods Tab -->
+        <div id="zpf" class="tab-content">
+            <div class="card">
+                <h2>Zero-Point Foods Database</h2>
+                <div class="btn-group">
+                    <button onclick="loadTable('zpf')">📊 Load Data</button>
+                    <button onclick="exportTable('zpf')">📥 Export CSV</button>
+                    <button onclick="importTable('zpf')">📤 Import CSV</button>
+                </div>
+                <div class="table-container">
+                    <table id="tableZpf">
+                        <thead>
+                            <tr>
+                                <th>Program</th>
+                                <th>Category</th>
+                                <th>Food Item</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- UPC Tab -->
+        <div id="upc" class="tab-content">
+            <div class="card">
+                <h2>UPC Database</h2>
+                <div class="btn-group">
+                    <button onclick="loadTable('upc')">📊 Load Data</button>
+                    <button onclick="exportTable('upc')">📥 Export CSV</button>
+                </div>
+                <div class="table-container">
+                    <table id="tableUpc">
+                        <thead>
+                            <tr>
+                                <th>UPC</th>
+                                <th>Product</th>
+                                <th>Brand</th>
+                                <th>Points/Serving</th>
+                                <th>Serving Size</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Bot Tab -->
+        <div id="bot" class="tab-content">
+            <div class="card">
+                <h2>Bot Scenarios</h2>
+                <div class="btn-group">
+                    <button onclick="loadTable('bot')">📊 Load Data</button>
+                    <button onclick="exportTable('bot')">📥 Export JSON</button>
+                </div>
+                <div class="table-container">
+                    <table id="tableBot">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Triggers</th>
+                                <th>Action</th>
+                                <th>Enabled</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Dev Insights Tab -->
+        <div id="insights" class="tab-content">
+            <div class="card">
+                <h2>🔬 Development Insights</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    What's working, what's weird, what's being tracked
+                </p>
+                
+                <div class="btn-group">
+                    <button onclick="analyzeData()">🔍 Run Analysis</button>
+                    <button onclick="checkDataQuality()">✅ Check Data Quality</button>
+                    <button onclick="findAnomalies()">⚠️ Find Anomalies</button>
+                </div>
+                
+                <div id="insightsContent">
+                    <!-- Insights populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Hidden file inputs -->
+    <input type="file" id="importFile" accept=".csv,.json" style="display: none;">
+    
+    <script src="database.js"></script>
+    <script src="admin-complete.js"></script>
+</body>
+</html>

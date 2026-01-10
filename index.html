@@ -3,1700 +3,366 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Ultimate Wellness - AI-Powered Wellness Tracking">
+    <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
-    <title>Ultimate Wellness System v1.9.6</title>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Ultimate Wellness v2.2</title>
     
-    <!-- EmailJS for real email sending -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script type="text/javascript">
-        (function(){
-            // Public key - safe to expose
-            emailjs.init("rTGjT9QEhzON_tI8h"); // Free EmailJS account
-        })();
-    </script>
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="camera-styles.css">
+    
     <style>
+        /* Critical inline styles for initial load */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
-        :root {
-            --primary: #ff6b35;
-            --primary-dark: #d84315;
-            --accent: #ff9500;
-            --success: #4caf50;
-            --warning: #ffb74d;
-            --danger: #f44336;
-            --bg-dark: #1a1a1a;
-            --bg-card: #2a2a2a;
-            --bg-light: #3a3a3a;
-            --text-primary: #ffffff;
-            --text-secondary: #b0b0b0;
-        }
-
+        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-dark);
-            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
             min-height: 100vh;
-            padding: 10px;
-            padding-bottom: 120px;
+            overflow-x: hidden;
         }
-
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 20px;
-            position: relative;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .version {
-            position: absolute;
+        
+        #loading, #loginScreen {
+            position: fixed;
             top: 0;
-            right: 0;
-            font-size: 10px;
-            color: var(--text-secondary);
-            opacity: 0.5;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 10000;
         }
-
-        .card {
-            background: var(--bg-card);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #333;
+            border-top-color: #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
         }
-
-        .points-display {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            padding: 25px;
-            border-radius: 16px;
-            text-align: center;
-            margin-bottom: 20px;
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
-
-        .points-value {
-            font-size: 48px;
-            font-weight: bold;
-        }
-
-        .points-bank {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(255,255,255,0.3);
+        
+        #loading p, .loading-text {
+            margin-top: 20px;
+            color: #888;
             font-size: 14px;
         }
-
-        .quick-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 20px;
+        
+        #loginScreen {
+            display: none;
         }
-
-        .action-btn {
-            padding: 40px 20px;
-            background: var(--bg-card);
-            border: 2px solid var(--bg-light);
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
+        
+        .login-container {
+            background: #2a2a2a;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 400px;
+        }
+        
+        .login-logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .login-logo h1 {
+            font-size: 28px;
+            color: #4CAF50;
+            margin-bottom: 5px;
+        }
+        
+        .login-logo p {
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .login-form {
             display: flex;
             flex-direction: column;
-            align-items: center;
-            gap: 10px;
-            color: var(--text-primary);
+            gap: 20px;
         }
-
-        .action-btn:active {
-            transform: scale(0.95);
-            border-color: var(--primary);
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
-
-        .action-icon {
-            font-size: 36px;
+        
+        .form-group label {
+            color: #aaa;
+            font-size: 14px;
+            font-weight: 500;
         }
-
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        
+        .form-group input {
+            background: #1a1a1a;
+            border: 2px solid #333;
+            color: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        
+        .login-button {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
             color: white;
             border: none;
+            padding: 14px;
             border-radius: 8px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s;
-            margin-bottom: 10px;
         }
-
-        .btn:active {
-            transform: scale(0.98);
-        }
-
-        .btn-secondary {
-            background: var(--bg-light);
-            color: var(--text-primary);
-        }
-
-        .btn-success {
-            background: var(--success);
-        }
-
-        .tab-nav {
-            display: flex;
-            gap: 5px;
-            margin-bottom: 20px;
-            background: var(--bg-card);
-            padding: 5px;
-            border-radius: 12px;
-            overflow-x: auto;
-        }
-
-        .tab-btn {
-            flex: 1;
-            min-width: 70px;
-            padding: 12px 8px;
-            background: transparent;
-            border: none;
-            color: var(--text-secondary);
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            white-space: nowrap;
-        }
-
-        .tab-btn.active {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .water-tracker {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--bg-card);
-            border-top: 2px solid var(--primary);
-            padding: 10px 15px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 5px;
-            z-index: 999;
-        }
-
-        .water-drop {
-            font-size: 32px;
-            cursor: pointer;
-            transition: all 0.3s;
-            opacity: 0.3;
-        }
-
-        .water-drop.filled {
-            opacity: 1;
-            filter: drop-shadow(0 0 10px rgba(33, 150, 243, 0.8));
-        }
-
-        .water-drop:active {
-            transform: scale(1.2);
-        }
-
-        .water-total {
-            text-align: center;
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-bottom: 5px;
-            transition: all 0.3s ease;
-        }
-
-        .exercise-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .nap-presets {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        @media (max-width: 600px) {
-            .nap-presets {
-                grid-template-columns: repeat(3, 1fr);
-            }
-        }
-
-        .exercise-card {
-            background: var(--bg-light);
-            padding: 15px;
-            border-radius: 12px;
-            text-align: center;
-        }
-
-        .exercise-name {
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-
-        .time-buttons {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 5px;
-        }
-
-        .time-btn {
-            padding: 8px;
-            background: var(--bg-card);
-            border: 1px solid var(--bg-light);
-            color: var(--text-primary);
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.3s;
-        }
-
-        .time-btn:active {
-            background: var(--primary);
-            border-color: var(--primary);
-        }
-
-        .sleep-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .sleep-btn {
-            padding: 30px;
-            background: var(--bg-light);
-            border: none;
-            border-radius: 12px;
-            color: var(--text-primary);
-            font-size: 18px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .sleep-btn.night {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-        }
-
-        .sleep-btn.morning {
-            background: linear-gradient(135deg, var(--accent) 0%, var(--primary) 100%);
-        }
-
-        .quality-buttons {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-
-        .quality-btn {
-            padding: 15px;
-            background: var(--bg-light);
-            border: 2px solid var(--bg-light);
-            border-radius: 8px;
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .quality-btn.selected {
-            border-color: var(--primary);
-            background: rgba(255, 107, 53, 0.2);
-        }
-
-        .task-section {
-            margin-bottom: 20px;
-        }
-
-        .task-input {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .task-input input {
-            flex: 1;
-            padding: 12px;
-            background: var(--bg-light);
-            border: 1px solid var(--bg-light);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 16px;
-        }
-
-        .task-item {
-            background: var(--bg-light);
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .task-buttons {
-            display: flex;
-            gap: 5px;
-        }
-
-        .task-btn {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .task-btn.done {
-            background: var(--success);
-            color: white;
-        }
-
-        .task-btn.defer {
-            background: var(--warning);
-            color: white;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.9);
-            z-index: 1000;
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .modal.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-content {
-            background: var(--bg-card);
-            border-radius: 16px;
-            padding: 25px;
-            max-width: 500px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .modal-title {
-            font-size: 24px;
-            font-weight: bold;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 28px;
-            cursor: pointer;
-            color: var(--text-secondary);
-        }
-
-        .camera-container {
-            position: relative;
-            width: 100%;
-            max-width: 400px;
-            aspect-ratio: 9/16; /* Portrait mode */
-            background: #000;
-            border-radius: 12px;
-            overflow: hidden;
-            margin: 0 auto 15px auto;
-        }
-
-        .camera-container video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .camera-controls {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: 20px;
-            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-        }
-
-        .camera-btn {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            border: 4px solid white;
-            background: var(--primary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            transition: all 0.3s;
-        }
-
-        .camera-btn:hover {
-            transform: scale(1.1);
-        }
-
-        .camera-btn:active {
-            transform: scale(0.95);
-        }
-
-        .recording {
-            animation: recordPulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes recordPulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
-            50% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
-        }
-
-        video, canvas, img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .upload-options {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .upload-btn {
-            padding: 12px;
-            background: var(--bg-light);
-            border: 2px dashed var(--primary);
-            border-radius: 8px;
-            cursor: pointer;
-            text-align: center;
-            color: var(--text-primary);
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .upload-btn:hover {
-            background: var(--bg-card);
-            border-color: var(--accent);
-        }
-
-        input[type="file"] {
-            display: none;
-        }
-
-        .input-group {
-            margin-bottom: 15px;
-        }
-
-        label {
-            display: block;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-
-        input, select, textarea {
-            width: 100%;
-            padding: 12px;
-            background: var(--bg-light);
-            border: 1px solid var(--bg-light);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 16px;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-        }
-
-        .spinner {
-            border: 3px solid var(--bg-light);
-            border-top: 3px solid var(--primary);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .ai-chat-bubble {
-            position: fixed;
-            bottom: 90px;
-            right: 20px;
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.4);
-            z-index: 998;
-            transition: all 0.3s;
-        }
-
-        .ai-chat-bubble:hover {
-            transform: scale(1.1);
-            box-shadow: 0 6px 25px rgba(255, 107, 53, 0.6);
-        }
-
-        .ai-chat-bubble:active {
-            transform: scale(0.95);
-        }
-
-        .ai-icon {
-            font-size: 32px;
-            animation: bounce 2s infinite;
-        }
-
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
-
-        .ai-pulse {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            border: 2px solid var(--primary);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            100% { transform: scale(1.5); opacity: 0; }
-        }
-
-        .ai-chat-window {
-            position: fixed;
-            bottom: 90px;
-            right: 20px;
-            width: 90%;
-            max-width: 400px;
-            height: 500px;
-            max-height: 70vh;
-            background: var(--bg-card);
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-            display: none;
-            flex-direction: column;
-            z-index: 998;
-            border: 2px solid var(--primary);
-        }
-
-        .ai-chat-window.active {
-            display: flex;
-        }
-
-        .ai-chat-header {
-            padding: 15px;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            border-radius: 14px 14px 0 0;
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .ai-chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .ai-message {
-            display: flex;
-            gap: 10px;
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .user-message {
-            flex-direction: row-reverse;
-        }
-
-        .ai-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: var(--primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            flex-shrink: 0;
-        }
-
-        .user-avatar {
-            background: var(--success);
-        }
-
-        .ai-text {
-            background: var(--bg-light);
-            padding: 12px;
-            border-radius: 12px;
-            max-width: 80%;
-            line-height: 1.5;
-            font-size: 14px;
-        }
-
-        .user-message .ai-text {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-        }
-
-        .ai-chat-input {
-            padding: 15px;
-            border-top: 1px solid var(--bg-light);
-            display: flex;
-            gap: 10px;
-            align-items: flex-end;
-        }
-
-        .ai-chat-input textarea {
-            flex: 1;
-            resize: none;
-            font-family: inherit;
-            min-width: 0; /* Prevents flex item from overflowing */
-        }
-
-        .ai-send-btn {
-            padding: 10px 20px;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            flex-shrink: 0;
-            white-space: nowrap;
-        }
-
-        .ai-send-btn:hover {
+        
+        .login-button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
         }
-
-        .ai-send-btn:active {
-            transform: translateY(0);
+        
+        .login-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
         }
-
-        .ai-quick-actions {
-            padding: 0 15px 15px 15px;
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .quick-action-btn {
-            padding: 8px 12px;
-            background: var(--bg-light);
-            border: 1px solid var(--bg-light);
-            border-radius: 20px;
-            font-size: 12px;
-            cursor: pointer;
-            color: var(--text-primary);
-            transition: all 0.3s;
-        }
-
-        .quick-action-btn:hover {
-            background: var(--primary);
-            border-color: var(--primary);
-            color: white;
-        }
-
-        .recipe-card {
-            background: var(--bg-light);
-            padding: 15px;
-            border-radius: 12px;
-            margin-top: 10px;
-        }
-
-        .recipe-header {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: var(--primary);
-        }
-
-        .recipe-stats {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 10px;
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .recipe-section {
-            margin-top: 15px;
-        }
-
-        .recipe-section h4 {
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: var(--text-primary);
-        }
-
-        .recipe-section ul, .recipe-section ol {
-            margin-left: 20px;
-            font-size: 13px;
-            line-height: 1.6;
-        }
-
-        .measurement-toggle {
-            display: inline-flex;
-            gap: 5px;
-            margin-left: 10px;
-            font-size: 11px;
-        }
-
-        .measurement-toggle button {
-            padding: 2px 8px;
-            background: var(--bg-card);
-            border: 1px solid var(--bg-light);
-            border-radius: 4px;
-            cursor: pointer;
-            color: var(--text-secondary);
-            font-size: 11px;
-        }
-
-        .measurement-toggle button.active {
-            background: var(--primary);
-            border-color: var(--primary);
-            color: white;
-        }
-
-        .ai-thinking {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px;
-            background: var(--bg-light);
-            border-radius: 12px;
-            font-size: 14px;
-            color: var(--text-secondary);
-        }
-
-        .ai-thinking .spinner {
-            width: 20px;
-            height: 20px;
-        }
-
-        .voice-btn {
-            width: 44px;
-            height: 44px;
-            background: var(--bg-light);
-            border: 2px solid var(--bg-light);
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s;
-            flex-shrink: 0;
-        }
-
-        .voice-btn:hover {
-            background: var(--primary);
-            border-color: var(--primary);
-        }
-
-        .voice-btn.listening {
-            background: var(--danger);
-            border-color: var(--danger);
-            animation: voicePulse 1.5s infinite;
-        }
-
-        @keyframes voicePulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); box-shadow: 0 0 20px rgba(244, 67, 54, 0.6); }
-        }
-
-        .voice-status {
-            position: absolute;
-            top: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--danger);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            white-space: nowrap;
-            animation: slideDown 0.3s ease;
-        }
-
-        @keyframes slideDown {
-            from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-            to { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-
-        .voice-output-active {
-            background: var(--success) !important;
-            border-color: var(--success) !important;
-        }
-
-        .speaking-indicator {
-            display: inline-flex;
-            gap: 3px;
-            margin-left: 5px;
-        }
-
-        .speaking-dot {
-            width: 4px;
-            height: 4px;
-            background: var(--primary);
-            border-radius: 50%;
-            animation: speakingBounce 1s infinite;
-        }
-
-        .speaking-dot:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .speaking-dot:nth-child(3) {
-            animation-delay: 0.4s;
-        }
-
-        @keyframes speakingBounce {
-            0%, 60%, 100% { transform: translateY(0); }
-            30% { transform: translateY(-6px); }
-        }
-
-        .med-time-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .med-time-btn {
-            flex: 1;
-            padding: 8px;
-            background: var(--bg-light);
-            border: 2px solid var(--bg-light);
-            border-radius: 6px;
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.3s;
-        }
-
-        .med-time-btn.taken {
-            background: var(--success);
-            border-color: var(--success);
-            color: white;
-        }
-
-        h3, h4 {
-            color: var(--text-primary);
-        }
-
-        .points-earned {
-            background: var(--success);
-            color: white;
-            padding: 15px;
-            border-radius: 12px;
+        
+        .login-footer {
             text-align: center;
-            font-weight: bold;
-            font-size: 18px;
-            margin-top: 15px;
+            margin-top: 20px;
+            color: #888;
+            font-size: 14px;
         }
-
-        .reset-btn {
-            background: var(--danger);
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-left: 10px;
-            opacity: 0.8;
-            transition: opacity 0.3s;
+        
+        .login-footer a {
+            color: #4CAF50;
+            text-decoration: none;
         }
-
-        .reset-btn:hover {
-            opacity: 1;
-        }
-
-        .exercise-total {
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-top: 5px;
-        }
-
-        .weight-tracker {
-            background: var(--bg-light);
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 15px;
-        }
-
-        .weight-display {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-
-        .weight-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: var(--primary);
-        }
-
-        .progress-bar {
-            height: 8px;
-            background: var(--bg-card);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-bottom: 10px;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
-            transition: width 0.3s;
-        }
-
-        .setup-screen {
+        
+        .login-error {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid #f44336;
+            color: #f44336;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
             display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: var(--bg-dark);
-            z-index: 2000;
-            padding: 20px;
-            overflow-y: auto;
         }
-
-        .setup-screen.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        
+        .login-error.show {
+            display: block;
         }
     </style>
 </head>
 <body>
-    <!-- INITIAL SETUP SCREEN -->
-    <div id="setupScreen" class="setup-screen active">
-        <div class="modal-content">
-            <h2 style="text-align: center; margin-bottom: 20px;">Welcome to Ultimate Wellness! 🔥</h2>
+    <!-- Loading Screen -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <p class="loading-text">Loading Ultimate Wellness...</p>
+    </div>
+    
+    <!-- Login Screen (Multi-User) -->
+    <div id="loginScreen">
+        <div class="login-container">
+            <div class="login-logo">
+                <h1>🌟 Ultimate Wellness</h1>
+                <p>Track your wellness journey</p>
+            </div>
             
-            <div class="input-group">
-                <label>Your Name</label>
-                <input type="text" id="setupName" placeholder="Enter your name">
-            </div>
-
-            <div class="input-group">
-                <label>Email Address</label>
-                <input type="email" id="setupEmail" placeholder="your.email@example.com">
-                <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
-                    For grocery lists, weekly reports & weigh-in reminders
-                </small>
-            </div>
-
-            <div class="input-group">
-                <label>Birthday</label>
-                <input type="date" id="setupBirthday">
-            </div>
-
-            <div class="input-group">
-                <label>Gender</label>
-                <select id="setupGender">
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                </select>
-            </div>
-
-            <div class="input-group">
-                <label>Current Weight (lbs)</label>
-                <input type="number" id="setupWeight" placeholder="e.g., 180">
-            </div>
-
-            <div class="input-group">
-                <label>Goal Weight (lbs)</label>
-                <input type="number" id="setupGoalWeight" placeholder="e.g., 160">
-            </div>
-
-            <div class="input-group">
-                <label>Height (feet)</label>
-                <input type="number" id="setupHeightFeet" placeholder="e.g., 5" min="3" max="8">
-            </div>
-
-            <div class="input-group">
-                <label>Height (inches)</label>
-                <input type="number" id="setupHeightInches" placeholder="e.g., 10" min="0" max="11">
-            </div>
-
-            <div class="input-group">
-                <label>Activity Level</label>
-                <select id="setupActivity">
-                    <option value="sedentary">Sedentary (little/no exercise)</option>
-                    <option value="light">Light (exercise 1-3 days/week)</option>
-                    <option value="moderate">Moderate (exercise 3-5 days/week)</option>
-                    <option value="active">Active (exercise 6-7 days/week)</option>
-                    <option value="very_active">Very Active (intense exercise daily)</option>
-                </select>
-            </div>
-
-            <button id="setupButton" class="btn" onclick="completeSetup()">Start My Journey! 🚀</button>
-        </div>
-    </div>
-
-    <div class="container">
-        <div class="header">
-            <div class="version">v1.9.6</div> <!-- Updated dynamically from database -->
-            <h1>🔥 Ultimate Wellness</h1>
-            <div id="quote" style="color: var(--text-secondary);"></div>
-        </div>
-
-        <div class="tab-nav">
-            <button class="tab-btn active" onclick="switchTab('home')">Home</button>
-            <button class="tab-btn" onclick="switchTab('scan')">Scan</button>
-            <button class="tab-btn" onclick="switchTab('exercise')">Exercise</button>
-            <button class="tab-btn" onclick="switchTab('sleep')">Sleep</button>
-            <button class="tab-btn" onclick="switchTab('tasks')">Tasks</button>
-            <button class="tab-btn" onclick="switchTab('meds')">Meds</button>
-            <button class="tab-btn" onclick="switchTab('settings')">Settings</button>
-        </div>
-
-        <!-- HOME TAB -->
-        <div id="homeTab" class="tab-content active">
-            <div class="weight-tracker">
-                <div class="weight-display">
-                    <div>
-                        <div style="font-size: 12px; color: var(--text-secondary);">Current Weight</div>
-                        <div class="weight-value" id="currentWeight">--</div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 12px; color: var(--text-secondary);">Goal Weight</div>
-                        <div class="weight-value" id="goalWeight">--</div>
-                    </div>
+            <div class="login-error" id="loginError"></div>
+            
+            <form class="login-form" id="loginForm">
+                <div class="form-group">
+                    <label for="loginUsername">Username</label>
+                    <input 
+                        type="text" 
+                        id="loginUsername" 
+                        name="username" 
+                        autocomplete="username"
+                        required 
+                        autofocus
+                    >
                 </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="weightProgress" style="width: 0%"></div>
+                
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input 
+                        type="password" 
+                        id="loginPassword" 
+                        name="password" 
+                        autocomplete="current-password"
+                        required
+                    >
                 </div>
-                <div style="font-size: 12px; color: var(--text-secondary); text-align: center;">
-                    Weekly Goal: <span id="weeklyGoal">--</span> lbs
-                    <span style="margin-left: 10px;">Next Weigh-in: <span id="nextWeighin">--</span></span>
-                </div>
-            </div>
-
-            <div class="points-display">
-                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 5px;">TODAY'S POINTS</div>
-                <div class="points-value" id="pointsToday">0</div>
-                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.3);">
-                    <span id="pointsRemaining">-- remaining</span>
-                    <div style="font-size: 12px; opacity: 0.7; margin-top: 5px;">Daily Allowance: <span id="dailyAllowance">--</span> pts</div>
-                </div>
-                <div class="points-bank">
-                    🎁 Bonus Points: <span id="pointsBank">0</span> / 28 pts
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">
-                        (<span id="bankExpiry">Resets Monday</span>)
-                    </div>
-                    <div style="font-size: 11px; opacity: 0.7; margin-top: 8px; line-height: 1.4;">
-                        • +2 pts daily check-in<br>
-                        • +2 pts if under budget<br>
-                        • Auto-use when over
-                    </div>
-                </div>
-            </div>
-
-            <div class="quick-actions">
-                <button class="action-btn" onclick="openQuickScan('barcode')">
-                    <div class="action-icon">🔍</div>
-                    <div>Scan Food</div>
+                
+                <button type="submit" class="login-button" id="loginButton">
+                    Sign In
                 </button>
-                <button class="action-btn" onclick="openQuickScan('receipt')">
-                    <div class="action-icon">🧾</div>
-                    <div>Receipt</div>
-                </button>
-                <button class="action-btn" onclick="openQuickScan('pantry')">
-                    <div class="action-icon">📸</div>
-                    <div>Pantry</div>
-                </button>
-                <button class="action-btn" onclick="switchTab('exercise')">
-                    <div class="action-icon">💪</div>
-                    <div>Exercise</div>
-                </button>
-            </div>
-
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">Today's Summary</h3>
-                <div id="todayLog"></div>
-                <button class="btn btn-secondary" onclick="manualAddFoodWater()" style="margin-top: 15px; font-size: 14px;">
-                    💧 Add Water from Food/Drink
-                </button>
-            </div>
-
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">📧 Email Reports</h3>
-                <button class="btn" onclick="emailWeeklyReport()">📊 Weekly Progress Report</button>
-                <button class="btn btn-secondary" onclick="emailGroceryList()">🛒 Email Grocery List</button>
-                <div id="nextEmailReminder" style="margin-top: 10px; font-size: 12px; color: var(--text-secondary); text-align: center;"></div>
-            </div>
-        </div>
-
-        <!-- SCAN TAB -->
-        <div id="scanTab" class="tab-content">
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">Quick Scan</h3>
-                <button class="btn" onclick="openQuickScan('barcode')">📊 Food Barcode</button>
-                <button class="btn btn-secondary" onclick="openQuickScan('receipt')">🧾 Receipt (Grocery/Restaurant)</button>
-                <button class="btn btn-secondary" onclick="openQuickScan('pantry')">📷 Pantry Snapshot</button>
-            </div>
-        </div>
-
-        <!-- EXERCISE TAB -->
-        <div id="exerciseTab" class="tab-content">
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">💪 Exercise Log</h3>
-                <div class="exercise-grid" id="exerciseGrid"></div>
-                <div class="points-earned" id="exercisePoints">
-                    Points Earned Today: 0 pts
-                </div>
-            </div>
-        </div>
-
-        <!-- SLEEP TAB -->
-        <div id="sleepTab" class="tab-content">
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">😴 Sleep Tracker v2.0</h3>
-                
-                <!-- Sleep Status Display -->
-                <div id="sleepStatus">
-                    <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
-                        <p style="margin: 0; opacity: 0.7;">Loading...</p>
-                    </div>
-                </div>
-                
-                <!-- Sleep Buttons -->
-                <div class="sleep-buttons">
-                    <button class="sleep-btn night" onclick="goodNightButton()">
-                        🌙<br>Good Night
-                    </button>
-                    <button class="sleep-btn morning" onclick="goodMorningButton()">
-                        ☀️<br>Good Morning
-                    </button>
-                </div>
-                
-                <!-- Sleep Quality (legacy, kept for compatibility) -->
-                <div id="sleepQuality" style="display: none;">
-                    <h4 style="margin-bottom: 10px;">How did you sleep?</h4>
-                    <div class="quality-buttons">
-                        <div class="quality-btn" onclick="setSleepQuality(1)">
-                            😞 Poor
-                        </div>
-                        <div class="quality-btn" onclick="setSleepQuality(2)">
-                            😐 OK
-                        </div>
-                        <div class="quality-btn" onclick="setSleepQuality(3)">
-                            😊 Good
-                        </div>
-                        <div class="quality-btn" onclick="setSleepQuality(4)">
-                            😁 Great
-                        </div>
-                        <div class="quality-btn" onclick="setSleepQuality(5)">
-                            🌟 Amazing
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Sleep History -->
-                <div id="sleepHistory"></div>
-
-                <div id="sleepLog" style="margin-top: 20px;"></div>
-            </div>
-
-            <!-- NAP TIMER -->
-            <div class="card" style="margin-top: 20px;">
-                <h3 style="margin-bottom: 15px;">💤 Nap Timer</h3>
-                
-                <div class="nap-presets" id="napPresets">
-                    <button class="exercise-quick-btn" onclick="setNapTimer(15)">15 min</button>
-                    <button class="exercise-quick-btn" onclick="setNapTimer(30)">30 min</button>
-                    <button class="exercise-quick-btn" onclick="setNapTimer(45)">45 min</button>
-                    <button class="exercise-quick-btn" onclick="setNapTimer(60)">60 min</button>
-                    <button class="exercise-quick-btn" onclick="setNapTimer(90)">90 min</button>
-                </div>
-
-                <div class="input-group" style="margin-top: 15px;">
-                    <label>Custom Time (minutes)</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="number" id="customNapMinutes" placeholder="Minutes" min="5" max="180" style="flex: 1;">
-                        <button class="btn btn-secondary" onclick="setCustomNapTimer()" style="width: auto;">Set</button>
-                    </div>
-                </div>
-
-                <div id="napTimerDisplay" style="display: none; margin-top: 20px;">
-                    <div style="text-align: center; margin-bottom: 20px;">
-                        <div style="font-size: 48px; font-weight: bold; color: var(--primary); font-family: 'Courier New', monospace;" id="napTimeLeft">
-                            00:00
-                        </div>
-                        <div style="font-size: 14px; color: var(--text-secondary); margin-top: 5px;">
-                            <span id="napEndTime"></span>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <button class="btn" onclick="toggleNapTimer()" id="napStartStop" style="flex: 1;">
-                            ▶️ Start
-                        </button>
-                        <button class="btn btn-secondary" onclick="resetNapTimer()">
-                            🔄 Reset
-                        </button>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Alarm Sound</label>
-                        <select id="napAlarmSound">
-                            <option value="gentle">🎵 Gentle Chimes</option>
-                            <option value="birds">🐦 Morning Birds</option>
-                            <option value="bells">🔔 Soft Bells</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- NAP ALARM (shown when alarm goes off) -->
-                <div id="napAlarm" style="display: none; text-align: center; padding: 30px; background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); border-radius: 12px; color: white;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">⏰</div>
-                    <h2 style="margin-bottom: 10px;">Wake Up!</h2>
-                    <p style="margin-bottom: 20px; opacity: 0.9;">Your nap is over!</p>
-                    
-                    <button class="btn" onclick="stopNapAlarm()" style="background: white; color: var(--primary); font-size: 18px; padding: 15px 40px; margin-bottom: 20px;">
-                        🛑 I'm Up!
-                    </button>
-
-                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.3);">
-                        <h4 style="margin-bottom: 15px;">How was your nap?</h4>
-                        <div class="quality-buttons">
-                            <div class="quality-btn" onclick="logNap('refreshed')" style="background: rgba(255,255,255,0.2);">
-                                😊 Refreshed
-                            </div>
-                            <div class="quality-btn" onclick="logNap('okay')" style="background: rgba(255,255,255,0.2);">
-                                😐 Okay
-                            </div>
-                            <div class="quality-btn" onclick="logNap('groggy')" style="background: rgba(255,255,255,0.2);">
-                                😴 Groggy
-                            </div>
-                            <div class="quality-btn" onclick="logNap('didnt-sleep')" style="background: rgba(255,255,255,0.2);">
-                                😞 Didn't Sleep
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="napLog" style="margin-top: 20px;"></div>
-            </div>
-        </div>
-
-        <!-- TASKS TAB -->
-        <div id="tasksTab" class="tab-content">
-            <div class="card">
-                <div class="task-section">
-                    <h4 style="margin-bottom: 10px;">🎯 Want to Do</h4>
-                    <div class="task-input">
-                        <input type="text" id="wantInput" placeholder="What do you want to do?">
-                        <button class="btn" onclick="addTask('want')" style="width: auto; padding: 0 20px;">Add</button>
-                    </div>
-                    <div id="wantList"></div>
-                </div>
-
-                <div class="task-section">
-                    <h4 style="margin-bottom: 10px;">✅ Need to Do</h4>
-                    <div class="task-input">
-                        <input type="text" id="needInput" placeholder="What do you need to do?">
-                        <button class="btn" onclick="addTask('need')" style="width: auto; padding: 0 20px;">Add</button>
-                    </div>
-                    <div id="needList"></div>
-                </div>
-
-                <div class="task-section">
-                    <h4 style="margin-bottom: 10px;">🙏 I'm Grateful For</h4>
-                    <div class="task-input">
-                        <input type="text" id="gratefulInput" placeholder="What are you grateful for?">
-                        <button class="btn" onclick="addTask('grateful')" style="width: auto; padding: 0 20px;">Add</button>
-                    </div>
-                    <div id="gratefulList"></div>
-                </div>
-
-                <!-- WEEKLY ACCOMPLISHMENTS -->
-                <div class="card" style="margin-top: 20px; background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(139, 195, 74, 0.1) 100%); border-left: 4px solid var(--success);">
-                    <h4 style="margin-bottom: 10px;">🏆 This Week's Wins</h4>
-                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
-                        You've accomplished a lot! Here's what you got done:
-                    </p>
-                    <div id="weeklyAccomplishments"></div>
-                    <button class="btn btn-secondary" onclick="refreshWeeklyWins()" style="margin-top: 10px; font-size: 13px;">
-                        🔄 Refresh
-                    </button>
-                </div>
-
-                <!-- DEFERRED TASKS -->
-                <div class="card" style="margin-top: 20px; background: var(--bg-light);">
-                    <h4 style="margin-bottom: 10px;">⏸️ Deferred Tasks</h4>
-                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
-                        Tasks you've put off for later. Review and reactivate when ready!
-                    </p>
-                    <div id="deferredList"></div>
-                    <div id="noDeferredTasks" style="text-align: center; padding: 20px; color: var(--text-secondary); font-size: 14px; display: none;">
-                        No deferred tasks - you're on top of it! 🎯
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- MEDS TAB -->
-        <div id="medsTab" class="tab-content">
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">💊 Medications</h3>
-                <button class="btn" onclick="openMedScanner()">📸 Scan Medication Label</button>
-                <button class="btn btn-secondary" onclick="showManualMed()">✏️ Manual Entry</button>
-                
-                <div id="manualMedEntry" style="display: none; margin-top: 20px;">
-                    <div class="input-group">
-                        <label>Medication Name</label>
-                        <input type="text" id="medName">
-                    </div>
-                    <div class="input-group">
-                        <label>Dosage</label>
-                        <input type="text" id="medDosage">
-                    </div>
-                    <button class="btn" onclick="addMedication()">Add Medication</button>
-                </div>
-
-                <h4 style="margin: 20px 0 10px;">Today's Medications</h4>
-                <div id="todayMeds"></div>
-            </div>
-        </div>
-
-        <!-- SETTINGS TAB -->
-        <div id="settingsTab" class="tab-content">
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">⚙️ Settings</h3>
-                
-                <div class="input-group">
-                    <label>Name</label>
-                    <input type="text" id="settingsName">
-                </div>
-
-                <div class="input-group">
-                    <label>Email Address</label>
-                    <input type="email" id="settingsEmail">
-                </div>
-
-                <div class="input-group">
-                    <label>Current Weight (lbs)</label>
-                    <input type="number" id="settingsWeight">
-                    <button class="btn btn-secondary" onclick="updateWeight()" style="margin-top: 5px;">Update Weight</button>
-                </div>
-
-                <div class="input-group">
-                    <label>Goal Weight (lbs)</label>
-                    <input type="number" id="settingsGoalWeight">
-                </div>
-
-                <div class="input-group">
-                    <label>Height</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="number" id="settingsHeightFeet" placeholder="Feet" min="3" max="8">
-                        <input type="number" id="settingsHeightInches" placeholder="Inches" min="0" max="11">
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Activity Level</label>
-                    <select id="settingsActivity">
-                        <option value="sedentary">Sedentary</option>
-                        <option value="light">Light</option>
-                        <option value="moderate">Moderate</option>
-                        <option value="active">Active</option>
-                        <option value="very_active">Very Active</option>
-                    </select>
-                </div>
-
-                <!-- POINTS CALCULATION BREAKDOWN (v2.0 - Beta Display) -->
-                <div class="card" style="margin: 20px 0; background: var(--primary); padding: 15px;">
-                    <h4 style="margin: 0 0 15px 0;">📊 Daily Points Calculation (Beta)</h4>
-                    <p style="font-size: 12px; opacity: 0.8; margin: 0 0 15px 0;">
-                        Classic WW Formula: S + A + W + H + E = Points
-                    </p>
-                    
-                    <div id="pointsBreakdown" style="font-size: 14px; line-height: 1.8;">
-                        <!-- Populated by JavaScript -->
-                    </div>
-                    
-                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Minimum Points Floor:</label>
-                        <input type="number" id="pointsFloor" value="23" min="20" max="35" style="width: 80px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-light); color: var(--text);">
-                        <span style="font-size: 12px; opacity: 0.8; margin-left: 10px;">
-                            (Typical: 23-30 depending on "era")
-                        </span>
-                    </div>
-                    
-                    <button class="btn" style="margin-top: 15px; background: var(--bg); color: var(--text);" onclick="recalculatePoints()">
-                        🔄 Recalculate Points
-                    </button>
-                </div>
-
-                <button class="btn" onclick="saveSettings()">Save Settings</button>
-                
-                <div class="card" style="margin-top: 20px; background: var(--bg-light);">
-                    <h4 style="margin-bottom: 10px;">🔧 API Connection Test</h4>
-                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 15px;">
-                        Test if the AI (Claude API via Cloudflare Worker) is connected and working.
-                    </p>
-                    <button class="btn btn-secondary" onclick="testAPIConnection()" id="apiTestBtn">
-                        🧪 Test API Connection
-                    </button>
-                    <div id="apiTestResult" style="margin-top: 10px; font-size: 13px;"></div>
-                </div>
-
-                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--bg-light);">
-                    <button class="btn btn-secondary" onclick="exportData()">📥 Export All Data</button>
-                    <button class="btn btn-secondary" onclick="importData()">📤 Import Data</button>
-                    <input type="file" id="importFile" accept=".json" style="display: none;" onchange="handleImport(event)">
-                </div>
-
-                <div style="margin-top: 20px; padding: 15px; background: var(--bg-light); border-radius: 8px; font-size: 12px; color: var(--text-secondary);">
-                    <strong>About:</strong><br>
-                    <span id="aboutVersion">Ultimate Wellness System v1.9.6</span><br>
-                    All data stored locally in IndexedDB<br>
-                    Photos, logs, and settings backed up automatically
-                </div>
+            </form>
+            
+            <div class="login-footer">
+                <p>New here? <a href="#" id="showRegisterLink">Create an account</a></p>
             </div>
         </div>
     </div>
-
-    <!-- WATER TRACKER - PERSISTENT BOTTOM -->
-    <div class="water-tracker">
-        <div class="water-total" id="waterTotal">0ml / 2000ml</div>
-        <div style="display: flex; gap: 12px;">
-            <div class="water-drop" id="drop1" onclick="fillWaterDrop(1)">💧</div>
-            <div class="water-drop" id="drop2" onclick="fillWaterDrop(2)">💧</div>
-            <div class="water-drop" id="drop3" onclick="fillWaterDrop(3)">💧</div>
-            <div class="water-drop" id="drop4" onclick="fillWaterDrop(4)">💧</div>
-            <div class="water-drop" id="drop5" onclick="fillWaterDrop(5)">💧</div>
-            <div class="water-drop" id="drop6" onclick="fillWaterDrop(6)">💧</div>
-            <div class="water-drop" id="drop7" onclick="fillWaterDrop(7)">💧</div>
-            <div class="water-drop" id="drop8" onclick="fillWaterDrop(8)">💧</div>
+    
+    <!-- Main App Container -->
+    <div id="app" style="display: none;">
+        <!-- Navigation -->
+        <nav id="mainNav">
+            <!-- Generated by app.js -->
+        </nav>
+        
+        <!-- Main Content Area -->
+        <main id="mainContent">
+            <!-- Tab content dynamically loaded -->
+        </main>
+        
+        <!-- Bot Interface -->
+        <div id="botPanel">
+            <!-- AI chat interface -->
+        </div>
+        
+        <!-- Sync Status Indicator -->
+        <div id="syncIndicator" class="sync-indicator">
+            <span id="syncIcon">☁️</span>
+            <span id="syncText">Not synced</span>
         </div>
     </div>
-
-    <!-- AI WELLNESS COACH - PERSISTENT CHAT BUBBLE -->
-    <div class="ai-chat-bubble" id="aiChatBubble" onclick="toggleAIChat()">
-        <div class="ai-icon">🤖</div>
-        <div class="ai-pulse"></div>
-    </div>
-
-    <!-- AI CHAT WINDOW -->
-    <div class="ai-chat-window" id="aiChatWindow">
-        <div class="ai-chat-header">
-            <div>
-                <div style="font-weight: bold; font-size: 16px;">🤖 AI Wellness Coach</div>
-                <div style="font-size: 11px; opacity: 0.8;" id="aiContext">Ready to help!</div>
-            </div>
-            <button class="close-btn" onclick="toggleAIChat()">×</button>
-        </div>
-        <div class="ai-chat-messages" id="aiChatMessages">
-            <div class="ai-message">
-                <div class="ai-avatar">🤖</div>
-                <div class="ai-text">
-                    Hi! I'm your AI wellness coach. I can help with:
-                    <ul style="margin: 10px 0; padding-left: 20px; font-size: 13px;">
-                        <li>Recipe suggestions with points</li>
-                        <li>Exercise plans & motivation</li>
-                        <li>Meal planning based on your budget</li>
-                        <li>Sleep improvement tips</li>
-                        <li>Nutrition advice</li>
-                    </ul>
-                    What can I help you with today?
-                </div>
-            </div>
-        </div>
-        <div class="ai-chat-input">
-            <button class="voice-btn" id="voiceBtn" onclick="toggleVoiceInput()" title="Voice input">
-                <span id="voiceIcon">🎤</span>
-            </button>
-            <textarea id="aiChatInput" placeholder="Ask me anything about wellness, recipes, exercise..." rows="2"></textarea>
-            <button class="ai-send-btn" onclick="sendAIMessage()">Send</button>
-        </div>
-        <div class="ai-quick-actions">
-            <button class="quick-action-btn" onclick="quickAIPrompt('recipe')">🍳 Recipe Ideas</button>
-            <button class="quick-action-btn" onclick="quickAIPrompt('meal-plan')">📋 Meal Plan</button>
-            <button class="quick-action-btn" onclick="quickAIPrompt('exercise')">💪 Exercise Help</button>
-            <button class="quick-action-btn" onclick="quickAIPrompt('log-meal')">📝 Log Meal</button>
-            <button class="quick-action-btn" onclick="toggleVoiceOutput()">
-                <span id="voiceOutputIcon">🔊</span> <span id="voiceOutputText">Voice On</span>
-            </button>
-        </div>
-    </div>
-
-    <!-- UNIVERSAL SCANNER MODAL -->
-    <div id="scanModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div class="modal-title" id="scanTitle">Scan</div>
-                <button class="close-btn" onclick="closeScan()">×</button>
-            </div>
-
-            <div class="upload-options">
-                <label for="fileUpload" class="upload-btn">
-                    📁 Upload Photo
-                </label>
-                <div class="upload-btn" onclick="startCamera('photo')">
-                    📸 Snapshot
-                </div>
-                <div class="upload-btn" onclick="startCamera('video')">
-                    🎥 Video (15s)
-                </div>
-            </div>
-            <input type="file" id="fileUpload" accept="image/*,video/*" onchange="handleFileUpload(event)">
-
-            <div id="useCaseSelector" style="display: none; margin-bottom: 15px;">
-                <label>What are you scanning?</label>
-                <select id="useCaseSelect" style="width: 100%;">
-                    <option value="barcode">Food Barcode</option>
-                    <option value="grocery">Grocery Receipt</option>
-                    <option value="restaurant">Restaurant Receipt</option>
-                    <option value="pantry">Pantry/Fridge (Snapshot)</option>
-                    <option value="pantry-live">Pantry/Fridge (Live 15s)</option>
-                    <option value="medication">Medication Label</option>
-                </select>
-            </div>
-
-            <div class="camera-container" id="cameraContainer" style="display: none;">
-                <video id="scanVideo" autoplay playsinline muted></video>
-                <div class="camera-controls" id="cameraControls" style="display: none;">
-                    <button class="camera-btn" id="captureBtn" onclick="capturePhoto()" title="Capture photo">
-                        📸
-                    </button>
-                    <button class="camera-btn" id="recordBtn" onclick="toggleRecording()" title="Record video">
-                        🔴
-                    </button>
-                    <button class="camera-btn" onclick="stopCamera()" title="Cancel">
-                        ❌
-                    </button>
-                </div>
-                <canvas id="scanCanvas" style="display: none;"></canvas>
-                <img id="scanImage" style="display: none;">
-                <div id="recordingTimer" style="position: absolute; top: 20px; left: 20px; color: white; font-size: 18px; font-weight: bold; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 8px; display: none;">
-                    ⏺ <span id="timerText">0s</span>
-                </div>
-            </div>
-
-            <div id="scanResult"></div>
-        </div>
-    </div>
-
-    <!-- V2.0 Sleep Dialogs -->
-    <!-- Time Picker Dialog -->
-    <div id="timePickerDialog" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: var(--bg); border-radius: 12px; padding: 30px; max-width: 400px; width: 90%;">
-            <h3 id="timePickerTitle" style="margin: 0 0 20px 0; color: var(--text);">Select Time</h3>
-            <input type="time" id="timePickerInput" style="width: 100%; padding: 15px; font-size: 18px; border: 2px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text); margin-bottom: 20px;">
-            <div style="display: flex; gap: 10px;">
-                <button onclick="confirmTimePicker()" class="btn" style="flex: 1;">Confirm</button>
-                <button onclick="cancelTimePicker()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Hours Confirmation Dialog -->
-    <div id="hoursConfirmDialog" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: var(--bg); border-radius: 12px; padding: 30px; max-width: 400px; width: 90%;">
-            <h3 style="margin: 0 0 20px 0; color: var(--text);">Logging <span id="calculatedHours" style="color: var(--primary);">0</span> hrs sleep, correct?</h3>
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--text);">Or update hours (0-16):</label>
-                <input type="number" id="manualHours" min="0" max="16" step="0.5" style="width: 100%; padding: 15px; font-size: 18px; border: 2px solid var(--border); border-radius: 8px; background: var(--bg-light); color: var(--text);">
-            </div>
-            <div style="display: flex; gap: 10px;">
-                <button onclick="confirmHours(true)" class="btn" style="flex: 1;">✓ Yes</button>
-                <button onclick="confirmHours(false)" class="btn" style="flex: 1; background: var(--secondary);">Update</button>
-                <button onclick="cancelHoursConfirm()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
-            </div>
-        </div>
-    </div>
-
+    
+    <!-- Scripts - CRITICAL LOADING ORDER! -->
+    
+    <!-- 1. Database Layer (FIRST - everything depends on this) -->
     <script src="database.js"></script>
+    
+    <!-- 2. Authentication Layer (SECOND - multi-user support) -->
+    <script src="auth.js"></script>
+    
+    <!-- 3. Session Management (THIRD - daily reset, state persistence) -->
+    <script src="session.js"></script>
+    
+    <!-- 4. Cloud Sync Preparation (FOURTH - future multi-device) -->
+    <script src="sync.js"></script>
+    
+    <!-- 5. Intelligence Layer (v2.1 features) -->
+    <script src="bot-api-complete.js"></script>
+    <script src="recipe-intelligence.js"></script>
+    <script src="email-system.js"></script>
+    <script src="login-tracking.js"></script>
+    <script src="recipe-pdf-scraper.js"></script>
+    
+    <!-- 6. Camera Module (v2.2.1 - Bug Fix) -->
+    <script src="camera.js"></script>
+    
+    <!-- 7. Core Application (LAST - orchestrates everything) -->
     <script src="app.js"></script>
+    
+    <script>
+        // Version info
+        console.log('🚀 Ultimate Wellness v2.2.0');
+        console.log('📅 Release: 2026-01-07');
+        console.log('🔧 Build: Production');
+        console.log('✨ Features: Multi-user, seamless sessions, cloud-ready');
+        
+        // Service Worker Registration (PWA)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('✅ Service Worker registered:', reg.scope))
+                    .catch(err => console.log('❌ Service Worker registration failed:', err));
+            });
+        }
+        
+        // Global error handling
+        window.addEventListener('error', (event) => {
+            console.error('💥 Global error:', event.error);
+            
+            // Log to improvement log if available
+            if (window.addImprovementLog) {
+                addImprovementLog(`Error: ${event.error?.message || 'Unknown error'}`, 'bug');
+            }
+        });
+        
+        // Unhandled promise rejections
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('💥 Unhandled promise rejection:', event.reason);
+            
+            if (window.addImprovementLog) {
+                addImprovementLog(`Promise rejection: ${event.reason}`, 'bug');
+            }
+        });
+        
+        // Login form handler (loaded before app.js)
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginForm = document.getElementById('loginForm');
+            const loginError = document.getElementById('loginError');
+            const loginButton = document.getElementById('loginButton');
+            
+            if (loginForm) {
+                loginForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    const username = document.getElementById('loginUsername').value;
+                    const password = document.getElementById('loginPassword').value;
+                    
+                    loginButton.disabled = true;
+                    loginButton.textContent = 'Signing in...';
+                    loginError.classList.remove('show');
+                    
+                    try {
+                        await loginUser(username, password);
+                        
+                        // Hide login screen, show app
+                        document.getElementById('loginScreen').style.display = 'none';
+                        document.getElementById('app').style.display = 'block';
+                        
+                        // Initialize app after login
+                        if (window.initializeAfterLogin) {
+                            await window.initializeAfterLogin();
+                        }
+                    } catch (error) {
+                        loginError.textContent = error.message;
+                        loginError.classList.add('show');
+                        loginButton.disabled = false;
+                        loginButton.textContent = 'Sign In';
+                    }
+                });
+            }
+            
+            // Show register screen link
+            const showRegisterLink = document.getElementById('showRegisterLink');
+            if (showRegisterLink) {
+                showRegisterLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (window.showRegisterScreen) {
+                        window.showRegisterScreen();
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>
