@@ -204,13 +204,19 @@ async function dbPut(storeName, data) {
     data._needsSync = true;
     
     return new Promise((resolve, reject) => {
+    // Check if database is initialized
+    if (!db) {
+        console.error('Database not initialized');
+        throw new Error('Database not initialized');
+    }
+
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
         const request = store.put(data);
         
         request.onsuccess = () => {
             // Add to sync queue
-            queueForSync(storeName, data, 'upsert');
+            if (storeName !== 'sync_queue') queueForSync(storeName, data, 'upsert');
             resolve(request.result);
         };
         request.onerror = () => reject(request.error);
