@@ -285,9 +285,10 @@ let processingInterval = null;
 let userSettings = null;
 let cameraStream = null;
 let cameraMode = 'photo';
-let mediaRecorder = null;
-let recordedChunks = [];
-let recordingTimer = null;
+// Camera handled by camera.js module
+// let mediaRecorder = null;
+// let recordedChunks = [];
+// let recordingTimer = null;
 let recordingSeconds = 0;
 let napTimerMinutes = 0;
 let napTimerSeconds = 0;

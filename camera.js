@@ -1,7 +1,9 @@
 // ============ CAMERA MODULE v2.2.1 ============
-// Photo and video capture with proper stream cleanup
-// + Pinch zoom, optimal portrait ratio, flash, configurable video duration
+// Wrapped in IIFE to prevent global variable conflicts
+(function() {
+'use strict';
 
+// Private variables (not global)
 let currentStream = null;
 let videoElement = null;
 let canvasElement = null;
@@ -17,11 +19,17 @@ let touchDistance = 0;
 let isGesturing = false;
 
 // Video recording settings
-let videoRecordingDuration = 20; // Default 20 seconds (was 15)
+let videoRecordingDuration = 20; // Default 20 seconds
 let recordingTimer = null;
 let recordingStartTime = null;
 
 // Flash mode
+let flashMode = 'auto'; // 'auto', 'on', 'off'
+
+// Camera capabilities
+let videoTrack = null;
+let capabilities = null;
+
 let flashMode = 'auto'; // 'auto', 'on', 'off'
 
 // Camera capabilities
@@ -1150,3 +1158,5 @@ window.handleVideoDurationChange = handleVideoDurationChange;
 console.log('📷 Camera module v2.2.1 loaded');
 console.log('✨ Features: Pinch zoom, portrait mode, flash, 20s video default');
 console.log('🐛 Black screen bug FIXED!');
+
+})(); // End of camera module IIFE
