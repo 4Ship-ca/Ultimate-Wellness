@@ -20,8 +20,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 3. Check if login is needed
         if (authResult.needsLogin) {
             // Show login screen (v2.2 feature)
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('loginScreen').style.display = 'flex';
+            const loadingEl = document.getElementById('loading');
+            const loginEl = document.getElementById('loginScreen');
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (loginEl) loginEl.style.display = 'flex';
             return;
         }
         
@@ -55,14 +57,16 @@ async function initializeAfterLogin() {
         await initSync();
         console.log('✅ Sync system ready');
         
-        // 5. Initialize v1.9.6 UI
-        if (typeof initApp === 'function') {
-            await initApp(); // Call v1.9.6 initialization if it exists
+        // 5. Initialize v1.9.6 UI (call init() from original app.js)
+        if (typeof init === 'function') {
+            await init();
         }
         
         // 6. Hide loading, show app
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('setupScreen').style.display = 'none';
+        const loadingEl = document.getElementById('loading');
+        const setupEl = document.getElementById('setupScreen');
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (setupEl) setupEl.style.display = 'none';
         
         console.log('✅ App ready!');
         
@@ -99,184 +103,7 @@ async function loadExternalData() {
         console.warn('Could not load bot scenarios:', error);
     }
 }
-// ============ MAIN APPLICATION LOGIC ============
-// Ultimate Wellness System - Version managed in database.js
 
-// APP_VERSION is defined in database.js (loads first)
-
-// ============ SECURE API CONFIGURATION ============
-// Cloudflare Worker proxy - API key is now 100% hidden and secure!
-const USE_PROXY = true; // ✅ PROXY ENABLED
-const PROXY_URL = 'https://ultimate-wellness.your4ship.workers.dev'; // ✅ YOUR WORKER URL
-const CLAUDE_API_KEY = ''; // ✅ EMPTY - Key stored securely in Cloudflare!
-
-// Your API key is now stored as an encrypted environment variable in Cloudflare Workers
-// Nobody can see it in your code, git history, or browser - completely secure! 🔒
-
-// ============ CONSTANTS ============
-const EXERCISES = ['Chores', 'Vacuum', 'Laundry', 'Elliptical', 'Walk', 'Yard Work'];
-const EXERCISE_POINTS_PER_15MIN = 1;
-
-// High-water foods database
-const HYDRATING_FOODS = {
-    // Beverages
-    'milk': 250, 'coffee': 250, 'tea': 250, 'juice': 250,
-    'smoothie': 300, 'shake': 300, 'latte': 250,
-    
-    // Soups & Broths
-    'soup': 200, 'broth': 250, 'stew': 150, 'chili': 100,
-    
-    // Fruits
-    'watermelon': 200, 'melon': 200, 'cantaloupe': 200,
-    'strawberries': 150, 'strawberry': 150,
-    'orange': 125, 'oranges': 125, 'grapefruit': 150,
-    'peach': 125, 'peaches': 125, 'pineapple': 125,
-    'apple': 100, 'apples': 100, 'grapes': 150,
-    
-    // Vegetables
-    'cucumber': 150, 'lettuce': 125, 'salad': 100,
-    'celery': 150, 'tomato': 125, 'tomatoes': 125,
-    'zucchini': 125, 'spinach': 100,
-    
-    // Yogurt & Dairy
-    'yogurt': 150, 'cottage cheese': 125,
-    
-    // Other
-    'popsicle': 100, 'jello': 100, 'ice cream': 75
-};
-
-// ============ ZERO-POINT FOODS (WW Official List) ============
-// Auto-detected in food logging, favored in recipes, marked in pantry
-const ZERO_POINT_FOODS = {
-    Vegetables: [
-        'artichokes', 'arugula', 'asparagus', 'bamboo shoots', 'green beans', 'wax beans', 'italian beans',
-        'beet greens', 'beets', 'bok choy', 'broccoli', 'broccoli rabe', 'brussels sprouts',
-        'cabbage', 'carrots', 'cauliflower', 'celery', 'chard', 'chicory', 'collard greens',
-        'cucumber', 'daikon', 'eggplant', 'endive', 'escarole', 'fennel', 'garlic',
-        'hearts of palm', 'jicama', 'kale', 'kohlrabi', 'leeks', 'lettuce', 'mushrooms',
-        'mustard greens', 'okra', 'onions', 'parsley', 'parsnips', 'peppers', 'bell peppers', 'pumpkin',
-        'radicchio', 'radishes', 'rutabaga', 'scallions', 'shallots', 'snap peas',
-        'snow peas', 'spinach', 'squash', 'spaghetti squash', 'summer squash', 'yellow squash',
-        'tomatillos', 'tomatoes', 'turnips', 'water chestnuts', 'watercress', 'zucchini'
-    ],
-    Fruits: [
-        'apples', 'apricots', 'bananas', 'blackberries', 'blueberries', 'cantaloupe',
-        'cherries', 'clementines', 'cranberries', 'dragon fruit', 'figs', 'grapefruit',
-        'grapes', 'guava', 'honeydew melon', 'honeydew', 'kiwi', 'kumquats', 'lemons',
-        'limes', 'lychees', 'mandarins', 'mango', 'nectarines', 'oranges', 'papaya',
-        'peaches', 'pears', 'persimmons', 'pineapple', 'plantains', 'plums', 'pomegranate',
-        'raspberries', 'starfruit', 'strawberries', 'tangerines', 'watermelon'
-    ],
-    'Poultry & Meat': [
-        'chicken breast', 'skinless chicken breast', 'turkey breast', 'skinless turkey breast',
-        'ground chicken', 'ground turkey', 'lean ground beef', 'ground beef', 
-        'bison', 'venison', 'pork tenderloin', 'lean pork'
-    ],
-    'Fish & Shellfish': [
-        'anchovies', 'arctic char', 'bass', 'bluefish', 'carp', 'catfish', 'clams', 'cod',
-        'crab', 'eel', 'flounder', 'grouper', 'haddock', 'halibut', 'herring', 'lobster',
-        'mackerel', 'mahi-mahi', 'mahi mahi', 'mussels', 'octopus', 'oysters', 'perch',
-        'pike', 'pollack', 'pompano', 'salmon', 'sardines', 'scallops', 'sea bass',
-        'shrimp', 'snapper', 'sole', 'squid', 'swordfish', 'tilapia', 'trout', 'tuna',
-        'turbot', 'whitefish'
-    ],
-    'Eggs & Dairy': [
-        'eggs', 'egg', 'egg whites', 'egg white', 'egg substitute', 'egg substitutes',
-        'greek yogurt', 'plain greek yogurt', 'nonfat greek yogurt', 
-        'yogurt', 'plain yogurt', 'nonfat yogurt',
-        'cottage cheese', 'nonfat cottage cheese', 'plain cottage cheese',
-        'quark', 'nonfat quark', 'plain quark'
-    ],
-    'Beans & Legumes': [
-        'adzuki beans', 'black beans', 'black-eyed peas', 'black eyed peas', 'broad beans',
-        'cannellini beans', 'chickpeas', 'edamame', 'fava beans', 'great northern beans',
-        'kidney beans', 'lentils', 'lima beans', 'lupini beans', 'navy beans', 'pinto beans',
-        'refried beans', 'fat-free refried beans', 'soybeans', 'split peas'
-    ],
-    'Plant-Based Protein': [
-        'tofu', 'firm tofu', 'silken tofu', 'smoked tofu', 'tempeh', 'quorn'
-    ],
-    'Grains & Starches': [
-        'corn', 'popcorn', 'air-popped popcorn', 'plain popcorn',
-        'potatoes', 'white potatoes', 'red potatoes', 'yukon gold potatoes', 'purple potatoes',
-        'sweet potatoes', 'oats', 'rolled oats', 'steel-cut oats', 'quick-cooking oats', 'oatmeal', 'plain oats'
-    ]
-};
-
-// Flatten for easy lookup
-const ALL_ZERO_POINT_FOODS = Object.values(ZERO_POINT_FOODS).flat();
-
-// Check if food is zero-point (with smart detection)
-function isZeroPointFood(foodName) {
-    if (!foodName) return false;
-    
-    const normalized = foodName.toLowerCase().trim();
-    
-    // Exact match
-    if (ALL_ZERO_POINT_FOODS.includes(normalized)) return true;
-    
-    // Check for cooking methods that ADD points (exclude from zero-point)
-    const pointAddingMethods = [
-        'fried', 'deep-fried', 'pan-fried', 'breaded', 'battered', 'crispy',
-        'creamy', 'cream', 'butter', 'buttered', 'oil', 'oiled', 'tempura',
-        'glazed', 'candied', 'sweetened', 'sugar', 'honey', 'syrup'
-    ];
-    
-    for (const method of pointAddingMethods) {
-        if (normalized.includes(method)) {
-            return false; // These preparations add points
-        }
-    }
-    
-    // Partial match (e.g., "grilled chicken breast" contains "chicken breast")
-    for (const zeroFood of ALL_ZERO_POINT_FOODS) {
-        if (normalized.includes(zeroFood)) {
-            return true;
-        }
-    }
-    
-    return false;
-}
-
-// Get category for zero-point food
-function getZeroPointCategory(foodName) {
-    if (!foodName) return null;
-    
-    const normalized = foodName.toLowerCase().trim();
-    
-    for (const [category, foods] of Object.entries(ZERO_POINT_FOODS)) {
-        for (const food of foods) {
-            if (normalized.includes(food)) {
-                return category;
-            }
-        }
-    }
-    
-    return null;
-}
-
-// Get badge HTML for zero-point foods
-function getZeroPointBadge(foodName) {
-    const category = getZeroPointCategory(foodName);
-    if (!category) return '';
-    
-    return `<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 5px; font-weight: bold;">0 pts • ${category}</span>`;
-}
-
-// Get random zero-point foods for recipes (by category)
-function getRandomZeroPointFoods(category = null, count = 5) {
-    let foodList;
-    
-    if (category && ZERO_POINT_FOODS[category]) {
-        foodList = [...ZERO_POINT_FOODS[category]];
-    } else {
-        foodList = [...ALL_ZERO_POINT_FOODS];
-    }
-    
-    // Shuffle and return count items
-    const shuffled = foodList.sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, count);
-}
 
 // ============ STATE ============
 let stream = null;
@@ -311,18 +138,19 @@ async function init() {
         checkDailyReset();
         
         // Initialize database with timeout
-        console.log('📦 Initializing database...');
-        const dbPromise = initDatabase();
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Database initialization timeout')), 10000)
-        );
-        
-        try {
-            await Promise.race([dbPromise, timeoutPromise]);
-            console.log('✅ Database ready');
-        } catch (dbErr) {
-            console.error('❌ Database initialization failed:', dbErr);
-            alert('Database initialization failed.\n\n' + 
+        // Database already initialized by wrapper
+//         console.log('📦 Initializing database...');
+//         const dbPromise = initDB();
+//         const timeoutPromise = new Promise((_, reject) => 
+//             setTimeout(() => reject(new Error('Database initialization timeout')), 10000)
+//         );
+//         
+//         try {
+//             await Promise.race([dbPromise, timeoutPromise]);
+//             console.log('✅ Database ready');
+//         } catch (dbErr) {
+//             console.error('❌ Database initialization failed:', dbErr);
+//             alert('Database initialization failed.\n\n' + 
                   'Error: ' + dbErr.message + '\n\n' +
                   'Please try:\n' +
                   '1. Refresh the page\n' +
@@ -333,7 +161,7 @@ async function init() {
         }
         
         // Perform daily maintenance
-        await performDailyMaintenance();
+//         await performDailyMaintenance();
         
         // Load user settings
         userSettings = await getSettings();
@@ -2799,7 +2627,7 @@ async function handleImport(event) {
 
 // ============ START APPLICATION ============
 document.addEventListener('DOMContentLoaded', init);
-setInterval(performDailyMaintenance, 60000); // Check daily maintenance every minute
+// setInterval(performDailyMaintenance, 60000); // Check daily maintenance every minute
 setInterval(checkWeeklyReminders, 3600000); // Check weekly reminders every hour
 
 // ============ AI WELLNESS COACH ============

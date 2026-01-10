@@ -66,7 +66,7 @@ async function restoreSession() {
         
         // Restore current tab
         if (state.currentTab) {
-            setTimeout(() => switchToTab(state.currentTab), 100);
+            setTimeout(() => switchTab(state.currentTab), 100);
         }
         
         // Restore scroll position

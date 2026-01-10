@@ -30,7 +30,6 @@ let flashMode = 'auto'; // 'auto', 'on', 'off'
 let videoTrack = null;
 let capabilities = null;
 
-let flashMode = 'auto'; // 'auto', 'on', 'off'
 
 // Camera capabilities
 let videoTrack = null;
