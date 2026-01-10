@@ -4,21 +4,34 @@
 const DB_NAME = 'WellnessDB';
 const DB_VERSION = 4; // Incremented for v2.2 (multi-user support)
 
+
 let db;
+let dbReady = false;
+let dbInitPromise = null;
 
 // ============ DATABASE INITIALIZATION ============
 
 async function initDB() {
-    return new Promise((resolve, reject) => {
+    // If already initializing, return that promise
+    if (dbInitPromise) {
+        console.log('Database initialization already in progress...');
+        return dbInitPromise;
+    }
+    
+    // Create initialization promise
+    dbInitPromise = new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
         
         request.onerror = () => {
             console.error('❌ Database failed to open:', request.error);
+            dbReady = false;
+            dbInitPromise = null;
             reject(request.error);
         };
         
         request.onsuccess = () => {
             db = request.result;
+            dbReady = true;
             console.log('✅ Database opened successfully (v' + DB_VERSION + ')');
             resolve(db);
         };
@@ -31,6 +44,8 @@ async function initDB() {
             createObjectStores(db, oldVersion);
         };
     });
+    
+    return dbInitPromise;
 }
 
 function createObjectStores(db, oldVersion) {
@@ -190,6 +205,14 @@ function createObjectStores(db, oldVersion) {
 
 // ============ CRUD OPERATIONS (USER-SCOPED) ============
 
+// ============ DATABASE SAFETY CHECK ============
+
+function ensureDBInitialized() {
+    if (!db || !dbReady) {
+        throw new Error('Database not initialized - wait for initDB() to complete');
+    }
+}
+
 async function dbPut(storeName, data) {
     // Ensure userId is set
     if (!data.userId && storeName !== 'users' && storeName !== 'upc_database') {
@@ -203,6 +226,7 @@ async function dbPut(storeName, data) {
     data._updatedAt = new Date().toISOString();
     data._needsSync = true;
     
+    ensureDBInitialized();
     return new Promise((resolve, reject) => {
     // Check if database is initialized
     if (!db) {
@@ -224,6 +248,7 @@ async function dbPut(storeName, data) {
 }
 
 async function dbGet(storeName, key) {
+    ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -235,6 +260,8 @@ async function dbGet(storeName, key) {
 }
 
 async function dbGetAll(storeName, userId = null) {
+    ensureDBInitialized();
+    ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -254,6 +281,7 @@ async function dbGetAll(storeName, userId = null) {
 }
 
 async function dbDelete(storeName, key) {
+    ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
@@ -282,6 +310,8 @@ async function dbClear(storeName) {
 // ============ QUERY HELPERS ============
 
 async function dbGetByIndex(storeName, indexName, value) {
+    ensureDBInitialized();
+    ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -294,6 +324,8 @@ async function dbGetByIndex(storeName, indexName, value) {
 }
 
 async function dbGetByUserAndDate(storeName, userId, date) {
+    ensureDBInitialized();
+    ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -318,6 +350,8 @@ async function dbGetByUserAndDate(storeName, userId, date) {
 }
 
 async function dbGetByDateRange(storeName, userId, startDate, endDate) {
+    ensureDBInitialized();
+    ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);

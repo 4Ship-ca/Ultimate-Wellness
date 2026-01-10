@@ -1,42 +1,28 @@
 // ============ CAMERA MODULE v2.2.1 ============
 // Wrapped in IIFE to prevent global variable conflicts
+
 (function() {
 'use strict';
 
-// Private variables (not global)
+// All variables scoped to this module
 let currentStream = null;
 let videoElement = null;
 let canvasElement = null;
 let isRecording = false;
 let mediaRecorder = null;
 let recordedChunks = [];
-
-// Zoom and gesture tracking
 let currentZoom = 1;
 let minZoom = 1;
 let maxZoom = 4;
 let touchDistance = 0;
 let isGesturing = false;
-
-// Video recording settings
-let videoRecordingDuration = 20; // Default 20 seconds
+let videoRecordingDuration = 20;
 let recordingTimer = null;
 let recordingStartTime = null;
-
-// Flash mode
-let flashMode = 'auto'; // 'auto', 'on', 'off'
-
-// Camera capabilities
+let flashMode = 'auto';
 let videoTrack = null;
 let capabilities = null;
 
-
-// Camera capabilities
-
-// ============ CAMERA INITIALIZATION ============
-
-/**
- * Initialize camera with proper cleanup
  */
 async function initCamera(videoElementId = 'cameraPreview') {
     console.log('📷 Initializing camera...');
@@ -1156,4 +1142,4 @@ console.log('📷 Camera module v2.2.1 loaded');
 console.log('✨ Features: Pinch zoom, portrait mode, flash, 20s video default');
 console.log('🐛 Black screen bug FIXED!');
 
-})(); // End of camera module IIFE
+})(); // End camera module IIFE
