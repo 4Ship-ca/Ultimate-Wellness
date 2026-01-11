@@ -207,11 +207,23 @@ function createObjectStores(db, oldVersion) {
 
 // ============ DATABASE SAFETY CHECK ============
 
-function ensureDBInitialized() {
-    if (!db || !dbReady) {
-        throw new Error('Database not initialized - wait for initDB() to complete');
+async function ensureDBInitialized() {
+    // If database is ready, return immediately
+    if (db && dbReady) {
+        return;
     }
+    
+    // If initialization is in progress, wait for it
+    if (dbInitPromise) {
+        console.log('⏳ Waiting for database initialization...');
+        await dbInitPromise;
+        return;
+    }
+    
+    // If no initialization has started, throw error
+    throw new Error('Database not initialized - call initDB() first');
 }
+
 
 async function dbPut(storeName, data) {
     // Ensure userId is set
@@ -226,7 +238,7 @@ async function dbPut(storeName, data) {
     data._updatedAt = new Date().toISOString();
     data._needsSync = true;
     
-    ensureDBInitialized();
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
     // Check if database is initialized
     if (!db) {
@@ -248,7 +260,7 @@ async function dbPut(storeName, data) {
 }
 
 async function dbGet(storeName, key) {
-    ensureDBInitialized();
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -260,8 +272,8 @@ async function dbGet(storeName, key) {
 }
 
 async function dbGetAll(storeName, userId = null) {
-    ensureDBInitialized();
-    ensureDBInitialized();
+    await ensureDBInitialized();
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -281,7 +293,7 @@ async function dbGetAll(storeName, userId = null) {
 }
 
 async function dbDelete(storeName, key) {
-    ensureDBInitialized();
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
@@ -310,8 +322,8 @@ async function dbClear(storeName) {
 // ============ QUERY HELPERS ============
 
 async function dbGetByIndex(storeName, indexName, value) {
-    ensureDBInitialized();
-    ensureDBInitialized();
+    await ensureDBInitialized();
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -324,8 +336,8 @@ async function dbGetByIndex(storeName, indexName, value) {
 }
 
 async function dbGetByUserAndDate(storeName, userId, date) {
-    ensureDBInitialized();
-    ensureDBInitialized();
+    await ensureDBInitialized();
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -350,8 +362,8 @@ async function dbGetByUserAndDate(storeName, userId, date) {
 }
 
 async function dbGetByDateRange(storeName, userId, startDate, endDate) {
-    ensureDBInitialized();
-    ensureDBInitialized();
+    await ensureDBInitialized();
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);

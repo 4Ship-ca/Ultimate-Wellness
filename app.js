@@ -174,14 +174,15 @@ async function init() {
         
         if (!userSettings) {
             // Show setup screen
-            document.getElementById('setupScreen').classList.add('active');
+            const setupEl = document.getElementById('setupScreen'); if (setupEl) setupEl.classList.add('active');
             console.log('👋 New user - showing setup screen');
             
             // Show current app version on setup screen
             await updateVersionDisplay();
         } else {
             // Hide setup screen
-            document.getElementById('setupScreen').classList.remove('active');
+            const setupScreen = document.getElementById('setupScreen');
+            if (setupScreen) setupScreen.classList.remove('active');
             
             // Check if app version needs updating
             if (userSettings.appVersion !== APP_VERSION) {
@@ -345,7 +346,7 @@ async function completeSetup() {
             notes: 'Starting weight'
         });
 
-        document.getElementById('setupScreen').classList.remove('active');
+        const setupEl = document.getElementById('setupScreen'); if (setupEl) setupEl.classList.remove('active');
         await updateAllUI();
         
         // Send welcome email
