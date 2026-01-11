@@ -445,6 +445,12 @@ async function getSettings(userId = null) {
 
 window.getSettings = getSettings;
 async function saveSettings(settings) {
+    // Safety check - ensure settings object exists
+    if (!settings) {
+        console.error('saveSettings called with undefined/null settings');
+        return null;
+    }
+    
     if (!settings.userId) {
         settings.userId = getCurrentUserId();
     }
@@ -686,6 +692,7 @@ window.dbGetByUserAndDate = dbGetByUserAndDate;
 window.dbGetByDateRange = dbGetByDateRange;
 window.getSettings = getSettings;
 window.saveSettings = saveSettings;
+window.createDefaultSettings = createDefaultSettings;
 window.getAllUsers = getAllUsers;
 window.createUser = createUser;
 window.migrateToMultiUser = migrateToMultiUser;
