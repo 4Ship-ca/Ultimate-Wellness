@@ -16,6 +16,11 @@ const EXERCISES = [
     'Other'
 ];
 
+
+// API Configuration
+const USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
+const CLAUDE_API_KEY = ''; // Your Claude API key (leave empty if using proxy)
+
 let appReady = false;
 
 // ============ INITIALIZATION WRAPPER ============
@@ -1430,7 +1435,7 @@ async function updateWater(date, drops, foodWater = 0) {
     const userId = getCurrentUserId();
     
     // Check if water entry exists
-    const existing = await getWaterByDate(date);
+    const existing = await getWaterByDate(userId, date);
     
     const waterData = {
         id: existing?.id || `water_${Date.now()}`,
@@ -1446,7 +1451,8 @@ async function updateWater(date, drops, foodWater = 0) {
 
 async function fillWaterDrop(dropNum) {
     const today = getTodayKey();
-    const currentWater = await getWaterByDate(today);
+    const userId = getCurrentUserId();
+    const currentWater = await getWaterByDate(userId, today);
     
     let newDrops = currentWater.drops || 0;
     
@@ -1463,7 +1469,8 @@ async function fillWaterDrop(dropNum) {
 
 async function updateWaterDisplay() {
     const today = getTodayKey();
-    const water = await getWaterByDate(today);
+    const userId = getCurrentUserId();
+    const water = await getWaterByDate(userId, today);
     const manualDrops = water.drops || 0; // Manually clicked drops
     const foodWaterMl = water.foodWater || 0;
     
@@ -1551,8 +1558,9 @@ function setupExerciseGrid() {
 }
 
 async function updateExerciseGrid() {
+    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const todayExercise = await getExerciseByDate(today);
+    const todayExercise = await getExerciseByDate(userId, today);
     
     const grid = document.getElementById('exerciseGrid');
     if (!grid) return;
@@ -2121,6 +2129,7 @@ function stopNapAlarm() {
 }
 
 async function logNap(quality) {
+    const userId = getCurrentUserId();
     const today = getTodayKey();
     
     // Log as a nap entry
@@ -2132,7 +2141,7 @@ async function logNap(quality) {
     });
     
     // Also add to daily sleep notes
-    const sleep = await getSleepByDate(today);
+    const sleep = await getSleepByDate(userId, today);
     if (sleep) {
         const napNote = `Nap: ${napTimerMinutes}min (${quality})`;
         const existingNotes = sleep.notes || '';
@@ -2580,9 +2589,10 @@ async function updateWeightDisplay() {
 
 
 async function updatePointsDisplay() {
+    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const foods = await getFoodsByDate(today);
-    const exercises = await getExerciseByDate(today);
+    const foods = await getFoodsByDate(userId, today);
+    const exercises = await getExerciseByDate(userId, today);
     
     const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
     const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
@@ -2604,9 +2614,10 @@ async function updatePointsDisplay() {
 }
 
 async function updateTodayLog() {
+    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const foods = await getFoodsByDate(today);
-    const exercises = await getExerciseByDate(today);
+    const foods = await getFoodsByDate(userId, today);
+    const exercises = await getExerciseByDate(userId, today);
     
     const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
     const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
@@ -2630,8 +2641,9 @@ async function updateTodayLog() {
 }
 
 async function updateExercisePoints() {
+    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const exercises = await getExerciseByDate(today);
+    const exercises = await getExerciseByDate(userId, today);
     const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
     
     const elem = document.getElementById('exercisePoints');
@@ -2670,8 +2682,9 @@ async function updateSleepLog() {
 }
 
 async function updateTasksDisplay() {
+    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const allTasks = await getTasksByDate(today);
+    const allTasks = await getTasksByDate(userId, today);
     
     ['want', 'need', 'grateful'].forEach(type => {
         const list = document.getElementById(type + 'List');
@@ -3113,6 +3126,7 @@ function removeThinkingIndicator(id) {
 
 async function buildAIContext() {
     // Gather user context for better AI responses
+    const userId = getCurrentUserId();
     const context = {
         currentTab: currentTab,
         userName: userSettings?.name || 'there',
@@ -3124,9 +3138,9 @@ async function buildAIContext() {
     };
     
     // Get today's stats
-    const foods = await getFoodsByDate(context.today);
-    const exercise = await getExerciseByDate(context.today);
-    const water = await getWaterByDate(context.today);
+    const foods = await getFoodsByDate(userId, context.today);
+    const exercise = await getExerciseByDate(userId, context.today);
+    const water = await getWaterByDate(userId, context.today);
     
     context.todayStats = {
         foodPoints: foods.reduce((sum, f) => sum + f.points, 0),
