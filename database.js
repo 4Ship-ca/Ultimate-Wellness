@@ -260,7 +260,6 @@ async function dbPut(storeName, data) {
 }
 
 async function dbGet(storeName, key) {
-    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -272,8 +271,6 @@ async function dbGet(storeName, key) {
 }
 
 async function dbGetAll(storeName, userId = null) {
-    await ensureDBInitialized();
-    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -293,7 +290,6 @@ async function dbGetAll(storeName, userId = null) {
 }
 
 async function dbDelete(storeName, key) {
-    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readwrite');
         const store = transaction.objectStore(storeName);
@@ -322,8 +318,6 @@ async function dbClear(storeName) {
 // ============ QUERY HELPERS ============
 
 async function dbGetByIndex(storeName, indexName, value) {
-    await ensureDBInitialized();
-    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -337,33 +331,41 @@ async function dbGetByIndex(storeName, indexName, value) {
 
 async function dbGetByUserAndDate(storeName, userId, date) {
     await ensureDBInitialized();
-    await ensureDBInitialized();
+    
+    // Validate date parameter
+    if (!date || typeof date !== 'string') {
+        console.warn('Invalid date parameter:', date, '- using today');
+        date = new Date().toISOString().split('T')[0];
+    }
+    
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readonly');
-        const store = transaction.objectStore(storeName);
-        
-        // Try compound index first
-        if (store.indexNames.contains('userId_date')) {
-            const index = store.index('userId_date');
-            const request = index.getAll([userId, date]);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        } else {
-            // Fallback: get by userId and filter by date
-            const index = store.index('userId');
-            const request = index.getAll(userId);
-            request.onsuccess = () => {
-                const filtered = request.result.filter(item => item.date === date);
-                resolve(filtered);
-            };
-            request.onerror = () => reject(request.error);
+        try {
+            const transaction = db.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            
+            // Try compound index first
+            if (store.indexNames.contains('userId_date')) {
+                const index = store.index('userId_date');
+                const request = index.getAll([userId, date]);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            } else {
+                // Fallback: get by userId and filter by date
+                const index = store.index('userId');
+                const request = index.getAll(userId);
+                request.onsuccess = () => {
+                    const filtered = request.result.filter(item => item.date === date);
+                    resolve(filtered);
+                };
+                request.onerror = () => reject(request.error);
+            }
+        } catch (error) {
+            reject(error);
         }
     });
 }
 
 async function dbGetByDateRange(storeName, userId, startDate, endDate) {
-    await ensureDBInitialized();
-    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
