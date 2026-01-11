@@ -928,8 +928,14 @@ async function saveSettings() {
     const heightInInches = (heightFeet * 12) + heightInches;
     
     // Check if activity or goal changed (these affect points calculation)
-    const activityChanged = userSettings.activity !== activity;
-    const goalChanged = Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
+    // Only check if userSettings already exists (not a new user)
+    const activityChanged = userSettings && userSettings.activity !== activity;
+    const goalChanged = userSettings && Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
+    
+    // Initialize userSettings if it doesn't exist (new user)
+    if (!userSettings) {
+        userSettings = {};
+    }
     
     userSettings.name = name;
     userSettings.email = email;
