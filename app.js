@@ -4,6 +4,17 @@
 
 const APP_VERSION = '2.2.1';
 const APP_NAME = 'Ultimate Wellness';
+const EXERCISES = [
+    'Walking',
+    'Running',
+    'Cycling',
+    'Swimming',
+    'Yoga',
+    'Strength Training',
+    'Dancing',
+    'Sports',
+    'Other'
+];
 
 let appReady = false;
 
