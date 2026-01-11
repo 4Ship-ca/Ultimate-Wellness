@@ -86,6 +86,50 @@ async function initializeAfterLogin() {
 window.initializeAfterLogin = initializeAfterLogin;
 window.appReady = () => appReady;
 
+
+// ============ DOM SAFETY HELPERS ============
+
+function safeSetText(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (el) el.textContent = text;
+}
+
+function safeSetHTML(elementId, html) {
+    const el = document.getElementById(elementId);
+    if (el) el.innerHTML = html;
+}
+
+function safeSetValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (el) el.value = value;
+}
+
+
+// ============ MISSING HELPER FUNCTIONS ============
+
+async function getIncompleteSleepSession() {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const userId = getCurrentUserId();
+        const sleepLogs = await dbGetByUserAndDate('sleep', userId, today);
+        return sleepLogs.find(log => log.startTime && !log.endTime) || null;
+    } catch (error) {
+        console.warn('Error getting incomplete sleep session:', error);
+        return null;
+    }
+}
+
+async function getAllMedications() {
+    try {
+        const userId = getCurrentUserId();
+        const meds = await dbGetAll('medications', userId);
+        return meds || [];
+    } catch (error) {
+        console.warn('Error getting medications:', error);
+        return [];
+    }
+}
+
 // Load external data
 async function loadExternalData() {
     try {

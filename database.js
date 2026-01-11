@@ -688,6 +688,4 @@ window.getSettings = getSettings;
 window.saveSettings = saveSettings;
 window.getAllUsers = getAllUsers;
 window.createUser = createUser;
-window.authenticateUser = authenticateUser;
-window.deleteUser = deleteUser;
 window.migrateToMultiUser = migrateToMultiUser;
