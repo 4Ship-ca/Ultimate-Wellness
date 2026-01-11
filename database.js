@@ -48,6 +48,9 @@ async function initDB() {
     return dbInitPromise;
 }
 
+
+// Export to window for app.js
+window.initDB = initDB;
 function createObjectStores(db, oldVersion) {
     // 1. Users table (NEW in v2.2 for multi-user support)
     if (!db.objectStoreNames.contains('users')) {
@@ -320,7 +323,6 @@ async function dbClear(storeName) {
 
 // ============ QUERY HELPERS ============
 
-    await ensureDBInitialized();
 async function dbGetByIndex(storeName, indexName, value) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
@@ -369,7 +371,6 @@ async function dbGetByUserAndDate(storeName, userId, date) {
     });
 }
 
-    await ensureDBInitialized();
 async function dbGetByDateRange(storeName, userId, startDate, endDate) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
@@ -442,6 +443,7 @@ async function getSettings(userId = null) {
     return await dbGet('settings', settingsId);
 }
 
+window.getSettings = getSettings;
 async function saveSettings(settings) {
     if (!settings.userId) {
         settings.userId = getCurrentUserId();
@@ -670,3 +672,22 @@ async function migrateToMultiUser() {
 
 // ============ EXPORT ============
 console.log('💾 Database v2.2.0 loaded - 18 tables, multi-user ready');
+
+// ============ WINDOW EXPORTS (for app.js access) ============
+window.initDB = initDB;
+window.getCurrentUserId = getCurrentUserId;
+window.setCurrentUserId = setCurrentUserId;
+window.dbPut = dbPut;
+window.dbGet = dbGet;
+window.dbGetAll = dbGetAll;
+window.dbDelete = dbDelete;
+window.dbGetByIndex = dbGetByIndex;
+window.dbGetByUserAndDate = dbGetByUserAndDate;
+window.dbGetByDateRange = dbGetByDateRange;
+window.getSettings = getSettings;
+window.saveSettings = saveSettings;
+window.getAllUsers = getAllUsers;
+window.createUser = createUser;
+window.authenticateUser = authenticateUser;
+window.deleteUser = deleteUser;
+window.migrateToMultiUser = migrateToMultiUser;
