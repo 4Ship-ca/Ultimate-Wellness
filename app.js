@@ -803,7 +803,6 @@ async function saveSettings() {
         alert('Please fill in all fields');
         return;
     }
-    }
 
     // Validate email
     if (!email.includes('@') || !email.includes('.')) {

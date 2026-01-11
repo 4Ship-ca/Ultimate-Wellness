@@ -292,7 +292,6 @@ async function dbGetAll(storeName, userId = null) {
     });
 }
 
-    await ensureDBInitialized();
 async function dbDelete(storeName, key) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readwrite');
