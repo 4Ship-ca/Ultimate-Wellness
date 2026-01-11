@@ -1426,6 +1426,24 @@ function calculatePoints(calories, protein, sugar, saturatedFat) {
 }
 
 // ============ WATER TRACKING ============
+async function updateWater(date, drops, foodWater = 0) {
+    const userId = getCurrentUserId();
+    
+    // Check if water entry exists
+    const existing = await getWaterByDate(date);
+    
+    const waterData = {
+        id: existing?.id || `water_${Date.now()}`,
+        userId: userId,
+        date: date,
+        drops: drops,
+        foodWater: foodWater || 0,
+        timestamp: new Date().toISOString()
+    };
+    
+    await dbPut('water', waterData);
+}
+
 async function fillWaterDrop(dropNum) {
     const today = getTodayKey();
     const currentWater = await getWaterByDate(today);
