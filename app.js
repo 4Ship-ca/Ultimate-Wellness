@@ -935,7 +935,8 @@ async function handleSaveSettings() {
     
     // Initialize userSettings if it doesn't exist (new user)
     if (!userSettings) {
-        userSettings = {};
+        const userId = getCurrentUserId();
+        userSettings = await createDefaultSettings(userId, { name, email });
     }
     
     userSettings.name = name;
