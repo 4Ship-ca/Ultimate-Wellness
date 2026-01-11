@@ -226,6 +226,7 @@ async function ensureDBInitialized() {
 
 
 async function dbPut(storeName, data) {
+    await ensureDBInitialized();
     // Ensure userId is set
     if (!data.userId && storeName !== 'users' && storeName !== 'upc_database') {
         const currentUserId = getCurrentUserId();
@@ -260,6 +261,7 @@ async function dbPut(storeName, data) {
 }
 
 async function dbGet(storeName, key) {
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -271,6 +273,7 @@ async function dbGet(storeName, key) {
 }
 
 async function dbGetAll(storeName, userId = null) {
+    await ensureDBInitialized();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
@@ -289,6 +292,7 @@ async function dbGetAll(storeName, userId = null) {
     });
 }
 
+    await ensureDBInitialized();
 async function dbDelete(storeName, key) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readwrite');
@@ -317,6 +321,7 @@ async function dbClear(storeName) {
 
 // ============ QUERY HELPERS ============
 
+    await ensureDBInitialized();
 async function dbGetByIndex(storeName, indexName, value) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');
@@ -365,6 +370,7 @@ async function dbGetByUserAndDate(storeName, userId, date) {
     });
 }
 
+    await ensureDBInitialized();
 async function dbGetByDateRange(storeName, userId, startDate, endDate) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([storeName], 'readonly');

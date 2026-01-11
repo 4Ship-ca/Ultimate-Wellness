@@ -778,16 +778,31 @@ function enterMaintenanceMode() {
 // ============ END 12-WEEK POINTS PERIOD SYSTEM ============
 
 async function saveSettings() {
-    const name = document.getElementById('settingsName').value.trim();
-    const email = document.getElementById('settingsEmail').value.trim();
-    const goalWeight = parseFloat(document.getElementById('settingsGoalWeight').value);
-    const heightFeet = parseInt(document.getElementById('settingsHeightFeet').value);
-    const heightInches = parseInt(document.getElementById('settingsHeightInches').value);
-    const activity = document.getElementById('settingsActivity').value;
+    // Get elements with null checks
+    const nameEl = document.getElementById('settingsName');
+    const emailEl = document.getElementById('settingsEmail');
+    const goalWeightEl = document.getElementById('settingsGoalWeight');
+    const heightFeetEl = document.getElementById('settingsHeightFeet');
+    const heightInchesEl = document.getElementById('settingsHeightInches');
+    const activityEl = document.getElementById('settingsActivity');
+    
+    // Bail out if elements don't exist yet
+    if (!nameEl || !emailEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
+        console.warn('Settings form not ready yet');
+        return;
+    }
+    
+    const name = nameEl.value.trim();
+    const email = emailEl.value.trim();
+    const goalWeight = parseFloat(goalWeightEl.value);
+    const heightFeet = parseInt(heightFeetEl.value);
+    const heightInches = parseInt(heightInchesEl.value);
+    const activity = activityEl.value;
 
     if (!name || !email || !goalWeight || !heightFeet) {
         alert('Please fill in all fields');
         return;
+    }
     }
 
     // Validate email
