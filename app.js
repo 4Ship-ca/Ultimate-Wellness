@@ -130,7 +130,62 @@ async function getAllMedications() {
     }
 }
 
+
+async function getRecentSleepSessions(days = 7) {
+    try {
+        const userId = getCurrentUserId();
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const sessions = await dbGetByDateRange('sleep', userId, startDate, endDate);
+        return sessions || [];
+    } catch (error) {
+        console.warn('Error getting recent sleep sessions:', error);
+        return [];
+    }
+}
+
+async function getMedLogsByDate(date) {
+    try {
+        const userId = getCurrentUserId();
+        const logs = await dbGetByUserAndDate('medications', userId, date);
+        return logs || [];
+    } catch (error) {
+        console.warn('Error getting medication logs:', error);
+        return [];
+    }
+}
 // Load external data
+
+async function restoreSettingsFromBackup() {
+    try {
+        // Try to restore from localStorage backup
+        const backupKey = 'ultimateWellness_settingsBackup';
+        const backup = localStorage.getItem(backupKey);
+        
+        if (backup) {
+            const settings = JSON.parse(backup);
+            console.log('📦 Found settings backup in localStorage');
+            
+            // Save to IndexedDB
+            const userId = getCurrentUserId();
+            settings.userId = userId;
+            settings.id = `user_${userId}`;
+            
+            await saveSettings(settings);
+            console.log('💾 Settings restored to IndexedDB');
+            
+            // Clear the backup
+            localStorage.removeItem(backupKey);
+            
+            return settings;
+        }
+        
+        return null;
+    } catch (error) {
+        console.warn('Error restoring settings from backup:', error);
+        return null;
+    }
+}
 async function loadExternalData() {
     try {
         const foods = await fetch('data/zero-point-foods.json');
@@ -2481,19 +2536,19 @@ function handleFileUpload(event) {}
 async function updateWeightDisplay() {
     if (!userSettings) return;
     
-    document.getElementById('currentWeight').textContent = `${userSettings.currentWeight} lbs`;
-    document.getElementById('goalWeight').textContent = `${userSettings.goalWeight} lbs`;
+    safeSetText('currentWeight', `${userSettings.currentWeight} lbs`);
+    safeSetText('goalWeight', `${userSettings.goalWeight} lbs`);
     
     const progress = calculateWeightProgress();
-    document.getElementById('weightProgress').style.width = `${progress}%`;
+    const progressEl = document.getElementById('weightProgress');
+    if (progressEl) progressEl.style.width = `${progress}%`;
     
     const weeklyGoal = calculateWeeklyGoal();
-    document.getElementById('weeklyGoal').textContent = weeklyGoal.toFixed(1);
+    safeSetText('weeklyGoal', weeklyGoal.toFixed(1));
     
-    document.getElementById('nextWeighin').textContent = getNextWeighinDate();
+    safeSetText('nextWeighin', getNextWeighinDate());
 }
 
-async function updatePointsDisplay() {
     const today = getTodayKey();
     const foods = await getFoodsByDate(today);
     const exercises = await getExerciseByDate(today);
