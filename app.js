@@ -893,7 +893,7 @@ function enterMaintenanceMode() {
 
 // ============ END 12-WEEK POINTS PERIOD SYSTEM ============
 
-async function saveSettings() {
+async function handleSaveSettings() {
     // Get elements with null checks
     const nameEl = document.getElementById('settingsName');
     const emailEl = document.getElementById('settingsEmail');
