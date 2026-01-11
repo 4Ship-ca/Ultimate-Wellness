@@ -20,6 +20,7 @@ const EXERCISES = [
 // API Configuration
 const USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
 const CLAUDE_API_KEY = ''; // Your Claude API key (leave empty if using proxy)
+const EXERCISE_POINTS_PER_15MIN = 1; // Points earned per 15 minutes of exercise
 
 let appReady = false;
 
@@ -962,7 +963,8 @@ async function saveSettings() {
         }
     }
 
-    await saveSettings(userSettings);
+    // Save to database using the database.js version (avoid recursion)
+    await window.saveSettings(userSettings);
     await updateAllUI();
     
     if (!activityChanged && !goalChanged) {
@@ -1437,6 +1439,44 @@ function calculatePoints(calories, protein, sugar, saturatedFat) {
 }
 
 // ============ WATER TRACKING ============
+// Database helper - alias for dbPut
+async function dbAdd(storeName, data) {
+    return await dbPut(storeName, data);
+}
+
+// Start sleep tracking session
+async function startSleepSession() {
+    const userId = getCurrentUserId();
+    const today = getTodayKey();
+    const now = new Date();
+    
+    const sleepData = {
+        id: `sleep_${Date.now()}`,
+        userId: userId,
+        date: today,
+        startTime: now.toISOString(),
+        endTime: null,
+        duration: null,
+        quality: null,
+        notes: ''
+    };
+    
+    await dbPut('sleep', sleepData);
+    console.log('😴 Sleep session started');
+    return sleepData;
+}
+
+// Get user preferences
+async function getPreferences() {
+    if (!userSettings) return {};
+    return {
+        theme: userSettings.theme || 'dark',
+        notifications: userSettings.notifications !== false,
+        reminderTime: userSettings.reminderTime || '20:00',
+        language: userSettings.language || 'en'
+    };
+}
+
 async function updateWater(date, drops, foodWater = 0) {
     const userId = getCurrentUserId();
     
