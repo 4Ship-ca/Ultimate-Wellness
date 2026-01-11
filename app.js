@@ -2549,6 +2549,8 @@ async function updateWeightDisplay() {
     safeSetText('nextWeighin', getNextWeighinDate());
 }
 
+
+async function updatePointsDisplay() {
     const today = getTodayKey();
     const foods = await getFoodsByDate(today);
     const exercises = await getExerciseByDate(today);
