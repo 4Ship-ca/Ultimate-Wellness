@@ -1382,6 +1382,13 @@ async function testAPIConnection() {
     result.innerHTML = '<div style="color: var(--text-secondary);">⏳ Sending test request...</div>';
     
     try {
+        // Get proxy URL from user settings
+        const proxyUrl = userSettings?.proxyUrl || document.getElementById('settingsProxyUrl')?.value.trim();
+        
+        if (!proxyUrl) {
+            throw new Error('No Cloudflare Worker URL configured. Please enter your worker URL in the field above.');
+        }
+        
         const testMessage = "Hello! Just testing the API connection.";
         
         const requestBody = {
@@ -1392,42 +1399,31 @@ async function testAPIConnection() {
             ]
         };
         
-        let response;
         const startTime = Date.now();
         
-        if (USE_PROXY) {
-            response = await fetch(PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } else {
-            if (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
-                throw new Error('API key not configured');
-            }
-            
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CLAUDE_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        }
+        const response = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
         
         const elapsed = Date.now() - startTime;
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+            let errorMsg;
+            try {
+                const error = await response.json();
+                errorMsg = error.error?.message || error.message || `HTTP ${response.status}: ${response.statusText}`;
+            } catch {
+                errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+            }
+            throw new Error(errorMsg);
         }
         
         const data = await response.json();
-        const aiResponse = data.content[0].text;
+        const aiResponse = data.content?.[0]?.text || 'No response text';
         
         result.innerHTML = `
             <div style="color: var(--success); padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border-left: 3px solid var(--success);">
@@ -1435,7 +1431,7 @@ async function testAPIConnection() {
                 <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
                     • Response time: ${elapsed}ms<br>
                     • Model: claude-sonnet-4-20250514<br>
-                    • Proxy: ${USE_PROXY ? 'Enabled (Cloudflare Worker)' : 'Disabled (Direct API)'}<br>
+                    • Worker URL: ${proxyUrl}<br>
                     • Test response: "${aiResponse.substring(0, 50)}${aiResponse.length > 50 ? '...' : ''}"
                 </div>
             </div>
@@ -1445,20 +1441,23 @@ async function testAPIConnection() {
         console.error('API Test Error:', error);
         
         let helpText = '';
-        if (error.message.includes('CORS') || error.message.includes('blocked')) {
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+            helpText = 'Fix: Check that your Cloudflare Worker is deployed and the URL is correct. Make sure CORS is enabled.';
+        } else if (error.message.includes('CORS')) {
             helpText = 'Fix: Update Cloudflare Worker CORS settings to allow your GitHub Pages domain.';
         } else if (error.message.includes('API key')) {
             helpText = 'Fix: Add your Claude API key to the Cloudflare Worker environment variables.';
-        } else if (error.message.includes('Failed to fetch')) {
-            helpText = 'Fix: Check your internet connection and Cloudflare Worker URL.';
+        } else if (error.message.includes('No Cloudflare')) {
+            helpText = error.message;
+        } else {
+            helpText = `Error details: ${error.message}`;
         }
         
         result.innerHTML = `
-            <div style="color: var(--danger); padding: 10px; background: rgba(244, 67, 54, 0.1); border-radius: 8px; border-left: 3px solid var(--danger);">
+            <div style="color: #ff6b6b; padding: 10px; background: rgba(255, 107, 107, 0.1); border-radius: 8px; border-left: 3px solid #ff6b6b;">
                 <strong>❌ API Connection Failed</strong><br>
                 <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
-                    Error: ${error.message}<br>
-                    ${helpText ? `<br><strong>${helpText}</strong>` : ''}
+                    ${helpText}
                 </div>
             </div>
         `;
@@ -1466,6 +1465,7 @@ async function testAPIConnection() {
         btn.disabled = false;
         btn.textContent = '🧪 Test API Connection';
     }
+}
 }
 
 function calculateWeeklyGoal() {
@@ -3647,9 +3647,11 @@ async function callClaudeAPI(userMessage, context) {
     const systemPrompt = buildSystemPrompt(context);
     
     try {
-        // Check if API key is configured (if not using proxy)
-        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
-            throw new Error('Claude API key not configured. See SECURE-API-SETUP.md for setup instructions.');
+        // Get proxy URL from user settings
+        const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
+        
+        if (!proxyUrl) {
+            throw new Error('Cloudflare Worker URL not configured. Please add it in Settings → API Connection Test.');
         }
         
         const requestBody = {
@@ -3661,33 +3663,23 @@ async function callClaudeAPI(userMessage, context) {
             ]
         };
         
-        let response;
-        
-        if (USE_PROXY) {
-            // Use Cloudflare Worker proxy (secure)
-            response = await fetch(PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } else {
-            // Direct API call (only for testing with private repos)
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CLAUDE_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        }
+        const response = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'API request failed');
+            let errorMsg;
+            try {
+                const error = await response.json();
+                errorMsg = error.error?.message || 'API request failed';
+            } catch {
+                errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+            }
+            throw new Error(errorMsg);
         }
         
         const data = await response.json();
@@ -3843,9 +3835,11 @@ If clarification needed:
 }`;
 
     try {
-        // Check if API key is configured (if not using proxy)
-        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
-            return "⚠️ API key not configured. I can't parse your meal automatically. Please use the manual food logger.";
+        // Get proxy URL from user settings
+        const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
+        
+        if (!proxyUrl) {
+            return "⚠️ Cloudflare Worker URL not configured. Please add it in Settings → API Connection Test.";
         }
         
         const requestBody = {
@@ -3857,27 +3851,13 @@ If clarification needed:
             ]
         };
         
-        let response;
-        
-        if (USE_PROXY) {
-            response = await fetch(PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } else {
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CLAUDE_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        }
+        const response = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
         
         if (!response.ok) {
             throw new Error('API request failed');
@@ -4012,9 +3992,11 @@ Mark zero-point ingredients with: <span style="color: #28a745; font-weight: bold
 Provide 2-3 recipe options if asked for "ideas" or "suggestions".`;
 
     try {
-        // Check if API key is configured (if not using proxy)
-        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
-            throw new Error('Claude API key not configured');
+        // Get proxy URL from user settings
+        const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
+        
+        if (!proxyUrl) {
+            throw new Error('Cloudflare Worker URL not configured');
         }
         
         const requestBody = {
@@ -4026,31 +4008,23 @@ Provide 2-3 recipe options if asked for "ideas" or "suggestions".`;
             ]
         };
         
-        let response;
-        
-        if (USE_PROXY) {
-            response = await fetch(PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } else {
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CLAUDE_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        }
+        const response = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'API request failed');
+            let errorMsg;
+            try {
+                const error = await response.json();
+                errorMsg = error.error?.message || 'API request failed';
+            } catch {
+                errorMsg = 'API request failed';
+            }
+            throw new Error(errorMsg);
         }
         
         const data = await response.json();
@@ -5471,9 +5445,11 @@ Respond in JSON format:
 
 // Call Claude Vision API
 async function callClaudeVision(base64Image, prompt) {
-    // Check if API key is configured (if not using proxy)
-    if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
-        throw new Error('Claude API key not configured. Add your API key in app.js or set up Cloudflare Worker proxy.');
+    // Get proxy URL from user settings
+    const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
+    
+    if (!proxyUrl) {
+        throw new Error('Cloudflare Worker URL not configured. Please add it in Settings → API Connection Test.');
     }
     
     const requestBody = {
@@ -5500,31 +5476,23 @@ async function callClaudeVision(base64Image, prompt) {
         ]
     };
     
-    let response;
-    
-    if (USE_PROXY) {
-        response = await fetch(PROXY_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-    } else {
-        response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': CLAUDE_API_KEY,
-                'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify(requestBody)
-        });
-    }
+    const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+    });
     
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'API request failed');
+        let errorMsg;
+        try {
+            const error = await response.json();
+            errorMsg = error.error?.message || 'API request failed';
+        } catch {
+            errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMsg);
     }
     
     const data = await response.json();
