@@ -1105,17 +1105,18 @@ async function addExercise(exerciseData) {
     const today = getTodayKey();
     
     const exercise = {
-        id: `exercise_${Date.now()}`,
+        id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         userId: userId,
-        date: today,
-        type: exerciseData.type,
+        date: exerciseData.date || today,
+        activity: exerciseData.activity || exerciseData.type,
         minutes: exerciseData.minutes,
         points: exerciseData.points || 0,
+        time: exerciseData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
         timestamp: new Date().toISOString()
     };
     
     await dbPut('exercise', exercise);
-    console.log(`🏃 Exercise logged: ${exercise.type} (${exercise.minutes} min, ${exercise.points} pts)`);
+    console.log(`🏃 Exercise logged: ${exercise.activity} (${exercise.minutes} min, ${exercise.points} pts)`);
     return exercise;
 }
 
@@ -1146,9 +1147,13 @@ async function endSleepSession(sessionId) {
     const durationMs = now - startTime;
     const durationHours = durationMs / (1000 * 60 * 60);
     
-    // Update session
+    // Update session with proper field names
     session.endTime = now.toISOString();
+    session.end_datetime = now.toISOString();
+    session.start_datetime = session.startTime; // Ensure this exists
     session.duration = durationHours;
+    session.duration_hours = durationHours;
+    session.complete = true;
     
     await dbPut('sleep', session);
     console.log(`😴 Sleep session ended: ${durationHours.toFixed(1)} hours`);
@@ -2342,11 +2347,13 @@ async function updateSleepUI() {
         } else {
             if (recent.length > 0) {
                 const last = recent[0];
-                const lastStart = new Date(last.start_datetime);
+                const duration = last.duration_hours || last.duration || 0;
+                const lastStart = last.start_datetime ? new Date(last.start_datetime) : new Date(last.startTime || Date.now());
+                
                 statusDiv.innerHTML = `
                     <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
                         <p style="font-weight: bold; margin: 0 0 5px 0;">Last Sleep</p>
-                        <p style="margin: 0;">${last.duration_hours} hours</p>
+                        <p style="margin: 0;">${duration.toFixed(1)} hours</p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.7;">
                             ${lastStart.toLocaleDateString()} ${lastStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}
                         </p>
@@ -2355,7 +2362,7 @@ async function updateSleepUI() {
             } else {
                 statusDiv.innerHTML = `
                     <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
-                        <p style="margin: 0; opacity: 0.7;">No sleep logged yet</p>
+                        <p style="margin: 0; opacity: 0.7;">No sleep logged yet. Click "Good Night" to start tracking.</p>
                     </div>
                 `;
             }
@@ -2364,25 +2371,35 @@ async function updateSleepUI() {
         // Show history
         const historyDiv = document.getElementById('sleepHistory');
         if (historyDiv && recent.length > 0) {
-            const avgHours = recent.reduce((sum, s) => sum + s.duration_hours, 0) / recent.length;
+            // Filter out incomplete sessions and sessions without duration
+            const completeSessions = recent.filter(s => (s.duration_hours || s.duration) && (s.duration_hours || s.duration) > 0);
             
-            historyDiv.innerHTML = `
-                <h3 style="margin: 20px 0 10px 0;">Recent Sleep (7 days)</h3>
-                <div style="padding: 15px; background: var(--bg-light); border-radius: 8px;">
-                    ${recent.map(s => {
-                        const start = new Date(s.start_datetime);
-                        return `
-                            <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
-                                <span style="font-weight: 500;">${start.toLocaleDateString()}</span>
-                                <span style="float: right; color: var(--primary); font-weight: bold;">${s.duration_hours} hrs</span>
-                            </div>
-                        `;
-                    }).join('')}
-                    <div style="padding: 10px 0 0 0; font-weight: bold;">
-                        Average: ${Math.round(avgHours * 10) / 10} hours
+            if (completeSessions.length > 0) {
+                const avgHours = completeSessions.reduce((sum, s) => sum + (s.duration_hours || s.duration || 0), 0) / completeSessions.length;
+                
+                historyDiv.innerHTML = `
+                    <h3 style="margin: 20px 0 10px 0;">Recent Sleep (7 days)</h3>
+                    <div style="padding: 15px; background: var(--bg-light); border-radius: 8px;">
+                        ${completeSessions.map(s => {
+                            const start = s.start_datetime ? new Date(s.start_datetime) : new Date(s.startTime || Date.now());
+                            const duration = s.duration_hours || s.duration || 0;
+                            return `
+                                <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                    <span style="font-weight: 500;">${start.toLocaleDateString()}</span>
+                                    <span style="float: right; color: var(--primary); font-weight: bold;">${duration.toFixed(1)} hrs</span>
+                                </div>
+                            `;
+                        }).join('')}
+                        <div style="padding: 10px 0 0 0; font-weight: bold;">
+                            Average: ${avgHours.toFixed(1)} hours
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            } else {
+                historyDiv.innerHTML = '';
+            }
+        } else if (historyDiv) {
+            historyDiv.innerHTML = '';
         }
     } catch (err) {
         console.error('Update sleep UI error:', err);
@@ -3587,6 +3604,30 @@ function removeThinkingIndicator(id) {
     if (element) {
         element.remove();
     }
+}
+
+function getRandomZeroPointFoods(category = null, count = 10) {
+    if (!window.ZERO_POINT_FOODS) {
+        return ['chicken breast', 'eggs', 'spinach', 'broccoli', 'apples'];
+    }
+    
+    let allFoods = [];
+    
+    if (category) {
+        // Get foods from specific category
+        if (ZERO_POINT_FOODS[category]) {
+            allFoods = ZERO_POINT_FOODS[category];
+        }
+    } else {
+        // Get foods from all categories
+        for (const cat in ZERO_POINT_FOODS) {
+            allFoods = allFoods.concat(ZERO_POINT_FOODS[cat]);
+        }
+    }
+    
+    // Shuffle and return random selection
+    const shuffled = allFoods.sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
 }
 
 async function buildAIContext() {
