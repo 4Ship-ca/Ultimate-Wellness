@@ -5564,69 +5564,8 @@ async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
 
 // Lookup product in Open Food Facts database
 async function lookupUPC(upc) {
-    try {
-        console.log(`🔍 Looking up UPC: ${upc}`);
-        
-        // Check local cache first
-        const cached = await getUPCProduct(upc);
-        if (cached) {
-            console.log('✅ Found in local cache');
-            return cached;
-        }
-        
-        // Lookup in Open Food Facts API
-        console.log('🌐 Querying Open Food Facts API...');
-        const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${upc}.json`);
-        
-        if (!response.ok) {
-            throw new Error('API request failed');
-        }
-        
-        const data = await response.json();
-        
-        if (data.status === 0) {
-            console.log('❌ Product not found in database');
-            return null; // Not found
-        }
-        
-        const product = data.product;
-        
-        // Calculate SmartPoints from nutrition
-        const nutrition = {
-            calories: product.nutriments?.['energy-kcal_100g'] || 0,
-            protein: product.nutriments?.proteins_100g || 0,
-            carbs: product.nutriments?.carbohydrates_100g || 0,
-            sugar: product.nutriments?.sugars_100g || 0,
-            fat: product.nutriments?.fat_100g || 0,
-            saturated_fat: product.nutriments?.['saturated-fat_100g'] || 0,
-            fiber: product.nutriments?.fiber_100g || 0
-        };
-        
-        const points = calculateSmartPoints(nutrition);
-        const servingSize = product.serving_size || '100g';
-        
-        // Build product data
-        const productData = {
-            upc: upc,
-            product_name: product.product_name || 'Unknown Product',
-            brand: product.brands || '',
-            points: points,
-            nutrition: nutrition,
-            serving_size: servingSize,
-            image_url: product.image_url || '',
-            verified: false, // User hasn't verified yet
-            source: 'openfoodfacts'
-        };
-        
-        console.log('✅ Product found:', productData.product_name);
-        
-        // Don't save to cache yet - wait for user verification
-        return productData;
-        
-    } catch (error) {
-        console.error('UPC lookup error:', error);
-        return null;
-    }
+    // Use the enhanced multi-source lookup
+    return await lookupUPCEnhanced(upc);
 }
 
 // Calculate SmartPoints from nutrition info
@@ -5646,6 +5585,333 @@ function calculateSmartPoints(nutrition) {
     
     // Round to nearest whole number
     return Math.round(points);
+}
+
+// ============ UPC DATABASE FUNCTIONS ============
+
+/**
+ * Get UPC product from local cache
+ * @param {string} upc - The UPC/EAN barcode
+ * @returns {Promise<Object|null>} Product data or null if not found
+ */
+async function getUPCProduct(upc) {
+    try {
+        const userId = getCurrentUserId();
+        const allProducts = await dbGetAll('upc_products', userId);
+        
+        if (!allProducts) return null;
+        
+        // Find product with matching UPC
+        const product = allProducts.find(p => p.upc === upc);
+        return product || null;
+        
+    } catch (error) {
+        console.error('Error getting UPC product from cache:', error);
+        return null;
+    }
+}
+
+/**
+ * Save UPC product to local cache
+ * @param {Object} productData - Product data to save
+ * @returns {Promise<void>}
+ */
+async function saveUPCProduct(productData) {
+    try {
+        const userId = getCurrentUserId();
+        const today = new Date().toISOString();
+        
+        // Ensure required fields
+        productData.userId = userId;
+        productData.id = `upc_${productData.upc}_${userId}`;
+        productData.date_added = productData.date_added || today;
+        productData.last_updated = today;
+        productData.verified = productData.verified || false;
+        
+        // Calculate points per serving if not already set
+        if (!productData.points_per_serving && productData.points && productData.serving_size) {
+            productData.points_per_serving = productData.points;
+        }
+        
+        // Calculate points per 100g for standardization
+        if (productData.nutrition && !productData.points_per_100g) {
+            productData.points_per_100g = calculateSmartPoints(productData.nutrition);
+        }
+        
+        await dbPut('upc_products', productData);
+        console.log(`💾 Saved UPC ${productData.upc} to local database`);
+        
+    } catch (error) {
+        console.error('Error saving UPC product:', error);
+        throw error;
+    }
+}
+
+/**
+ * Enhanced UPC lookup with multiple data sources
+ * Priority: 1. Local cache → 2. Open Food Facts → 3. Barcode Monster → 4. UPCitemdb
+ */
+async function lookupUPCEnhanced(upc) {
+    try {
+        console.log(`🔍 Looking up UPC: ${upc}`);
+        
+        // LAYER 1: Check local cache first
+        const cached = await getUPCProduct(upc);
+        if (cached) {
+            console.log('✅ Found in local cache (verified by user)');
+            return cached;
+        }
+        
+        // LAYER 2: Try Open Food Facts (largest open source database)
+        console.log('🌐 Querying Open Food Facts...');
+        let productData = await lookupOpenFoodFacts(upc);
+        if (productData) {
+            console.log('✅ Found in Open Food Facts');
+            return productData;
+        }
+        
+        // LAYER 3: Try Barcode Monster (fallback)
+        console.log('🌐 Querying Barcode Monster...');
+        productData = await lookupBarcodeMonster(upc);
+        if (productData) {
+            console.log('✅ Found in Barcode Monster');
+            return productData;
+        }
+        
+        // LAYER 4: Try UPCitemdb (another fallback)
+        console.log('🌐 Querying UPCitemdb...');
+        productData = await lookupUPCitemdb(upc);
+        if (productData) {
+            console.log('✅ Found in UPCitemdb');
+            return productData;
+        }
+        
+        console.log('❌ Product not found in any database');
+        return null;
+        
+    } catch (error) {
+        console.error('UPC lookup error:', error);
+        return null;
+    }
+}
+
+/**
+ * Lookup product in Open Food Facts database
+ */
+async function lookupOpenFoodFacts(upc) {
+    try {
+        const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${upc}.json`);
+        
+        if (!response.ok) return null;
+        
+        const data = await response.json();
+        
+        if (data.status === 0 || !data.product) return null;
+        
+        const product = data.product;
+        
+        // Extract nutrition per 100g (standardized)
+        const nutrition = {
+            calories: product.nutriments?.['energy-kcal_100g'] || 0,
+            protein: product.nutriments?.proteins_100g || 0,
+            carbs: product.nutriments?.carbohydrates_100g || 0,
+            sugar: product.nutriments?.sugars_100g || 0,
+            fat: product.nutriments?.fat_100g || 0,
+            saturated_fat: product.nutriments?.['saturated-fat_100g'] || 0,
+            fiber: product.nutriments?.fiber_100g || 0,
+            sodium: product.nutriments?.sodium_100g || 0
+        };
+        
+        // Calculate points per 100g
+        const pointsPer100g = calculateSmartPoints(nutrition);
+        
+        // Parse serving size
+        const servingSize = product.serving_size || '100g';
+        const servingAmount = parseServingSize(servingSize);
+        
+        // Calculate points per serving
+        let pointsPerServing = pointsPer100g;
+        if (servingAmount && servingAmount !== 100) {
+            pointsPerServing = Math.round((pointsPer100g * servingAmount) / 100);
+        }
+        
+        return {
+            upc: upc,
+            product_name: product.product_name || 'Unknown Product',
+            brand: product.brands || '',
+            points: pointsPerServing,
+            points_per_serving: pointsPerServing,
+            points_per_100g: pointsPer100g,
+            nutrition: nutrition,
+            serving_size: servingSize,
+            serving_amount: servingAmount,
+            image_url: product.image_url || product.image_front_url || '',
+            verified: false,
+            source: 'openfoodfacts',
+            categories: product.categories || '',
+            ingredients: product.ingredients_text || ''
+        };
+        
+    } catch (error) {
+        console.error('Open Food Facts lookup error:', error);
+        return null;
+    }
+}
+
+/**
+ * Lookup product in Barcode Monster database
+ */
+async function lookupBarcodeMonster(upc) {
+    try {
+        const response = await fetch(`https://barcode.monster/api/${upc}`);
+        
+        if (!response.ok) return null;
+        
+        const data = await response.json();
+        
+        if (!data || !data.company) return null;
+        
+        // Barcode Monster has limited nutrition data, estimate points
+        return {
+            upc: upc,
+            product_name: data.description || data.product || 'Unknown Product',
+            brand: data.company || '',
+            points: 5, // Default estimate - user can adjust
+            points_per_serving: 5,
+            points_per_100g: 5,
+            nutrition: null,
+            serving_size: '1 serving',
+            serving_amount: null,
+            image_url: '',
+            verified: false,
+            source: 'barcodemonster',
+            categories: data.category || ''
+        };
+        
+    } catch (error) {
+        console.error('Barcode Monster lookup error:', error);
+        return null;
+    }
+}
+
+/**
+ * Lookup product in UPCitemdb database
+ */
+async function lookupUPCitemdb(upc) {
+    try {
+        // Note: UPCitemdb requires API key for commercial use
+        // This is a free tier lookup with limited requests
+        const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`);
+        
+        if (!response.ok) return null;
+        
+        const data = await response.json();
+        
+        if (!data || !data.items || data.items.length === 0) return null;
+        
+        const item = data.items[0];
+        
+        return {
+            upc: upc,
+            product_name: item.title || 'Unknown Product',
+            brand: item.brand || '',
+            points: 5, // Default estimate
+            points_per_serving: 5,
+            points_per_100g: 5,
+            nutrition: null,
+            serving_size: '1 serving',
+            serving_amount: null,
+            image_url: item.images && item.images.length > 0 ? item.images[0] : '',
+            verified: false,
+            source: 'upcitemdb',
+            categories: item.category || ''
+        };
+        
+    } catch (error) {
+        console.error('UPCitemdb lookup error:', error);
+        return null;
+    }
+}
+
+/**
+ * Parse serving size string to extract amount in grams
+ * Examples: "100g" → 100, "28g (1 oz)" → 28, "1 cup (240ml)" → 240
+ */
+function parseServingSize(servingSizeStr) {
+    if (!servingSizeStr) return null;
+    
+    // Try to extract grams
+    const gramsMatch = servingSizeStr.match(/(\d+\.?\d*)\s*g/i);
+    if (gramsMatch) {
+        return parseFloat(gramsMatch[1]);
+    }
+    
+    // Try to extract ml (approximate as grams for liquids)
+    const mlMatch = servingSizeStr.match(/(\d+\.?\d*)\s*ml/i);
+    if (mlMatch) {
+        return parseFloat(mlMatch[1]);
+    }
+    
+    // Default to 100g if can't parse
+    return 100;
+}
+
+/**
+ * Export UPC database as JSON for backup
+ */
+async function exportUPCDatabase() {
+    try {
+        const userId = getCurrentUserId();
+        const allProducts = await dbGetAll('upc_products', userId);
+        
+        const exportData = {
+            export_date: new Date().toISOString(),
+            user_id: userId,
+            total_products: allProducts ? allProducts.length : 0,
+            products: allProducts || []
+        };
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `upc_database_${userId}_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        console.log(`📦 Exported ${exportData.total_products} UPC products`);
+        return exportData.total_products;
+        
+    } catch (error) {
+        console.error('Error exporting UPC database:', error);
+        throw error;
+    }
+}
+
+/**
+ * Import UPC database from JSON backup
+ */
+async function importUPCDatabase(jsonData) {
+    try {
+        const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+        
+        if (!data.products || !Array.isArray(data.products)) {
+            throw new Error('Invalid UPC database format');
+        }
+        
+        let imported = 0;
+        for (const product of data.products) {
+            await saveUPCProduct(product);
+            imported++;
+        }
+        
+        console.log(`📥 Imported ${imported} UPC products`);
+        return imported;
+        
+    } catch (error) {
+        console.error('Error importing UPC database:', error);
+        throw error;
+    }
 }
 
 // Show UPC product with editable points
@@ -5689,12 +5955,15 @@ async function showUPCProduct(productData, upc) {
     // Product found - show with editable points
     const pointsStatus = productData.verified ? '✓ Verified' : '⚠️ Unverified';
     const statusColor = productData.verified ? 'var(--success)' : 'var(--warning)';
+    const dataSource = productData.source ? ` (${productData.source})` : '';
     
     resultDiv.innerHTML = `
         <div class="card" style="margin-top: 15px;">
             <h3>${productData.product_name}</h3>
             ${productData.brand ? `<p style="color: var(--text-secondary);">${productData.brand}</p>` : ''}
-            <p style="font-size: 12px; color: var(--text-secondary);">UPC: ${upc}</p>
+            <p style="font-size: 12px; color: var(--text-secondary);">
+                UPC: ${upc}${dataSource}
+            </p>
             
             ${productData.image_url ? `
                 <img src="${productData.image_url}" alt="${productData.product_name}" style="max-width: 200px; max-height: 200px; margin: 15px 0; border-radius: 8px;">
@@ -5704,24 +5973,44 @@ async function showUPCProduct(productData, upc) {
                 <div style="font-size: 14px; color: ${statusColor}; margin-bottom: 10px;">
                     ${pointsStatus}
                 </div>
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">SmartPoints per ${productData.serving_size}:</label>
-                <input type="number" id="upcPoints" value="${productData.points}" min="0" 
-                    onchange="highlightPointsChange('${upc}', ${productData.points})"
-                    style="width: 100px; padding: 10px; font-size: 24px; font-weight: bold; border: 2px solid var(--primary); border-radius: 8px; background: var(--bg-light); color: var(--primary); text-align: center;">
+                
+                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                    <div style="flex: 1; padding: 15px; background: var(--bg-light); border-radius: 8px; border: 2px solid var(--primary);">
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;">Per Serving</div>
+                        <input type="number" id="upcPointsServing" value="${productData.points_per_serving || productData.points}" min="0" 
+                            onchange="highlightPointsChange('${upc}', ${productData.points_per_serving || productData.points})"
+                            style="width: 80px; padding: 8px; font-size: 28px; font-weight: bold; border: none; background: transparent; color: var(--primary); text-align: center;">
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">${productData.serving_size || '1 serving'}</div>
+                    </div>
+                    
+                    ${productData.points_per_100g ? `
+                    <div style="flex: 1; padding: 15px; background: var(--bg-light); border-radius: 8px;">
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;">Per 100g</div>
+                        <div style="font-size: 28px; font-weight: bold; color: var(--text-secondary); text-align: center;">
+                            ${productData.points_per_100g}
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">standardized</div>
+                    </div>
+                    ` : ''}
+                </div>
             </div>
             
             ${productData.nutrition ? `
                 <div style="font-size: 14px; color: var(--text-secondary); margin: 15px 0; padding: 15px; background: var(--bg-light); border-radius: 8px;">
                     <strong>Nutrition per 100g:</strong><br>
-                    ${Math.round(productData.nutrition.calories)} cal | 
-                    ${Math.round(productData.nutrition.protein)}g protein | 
-                    ${Math.round(productData.nutrition.carbs)}g carbs | 
-                    ${Math.round(productData.nutrition.fat)}g fat
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
+                        <div>🔥 ${Math.round(productData.nutrition.calories)} cal</div>
+                        <div>🥩 ${Math.round(productData.nutrition.protein)}g protein</div>
+                        <div>🍞 ${Math.round(productData.nutrition.carbs)}g carbs</div>
+                        <div>🧈 ${Math.round(productData.nutrition.fat)}g fat</div>
+                        ${productData.nutrition.sugar ? `<div>🍬 ${Math.round(productData.nutrition.sugar)}g sugar</div>` : ''}
+                        ${productData.nutrition.fiber ? `<div>🌾 ${Math.round(productData.nutrition.fiber)}g fiber</div>` : ''}
+                    </div>
                 </div>
             ` : ''}
             
             <div id="pointsChangeWarning" style="display: none; margin: 15px 0; padding: 15px; background: var(--warning); color: #000; border-radius: 8px; font-weight: bold;">
-                ⚠️ Points changed from ${productData.points} to <span id="newPoints"></span>
+                ⚠️ Points changed from ${productData.points_per_serving || productData.points} to <span id="newPoints"></span>
             </div>
             
             <button class="btn" onclick="confirmUPCProduct('${upc}', ${JSON.stringify(productData).replace(/"/g, '&quot;')})">
@@ -5736,22 +6025,31 @@ async function showUPCProduct(productData, upc) {
 
 // Highlight when points are changed
 function highlightPointsChange(upc, originalPoints) {
-    const newPoints = parseInt(document.getElementById('upcPoints').value);
+    const pointsInput = document.getElementById('upcPointsServing') || document.getElementById('upcPoints');
+    if (!pointsInput) return;
+    
+    const newPoints = parseInt(pointsInput.value);
     const warning = document.getElementById('pointsChangeWarning');
     const newPointsSpan = document.getElementById('newPoints');
     
-    if (newPoints !== originalPoints) {
+    if (warning && newPointsSpan && newPoints !== originalPoints) {
         warning.style.display = 'block';
         newPointsSpan.textContent = newPoints;
-    } else {
+    } else if (warning) {
         warning.style.display = 'none';
     }
 }
 
 // Confirm UPC product and save to cache
 async function confirmUPCProduct(upc, productData) {
-    const points = parseInt(document.getElementById('upcPoints').value);
-    const originalPoints = productData.points;
+    const pointsInput = document.getElementById('upcPointsServing') || document.getElementById('upcPoints');
+    if (!pointsInput) {
+        console.error('Points input field not found');
+        return;
+    }
+    
+    const points = parseInt(pointsInput.value);
+    const originalPoints = productData.points_per_serving || productData.points;
     
     // Check if points were changed
     if (points !== originalPoints) {
@@ -5761,13 +6059,14 @@ async function confirmUPCProduct(upc, productData) {
         }
     }
     
-    // Update points
+    // Update points (both serving and main points field)
     productData.points = points;
+    productData.points_per_serving = points;
     productData.verified = true;
     
     // Save to local cache
     await saveUPCProduct(productData);
-    console.log(`✅ Saved UPC ${upc} with ${points} points to local cache`);
+    console.log(`✅ Saved UPC ${upc} with ${points} points per serving to local cache`);
     
     // Log food
     await logFood(productData.product_name, points, null);
@@ -5779,8 +6078,15 @@ async function confirmUPCProduct(upc, productData) {
             <h3 style="color: var(--success);">✅ Logged Successfully!</h3>
             <p>${productData.product_name}</p>
             <p style="font-size: 32px; font-weight: bold; color: var(--primary);">${points} pts</p>
+            <p style="font-size: 14px; color: var(--text-secondary);">per ${productData.serving_size || 'serving'}</p>
+            ${productData.points_per_100g ? `
+                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
+                    (${productData.points_per_100g} pts per 100g)
+                </p>
+            ` : ''}
             <p style="font-size: 12px; color: var(--text-secondary); margin-top: 10px;">
-                UPC ${upc} saved to local database
+                UPC ${upc} saved to local database<br>
+                ✓ Verified and ready for quick scans
             </p>
             <button class="btn" style="margin-top: 20px;" onclick="closeScan()">
                 Done
@@ -5813,10 +6119,14 @@ async function saveManualUPC(upc) {
         product_name: productName,
         brand: brand,
         points: points,
+        points_per_serving: points,
+        points_per_100g: points, // Assume user entered per-serving, use same for 100g
         nutrition: null,
-        serving_size: 'serving',
+        serving_size: '1 serving',
+        serving_amount: null,
         verified: true,
-        source: 'manual'
+        source: 'manual',
+        image_url: ''
     };
     
     // Save to local cache
