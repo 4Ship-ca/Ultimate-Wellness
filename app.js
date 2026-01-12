@@ -1,6 +1,11 @@
 // ============ ULTIMATE WELLNESS v2.2.1 - FINAL ============
 // v1.9.6 Beautiful UI + v2.2 Powerful Backend
 // Hybrid Build - All Errors Fixed
+// 
+// FIX APPLIED (2026-01-12): Image Media Type Detection
+// - Fixed "Image does not match the provided media type" error
+// - Now correctly detects PNG, JPEG, WebP formats from uploaded images
+// - callClaudeVision() dynamically uses the correct media type
 
 const APP_VERSION = '2.2.1';
 const APP_NAME = 'Ultimate Wellness';
@@ -5170,7 +5175,7 @@ async function analyzeVideo(videoBlob) {
             // Analyze each frame
             const analyses = [];
             for (const frame of frames) {
-                const result = await callClaudeVision(frame, getAnalysisPrompt('pantry'));
+                const result = await callClaudeVision(frame, getAnalysisPrompt('pantry'), 'image/jpeg');
                 analyses.push(result);
             }
             
@@ -5340,7 +5345,11 @@ async function analyzeImage(imageDataUrl) {
     const resultDiv = document.getElementById('scanResult');
     resultDiv.innerHTML = '<div class="spinner"></div><p>Analyzing image with AI...</p>';
     
-    // Convert data URL to base64 (remove data:image/jpeg;base64, prefix)
+    // Extract media type from data URL (e.g., "image/png", "image/jpeg", "image/webp")
+    const mediaTypeMatch = imageDataUrl.match(/^data:(image\/[a-z]+);base64,/i);
+    const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/jpeg'; // Default to jpeg if not found
+    
+    // Convert data URL to base64 (remove data:image/xxx;base64, prefix)
     const base64Data = imageDataUrl.split(',')[1];
     
     try {
@@ -5353,7 +5362,7 @@ async function analyzeImage(imageDataUrl) {
             
 Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, return the longest one. If no barcode is visible, respond with "NONE".`;
             
-            const upcResponse = await callClaudeVision(base64Data, upcPrompt);
+            const upcResponse = await callClaudeVision(base64Data, upcPrompt, mediaType);
             const upcText = upcResponse.rawText || upcResponse.toString();
             const upcMatch = upcText.match(/\d{8,14}/); // Match 8-14 digit codes (UPC/EAN)
             
@@ -5361,7 +5370,7 @@ Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, 
                 // No UPC found, fall back to regular AI analysis
                 resultDiv.innerHTML = '<div class="spinner"></div><p>No barcode detected, analyzing product visually...</p>';
                 const prompt = getAnalysisPrompt(useCase);
-                const response = await callClaudeVision(base64Data, prompt);
+                const response = await callClaudeVision(base64Data, prompt, mediaType);
                 displayScanResult(response, useCase);
                 return;
             }
@@ -5380,7 +5389,7 @@ Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, 
         
         // For other scan types, use regular AI analysis
         const prompt = getAnalysisPrompt(useCase);
-        const response = await callClaudeVision(base64Data, prompt);
+        const response = await callClaudeVision(base64Data, prompt, mediaType);
         
         displayScanResult(response, useCase);
         
@@ -5484,7 +5493,7 @@ Respond in JSON format:
 }
 
 // Call Claude Vision API
-async function callClaudeVision(base64Image, prompt) {
+async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
     // Get proxy URL from user settings
     const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
     
@@ -5503,7 +5512,7 @@ async function callClaudeVision(base64Image, prompt) {
                         type: 'image',
                         source: {
                             type: 'base64',
-                            media_type: 'image/jpeg',
+                            media_type: mediaType,
                             data: base64Image
                         }
                     },
