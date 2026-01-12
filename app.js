@@ -925,6 +925,7 @@ async function handleSaveSettings() {
     const activityEl = document.getElementById('settingsActivity');
     const resetHourEl = document.getElementById('settingsResetHour');
     const resetMinuteEl = document.getElementById('settingsResetMinute');
+    const proxyUrlEl = document.getElementById('settingsProxyUrl');
     
     // Bail out if elements don't exist yet
     if (!nameEl || !emailEl || !birthdayEl || !genderEl || !weightEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
@@ -943,6 +944,7 @@ async function handleSaveSettings() {
     const activity = activityEl.value;
     const resetHour = resetHourEl ? parseInt(resetHourEl.value) : 4;
     const resetMinute = resetMinuteEl ? parseInt(resetMinuteEl.value) : 0;
+    const proxyUrl = proxyUrlEl ? proxyUrlEl.value.trim() : 'https://ultimate-wellness.your4ship.workers.dev/';
 
     // Validate all required fields
     if (!name || !email || !birthday || !gender || !weight || !goalWeight || !heightFeet) {
@@ -989,6 +991,7 @@ async function handleSaveSettings() {
             dailyPoints,
             dailyResetHour: resetHour,
             dailyResetMinute: resetMinute,
+            proxyUrl: 'https://ultimate-wellness.your4ship.workers.dev/',
             bonusPointsBank: 0,
             bonusPointsWeekStart: today,
             lastPointsUpdate: today,
@@ -1010,6 +1013,7 @@ async function handleSaveSettings() {
         userSettings.activity = activity;
         userSettings.dailyResetHour = resetHour;
         userSettings.dailyResetMinute = resetMinute;
+        userSettings.proxyUrl = proxyUrl;
         
         console.log('💾 Updating user profile...');
     }
@@ -1610,10 +1614,13 @@ async function performDailyReset() {
     // 6. Meds automatically reset (entries are date-keyed)
     console.log('✅ Meds reset (new date key)');
     
-    // 7. Tasks carry over if not completed
+    // 7. Water automatically resets (entries are date-keyed)
+    console.log('✅ Water reset (new date key)');
+    
+    // 8. Tasks carry over if not completed
     // (handled by task system)
     
-    // 8. Check if Monday - reset weekly bonus bank
+    // 9. Check if Monday - reset weekly bonus bank
     const dayOfWeek = new Date().getDay();
     if (dayOfWeek === 1) { // Monday
         console.log('📅 Monday detected - resetting weekly bonus bank');
@@ -1985,17 +1992,17 @@ async function updateExerciseGrid() {
                 </div>
                 ${totalMinutes > 0 ? `<div class="exercise-total">${breakdown} = ${totalMinutes} min</div>` : ''}
                 <div class="time-buttons">
-                    <button class="time-btn" onclick="logExercise('${exercise}', 15)">15m</button>
-                    <button class="time-btn" onclick="logExercise('${exercise}', 30)">30m</button>
-                    <button class="time-btn" onclick="logExercise('${exercise}', 45)">45m</button>
-                    <button class="time-btn" onclick="logExercise('${exercise}', 60)">60m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 15, event)">15m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 30, event)">30m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 45, event)">45m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 60, event)">60m</button>
                 </div>
             </div>
         `;
     }).join('');
 }
 
-async function logExercise(activity, minutes) {
+async function logExercise(activity, minutes, clickEvent = null) {
     try {
         const today = getTodayKey();
         const points = (minutes / 15) * EXERCISE_POINTS_PER_15MIN;
@@ -2017,10 +2024,10 @@ async function logExercise(activity, minutes) {
         await updatePointsDisplay();
         await updateTodayLog();
         
-        // Visual feedback
-        if (typeof event !== 'undefined' && event && event.target) {
-            const btn = event.target;
-            const originalBg = btn.style.background;
+        // Visual feedback if button was clicked
+        if (clickEvent && clickEvent.target) {
+            const btn = clickEvent.target;
+            const originalBg = btn.style.background || '';
             btn.style.background = 'var(--success)';
             setTimeout(() => {
                 btn.style.background = originalBg;
@@ -4333,6 +4340,10 @@ function switchTab(tab) {
         if (els.activity) els.activity.value = userSettings.activity || 'moderate';
         if (els.resetHour) els.resetHour.value = userSettings.dailyResetHour || 4;
         if (els.resetMinute) els.resetMinute.value = userSettings.dailyResetMinute || 0;
+        
+        // Load proxy URL
+        const proxyUrlEl = document.getElementById('settingsProxyUrl');
+        if (proxyUrlEl) proxyUrlEl.value = userSettings.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
         
         if (typeof displayPointsBreakdown === 'function') {
             try {
