@@ -1059,6 +1059,89 @@ async function handleSaveSettings() {
 }
 
 // Display points breakdown in settings (v2.0 Beta)
+
+// ============ WEIGHT LOGGING ============
+
+async function addWeightLog(logData) {
+    const userId = getCurrentUserId();
+    const weightLog = {
+        id: `weight_${Date.now()}`,
+        userId: userId,
+        date: logData.date,
+        weight: logData.weight,
+        notes: logData.notes || '',
+        timestamp: new Date().toISOString()
+    };
+    await dbPut('weight', weightLog);
+    console.log('⚖️ Weight logged:', weightLog.weight, 'lbs');
+    return weightLog;
+}
+
+async function getAllWeightLogs() {
+    const userId = getCurrentUserId();
+    const allLogs = await dbGetAll('weight');
+    return allLogs.filter(log => log.userId === userId)
+                  .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// ============ EXERCISE LOGGING ============
+
+async function addExercise(exerciseData) {
+    const userId = getCurrentUserId();
+    const today = getTodayKey();
+    
+    const exercise = {
+        id: `exercise_${Date.now()}`,
+        userId: userId,
+        date: today,
+        type: exerciseData.type,
+        minutes: exerciseData.minutes,
+        points: exerciseData.points || 0,
+        timestamp: new Date().toISOString()
+    };
+    
+    await dbPut('exercise', exercise);
+    console.log(`🏃 Exercise logged: ${exercise.type} (${exercise.minutes} min, ${exercise.points} pts)`);
+    return exercise;
+}
+
+// ============ TASK MANAGEMENT ============
+
+async function getAllTasks(date) {
+    const userId = getCurrentUserId();
+    const dateKey = date || getTodayKey();
+    return await getTasksByDate(userId, dateKey);
+}
+
+// ============ SLEEP TRACKING ============
+
+async function endSleepSession(sessionId) {
+    const userId = getCurrentUserId();
+    const now = new Date();
+    
+    // Get the incomplete session
+    const session = await getIncompleteSleepSession(userId);
+    
+    if (!session) {
+        console.warn('No active sleep session found');
+        return null;
+    }
+    
+    // Calculate duration
+    const startTime = new Date(session.startTime);
+    const durationMs = now - startTime;
+    const durationHours = durationMs / (1000 * 60 * 60);
+    
+    // Update session
+    session.endTime = now.toISOString();
+    session.duration = durationHours;
+    
+    await dbPut('sleep', session);
+    console.log(`😴 Sleep session ended: ${durationHours.toFixed(1)} hours`);
+    
+    return session;
+}
+
 async function displayPointsBreakdown() {
     const breakdown = getPointsBreakdown();
     const breakdownDiv = document.getElementById('pointsBreakdown');
