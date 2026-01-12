@@ -188,7 +188,7 @@ async function restoreSettingsFromBackup() {
             settings.userId = userId;
             settings.id = `user_${userId}`;
             
-            await saveSettings(settings);
+            await window.saveSettings(settings);
             console.log('💾 Settings restored to IndexedDB');
             
             // Clear the backup
@@ -305,7 +305,7 @@ async function init() {
                 const oldVersion = userSettings.appVersion || 'unknown';
                 console.log(`🔄 Updating app version: ${oldVersion} → ${APP_VERSION}`);
                 userSettings.appVersion = APP_VERSION;
-                await saveSettings(userSettings);
+                await window.saveSettings(userSettings);
             }
             
             // Update version display
@@ -313,7 +313,11 @@ async function init() {
             
             // Check 12-week points period boundary (or initialize if missing)
             checkPointsPeriodBoundary();
-            await saveSettings(userSettings);
+            
+            // Only save if userSettings still exists after boundary check
+            if (userSettings) {
+                await window.saveSettings(userSettings);
+            }
             
             // Load UI
             await updateAllUI();
@@ -449,11 +453,11 @@ async function completeSetup() {
         };
 
         console.log('💾 Saving settings...', userSettings);
-        await saveSettings(userSettings);
+        await window.saveSettings(userSettings);
         
         // Start first 12-week points period (LOCKED)
         startNewPointsPeriod();
-        await saveSettings(userSettings);
+        await window.saveSettings(userSettings);
     
         // Log initial weight
         await addWeightLog({
@@ -698,7 +702,7 @@ async function performSixWeekCheckpoint() {
     if (periodLogs.length < 2) {
         console.log('⚠️ Not enough weight data for checkpoint');
         userSettings.sixWeekCheckpointDone = true;
-        await saveSettings(userSettings);
+        await window.saveSettings(userSettings);
         return;
     }
     
@@ -801,7 +805,7 @@ async function performSixWeekCheckpoint() {
     // Mark checkpoint as done
     userSettings.sixWeekCheckpointDone = true;
     userSettings.sixWeekCheckpointDate = new Date().toISOString().split('T')[0];
-    await saveSettings(userSettings);
+    await window.saveSettings(userSettings);
     
     console.log('✅ 6-week checkpoint complete');
 }
@@ -1111,7 +1115,7 @@ async function recalculatePoints() {
     userSettings.dailyPoints = result.points;
     userSettings.pointsFloor = customFloor; // Store custom floor
     
-    await saveSettings(userSettings);
+    await window.saveSettings(userSettings);
     await displayPointsBreakdown();
     await updatePointsDisplay();
     
@@ -1171,7 +1175,7 @@ async function updateWeight() {
         pointsMessage = `\n\n🔒 Points locked at ${userSettings.lockedPoints}/day until ${userSettings.pointsPeriodEnd}`;
     }
 
-    await saveSettings(userSettings);
+    await window.saveSettings(userSettings);
     await updateAllUI();
     
     const weightChange = oldWeight ? weight - oldWeight : 0;
