@@ -923,6 +923,8 @@ async function handleSaveSettings() {
     const heightFeetEl = document.getElementById('settingsHeightFeet');
     const heightInchesEl = document.getElementById('settingsHeightInches');
     const activityEl = document.getElementById('settingsActivity');
+    const resetHourEl = document.getElementById('settingsResetHour');
+    const resetMinuteEl = document.getElementById('settingsResetMinute');
     
     // Bail out if elements don't exist yet
     if (!nameEl || !emailEl || !birthdayEl || !genderEl || !weightEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
@@ -939,6 +941,8 @@ async function handleSaveSettings() {
     const heightFeet = parseInt(heightFeetEl.value);
     const heightInches = parseInt(heightInchesEl.value);
     const activity = activityEl.value;
+    const resetHour = resetHourEl ? parseInt(resetHourEl.value) : 4;
+    const resetMinute = resetMinuteEl ? parseInt(resetMinuteEl.value) : 0;
 
     // Validate all required fields
     if (!name || !email || !birthday || !gender || !weight || !goalWeight || !heightFeet) {
@@ -983,6 +987,10 @@ async function handleSaveSettings() {
             heightInInches,
             activity,
             dailyPoints,
+            dailyResetHour: resetHour,
+            dailyResetMinute: resetMinute,
+            bonusPointsBank: 0,
+            bonusPointsWeekStart: today,
             lastPointsUpdate: today,
             lastWeighIn: today,
             joinDate: today,
@@ -1000,6 +1008,8 @@ async function handleSaveSettings() {
         userSettings.goalWeight = goalWeight;
         userSettings.heightInInches = heightInInches;
         userSettings.activity = activity;
+        userSettings.dailyResetHour = resetHour;
+        userSettings.dailyResetMinute = resetMinute;
         
         console.log('💾 Updating user profile...');
     }
@@ -1489,12 +1499,18 @@ function getNextWeighinDate() {
 
 // ============ FOOD LOGGING ============
 function getTodayKey() {
-    // Get current date/time
     const now = new Date();
     
-    // If before 4am, use yesterday's date
-    // (day doesn't "change" until 4am)
-    if (now.getHours() < 4) {
+    // Get user's reset time (default 4:00 AM if not set)
+    const resetHour = userSettings?.dailyResetHour ?? 4;
+    const resetMinute = userSettings?.dailyResetMinute ?? 0;
+    
+    // Create reset time for today
+    const todayReset = new Date(now);
+    todayReset.setHours(resetHour, resetMinute, 0, 0);
+    
+    // If current time is before reset time, count as previous day
+    if (now < todayReset) {
         now.setDate(now.getDate() - 1);
     }
     
@@ -1502,24 +1518,200 @@ function getTodayKey() {
 }
 
 // Check if we need to refresh page (past 4am on new day)
-function checkDailyReset() {
-    const lastCheck = localStorage.getItem('lastDailyCheck');
-    const currentDay = getTodayKey();
+async function checkDailyReset() {
+    // Get user's reset time
+    const resetHour = userSettings?.dailyResetHour ?? 4;
+    const resetMinute = userSettings?.dailyResetMinute ?? 0;
     
-    if (lastCheck && lastCheck !== currentDay) {
-        // New day has started (past 4am)!
-        console.log('🔄 New day detected - refreshing...');
-        
-        // Update last check
-        localStorage.setItem('lastDailyCheck', currentDay);
-        
-        // Show message and reload
-        alert('Good morning! Starting a new day... 🌅');
-        location.reload();
-    } else if (!lastCheck) {
-        // First time - set it
-        localStorage.setItem('lastDailyCheck', currentDay);
+    // Get last reset timestamp from localStorage
+    const lastResetTimestamp = localStorage.getItem('lastResetTimestamp');
+    const lastResetDate = lastResetTimestamp ? new Date(lastResetTimestamp) : null;
+    
+    // Get current time
+    const now = new Date();
+    
+    // Calculate today's reset time
+    const todayResetTime = new Date(now);
+    todayResetTime.setHours(resetHour, resetMinute, 0, 0);
+    
+    // Calculate yesterday's reset time
+    const yesterdayResetTime = new Date(todayResetTime);
+    yesterdayResetTime.setDate(yesterdayResetTime.getDate() - 1);
+    
+    // Determine if we've crossed a reset boundary
+    let shouldReset = false;
+    
+    if (!lastResetDate) {
+        // First time - initialize but don't reset
+        localStorage.setItem('lastResetTimestamp', now.toISOString());
+        console.log('🕐 First app load - initialized reset tracking');
+        return;
     }
+    
+    // Check if we've passed a reset time since last check
+    if (now >= todayResetTime && lastResetDate < todayResetTime) {
+        // We've crossed today's reset time
+        shouldReset = true;
+        console.log('🔄 Crossed reset boundary - it is after', resetHour + ':' + resetMinute.toString().padStart(2, '0'));
+    } else if (now >= yesterdayResetTime && lastResetDate < yesterdayResetTime && now < todayResetTime) {
+        // Edge case: crossed yesterday's reset but we're before today's
+        shouldReset = true;
+        console.log('🔄 Crossed yesterday\'s reset boundary');
+    }
+    
+    if (shouldReset) {
+        console.log('🌅 NEW DAY DETECTED - Performing daily reset');
+        
+        // Update timestamp FIRST to prevent multiple resets
+        localStorage.setItem('lastResetTimestamp', now.toISOString());
+        
+        // Perform reset operations
+        await performDailyReset();
+        
+        // Refresh UI
+        await updateAllUI();
+        
+        // Show notification (non-blocking)
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success); color: white; padding: 15px 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10000; animation: slideIn 0.3s ease;';
+        notification.textContent = '🌅 Good morning! New day started';
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 3000);
+    }
+}
+
+async function performDailyReset() {
+    if (!userSettings) return;
+    
+    const today = getTodayKey();
+    const yesterday = getYesterdayKey();
+    
+    console.log('📊 Performing daily reset for:', today);
+    
+    // 1. Calculate bonus points from yesterday's unused budget
+    await calculateAndCarryBonusPoints(yesterday);
+    
+    // 2. Add +2 bonus points for daily login
+    if (!userSettings.bonusPointsBank) {
+        userSettings.bonusPointsBank = 0;
+    }
+    userSettings.bonusPointsBank = Math.min(28, userSettings.bonusPointsBank + 2);
+    console.log('🎁 Daily login bonus: +2 pts (Bank now: ' + userSettings.bonusPointsBank + '/28 pts)');
+    
+    // 3. Check yesterday's overage and consume bonus points if needed
+    await checkAndConsumeOverage(yesterday);
+    
+    // 4. Reset points for new day
+    userSettings.lastPointsUpdate = today;
+    
+    // 5. Exercise automatically resets (entries are date-keyed)
+    console.log('✅ Exercise reset (new date key)');
+    
+    // 6. Meds automatically reset (entries are date-keyed)
+    console.log('✅ Meds reset (new date key)');
+    
+    // 7. Tasks carry over if not completed
+    // (handled by task system)
+    
+    // 8. Check if Monday - reset weekly bonus bank
+    const dayOfWeek = new Date().getDay();
+    if (dayOfWeek === 1) { // Monday
+        console.log('📅 Monday detected - resetting weekly bonus bank');
+        userSettings.bonusPointsBank = 0;
+        userSettings.bonusPointsWeekStart = today;
+    }
+    
+    // Save settings
+    await window.saveSettings(userSettings);
+    
+    console.log('✅ Daily reset complete');
+}
+
+async function checkAndConsumeOverage(yesterdayDate) {
+    if (!userSettings) return;
+    
+    // Get yesterday's data
+    const userId = getCurrentUserId();
+    const yesterdayFoods = await getFoodsByDate(userId, yesterdayDate);
+    const yesterdayExercise = await getExerciseByDate(userId, yesterdayDate);
+    
+    // Calculate yesterday's usage
+    const foodPoints = yesterdayFoods.reduce((sum, f) => sum + (f.points || 0), 0);
+    const exercisePoints = yesterdayExercise.reduce((sum, e) => sum + (e.points || 0), 0);
+    const netUsed = foodPoints - exercisePoints;  // Food minus exercise bonuses
+    
+    // Get yesterday's allowance
+    const allowance = userSettings.dailyPoints || 30;
+    
+    // Check if over budget
+    if (netUsed > allowance) {
+        const overage = netUsed - allowance;
+        
+        // Consume from bonus bank
+        if (userSettings.bonusPointsBank > 0) {
+            const consumed = Math.min(overage, userSettings.bonusPointsBank);
+            userSettings.bonusPointsBank -= consumed;
+            
+            console.log(`⚠️ Yesterday's overage: ${overage} pts over budget`);
+            console.log(`💸 Consumed ${consumed} bonus pts (Bank now: ${userSettings.bonusPointsBank}/28 pts)`);
+            
+            // Check if still over after consuming bonus
+            if (overage > consumed) {
+                const stillOver = overage - consumed;
+                console.log(`⚠️ Still ${stillOver} pts over budget after using all bonus points`);
+            }
+        } else {
+            console.log(`⚠️ Yesterday's overage: ${overage} pts over budget (no bonus points to cover)`);
+        }
+    }
+}
+
+async function calculateAndCarryBonusPoints(yesterdayDate) {
+    if (!userSettings) return;
+    
+    // Get yesterday's data
+    const userId = getCurrentUserId();
+    const yesterdayFoods = await getFoodsByDate(userId, yesterdayDate);
+    const yesterdayExercise = await getExerciseByDate(userId, yesterdayDate);
+    
+    // Calculate yesterday's usage
+    const foodPoints = yesterdayFoods.reduce((sum, f) => sum + (f.points || 0), 0);
+    const exercisePoints = yesterdayExercise.reduce((sum, e) => sum + (e.points || 0), 0);
+    const usedPoints = foodPoints; // Food only, exercise is bonus
+    
+    // Get yesterday's allowance (use current daily points as approximation)
+    const allowance = userSettings.dailyPoints || 30;
+    
+    // Calculate unused points (non-exercise)
+    const unusedPoints = Math.max(0, allowance - usedPoints);
+    
+    if (unusedPoints > 0) {
+        // Initialize bonus bank if doesn't exist
+        if (!userSettings.bonusPointsBank) {
+            userSettings.bonusPointsBank = 0;
+        }
+        
+        // Add unused to bonus bank
+        const newBank = userSettings.bonusPointsBank + unusedPoints;
+        
+        // Cap at 28 points
+        userSettings.bonusPointsBank = Math.min(28, newBank);
+        
+        console.log(`💰 Bonus carry-over: ${unusedPoints} pts unused → Bank now: ${userSettings.bonusPointsBank}/28 pts`);
+    } else {
+        console.log(`📊 No bonus carry-over (used ${usedPoints}/${allowance} pts)`);
+    }
+}
+
+function getYesterdayKey() {
+    const now = new Date();
+    now.setDate(now.getDate() - 1);
+    return now.toISOString().split('T')[0];
+}
+
+async function getBonusPoints() {
+    if (!userSettings) return 0;
+    return userSettings.bonusPointsBank || 0;
 }
 
 async function logFood(name, points, imageData = null) {
@@ -1804,29 +1996,39 @@ async function updateExerciseGrid() {
 }
 
 async function logExercise(activity, minutes) {
-    const today = getTodayKey();
-    const points = (minutes / 15) * EXERCISE_POINTS_PER_15MIN;
-    
-    const exercise = {
-        date: today,
-        activity: activity,
-        minutes: minutes,
-        points: points,
-        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    };
+    try {
+        const today = getTodayKey();
+        const points = (minutes / 15) * EXERCISE_POINTS_PER_15MIN;
+        
+        const exercise = {
+            date: today,
+            activity: activity,
+            minutes: minutes,
+            points: points,
+            time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+        };
 
-    await addExercise(exercise);
-    await updateAllUI();
-    await updateExerciseGrid();
-    
-    // Visual feedback
-    if (event && event.target) {
-        const btn = event.target;
-        const originalBg = btn.style.background;
-        btn.style.background = 'var(--success)';
-        setTimeout(() => {
-            btn.style.background = originalBg;
-        }, 500);
+        await addExercise(exercise);
+        console.log(`✅ Exercise logged: ${activity} (${minutes} min, ${points} pts)`);
+        
+        // Update UI components
+        await updateExerciseGrid();
+        await updateExercisePoints();
+        await updatePointsDisplay();
+        await updateTodayLog();
+        
+        // Visual feedback
+        if (typeof event !== 'undefined' && event && event.target) {
+            const btn = event.target;
+            const originalBg = btn.style.background;
+            btn.style.background = 'var(--success)';
+            setTimeout(() => {
+                btn.style.background = originalBg;
+            }, 500);
+        }
+    } catch (error) {
+        console.error('Error logging exercise:', error);
+        alert('Failed to log exercise. Please try again.');
     }
 }
 
@@ -1837,6 +2039,20 @@ async function resetExercise(activity) {
         await updateAllUI();
         await updateExerciseGrid();
     }
+}
+
+async function deleteExerciseByActivity(date, activity) {
+    const userId = getCurrentUserId();
+    const exercises = await getExerciseByDate(userId, date);
+    
+    // Delete all exercises matching this activity for this date
+    for (const exercise of exercises) {
+        if (exercise.activity === activity) {
+            await dbDelete('exercise', exercise.id);
+        }
+    }
+    
+    console.log(`🗑️ Deleted all ${activity} for ${date}`);
 }
 
 // ============ SLEEP TRACKING V2.0 ============
@@ -2816,16 +3032,44 @@ async function updatePointsDisplay() {
     const dailyAllowance = userSettings ? userSettings.dailyPoints : 22;
     const remaining = dailyAllowance - netPoints;
     
+    // Update main display
     document.getElementById('pointsToday').textContent = netPoints;
-    document.getElementById('pointsRemaining').textContent = `${remaining} remaining`;
-    document.getElementById('dailyAllowance').textContent = dailyAllowance;
     
-    // Bonus points (new system)
+    // Bonus points
     const bonusPoints = await getBonusPoints();
     document.getElementById('pointsBank').textContent = bonusPoints;
     
     // Show "Resets Monday" instead of expiry date
     document.getElementById('bankExpiry').textContent = 'Resets Monday';
+    
+    // Update remaining display
+    const remainingEl = document.getElementById('pointsRemaining');
+    const allowanceEl = document.getElementById('dailyAllowance');
+    
+    if (remaining >= 0) {
+        // Under budget
+        remainingEl.textContent = `${remaining} remaining`;
+        remainingEl.style.color = '';
+        allowanceEl.textContent = dailyAllowance;
+    } else {
+        // Over budget - dipping into bonus
+        const overage = Math.abs(remaining);
+        
+        if (bonusPoints >= overage) {
+            // Bonus can cover it
+            remainingEl.innerHTML = `<span style="color: #ff9800;">Using ${overage} bonus pts</span>`;
+            allowanceEl.innerHTML = `${dailyAllowance} <span style="color: #ff9800; font-size: 11px;">(+${bonusPoints} bonus)</span>`;
+        } else if (bonusPoints > 0) {
+            // Partial bonus coverage
+            const stillOver = overage - bonusPoints;
+            remainingEl.innerHTML = `<span style="color: #ff6b6b;">${stillOver} over</span> <span style="color: #ff9800;">(${bonusPoints} bonus used)</span>`;
+            allowanceEl.innerHTML = `${dailyAllowance} <span style="color: #ff9800; font-size: 11px;">(+${bonusPoints} bonus)</span>`;
+        } else {
+            // No bonus points left
+            remainingEl.innerHTML = `<span style="color: #ff6b6b;">${overage} over budget!</span>`;
+            allowanceEl.textContent = dailyAllowance;
+        }
+    }
 }
 
 async function updateTodayLog() {
@@ -4070,7 +4314,9 @@ function switchTab(tab) {
             goalWeight: document.getElementById('settingsGoalWeight'),
             heightFeet: document.getElementById('settingsHeightFeet'),
             heightInches: document.getElementById('settingsHeightInches'),
-            activity: document.getElementById('settingsActivity')
+            activity: document.getElementById('settingsActivity'),
+            resetHour: document.getElementById('settingsResetHour'),
+            resetMinute: document.getElementById('settingsResetMinute')
         };
         
         if (els.name) els.name.value = userSettings.name || '';
@@ -4085,6 +4331,8 @@ function switchTab(tab) {
         if (els.heightFeet) els.heightFeet.value = feet;
         if (els.heightInches) els.heightInches.value = inches;
         if (els.activity) els.activity.value = userSettings.activity || 'moderate';
+        if (els.resetHour) els.resetHour.value = userSettings.dailyResetHour || 4;
+        if (els.resetMinute) els.resetMinute.value = userSettings.dailyResetMinute || 0;
         
         if (typeof displayPointsBreakdown === 'function') {
             try {
