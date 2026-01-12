@@ -1466,7 +1466,6 @@ async function testAPIConnection() {
         btn.textContent = '🧪 Test API Connection';
     }
 }
-}
 
 function calculateWeeklyGoal() {
     if (!userSettings) return 0;
