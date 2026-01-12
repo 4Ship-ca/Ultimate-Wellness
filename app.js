@@ -1072,14 +1072,14 @@ async function addWeightLog(logData) {
         notes: logData.notes || '',
         timestamp: new Date().toISOString()
     };
-    await dbPut('weight', weightLog);
+    await dbPut('weight_logs', weightLog);
     console.log('⚖️ Weight logged:', weightLog.weight, 'lbs');
     return weightLog;
 }
 
 async function getAllWeightLogs() {
     const userId = getCurrentUserId();
-    const allLogs = await dbGetAll('weight');
+    const allLogs = await dbGetAll('weight_logs');
     return allLogs.filter(log => log.userId === userId)
                   .sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -2387,7 +2387,7 @@ async function logNap(quality) {
 
 async function updateNapLog() {
     const container = document.getElementById('napLog');
-    const allNaps = await dbGetAll('naps');
+    const allNaps = await dbGetAll('sleep');  // Naps are stored in sleep table
     
     if (!allNaps || allNaps.length === 0) {
         container.innerHTML = '';
@@ -4295,7 +4295,8 @@ async function calculateWeeklyStats() {
     const allExercise = await dbGetAll('exercise');
     const allWater = await dbGetAll('water');
     const allSleep = await dbGetAll('sleep');
-    const allStores = await dbGetAll('stores');
+    // Store purchases - feature not yet implemented, use empty array
+    const allStores = [];  // TODO: Create stores table for tracking purchases
     
     // Filter to this week
     const weekFoods = allFoods.filter(f => new Date(f.date) >= weekAgo);
@@ -4492,7 +4493,7 @@ async function emailGroceryList() {
 
     // Get pantry items from last 30 days
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const allPantry = await dbGetAll('pantry');
+    const allPantry = await dbGetAll('pantry_items');
     const recentItems = allPantry.filter(p => p.date >= thirtyDaysAgo);
     
     // Group by category (simplified)
