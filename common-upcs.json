@@ -1,0 +1,182 @@
+{
+  "version": "1.0.0",
+  "description": "Common grocery UPC codes for pre-population",
+  "last_updated": "2026-01-12",
+  "categories": {
+    "dairy": [
+      {
+        "upc": "057000010874",
+        "product_name": "Heinz Beans in Tomato Sauce",
+        "brand": "Heinz",
+        "points_per_serving": 4,
+        "points_per_100g": 2,
+        "serving_size": "1 cup (236ml)",
+        "category": "Canned Goods"
+      },
+      {
+        "upc": "041520893147",
+        "product_name": "Chobani Greek Yogurt Plain Nonfat",
+        "brand": "Chobani",
+        "points_per_serving": 2,
+        "points_per_100g": 3,
+        "serving_size": "150g (5.3oz)",
+        "category": "Dairy"
+      },
+      {
+        "upc": "078742370309",
+        "product_name": "Organic Valley Whole Milk",
+        "brand": "Organic Valley",
+        "points_per_serving": 3,
+        "points_per_100g": 2,
+        "serving_size": "1 cup (240ml)",
+        "category": "Dairy"
+      },
+      {
+        "upc": "011110796103",
+        "product_name": "Kraft Singles American Cheese",
+        "brand": "Kraft",
+        "points_per_serving": 2,
+        "points_per_100g": 12,
+        "serving_size": "19g (1 slice)",
+        "category": "Dairy"
+      }
+    ],
+    "beverages": [
+      {
+        "upc": "012000001314",
+        "product_name": "Coca-Cola Classic",
+        "brand": "Coca-Cola",
+        "points_per_serving": 9,
+        "points_per_100g": 11,
+        "serving_size": "355ml (12oz can)",
+        "category": "Beverages"
+      },
+      {
+        "upc": "012000027703",
+        "product_name": "Diet Coke",
+        "brand": "Coca-Cola",
+        "points_per_serving": 0,
+        "points_per_100g": 0,
+        "serving_size": "355ml (12oz can)",
+        "category": "Beverages"
+      }
+    ],
+    "snacks": [
+      {
+        "upc": "028400047968",
+        "product_name": "Lay's Classic Potato Chips",
+        "brand": "Lay's",
+        "points_per_serving": 8,
+        "points_per_100g": 27,
+        "serving_size": "28g (1oz)",
+        "category": "Snacks"
+      },
+      {
+        "upc": "016000119574",
+        "product_name": "Nature Valley Oats 'n Honey Granola Bars",
+        "brand": "Nature Valley",
+        "points_per_serving": 5,
+        "points_per_100g": 21,
+        "serving_size": "42g (2 bars)",
+        "category": "Snacks"
+      }
+    ],
+    "bread": [
+      {
+        "upc": "007288002505",
+        "product_name": "Dave's Killer Bread 21 Whole Grains",
+        "brand": "Dave's Killer Bread",
+        "points_per_serving": 2,
+        "points_per_100g": 8,
+        "serving_size": "43g (1 slice)",
+        "category": "Bread"
+      }
+    ],
+    "condiments": [
+      {
+        "upc": "013000006408",
+        "product_name": "Heinz Tomato Ketchup",
+        "brand": "Heinz",
+        "points_per_serving": 1,
+        "points_per_100g": 4,
+        "serving_size": "17g (1 tbsp)",
+        "category": "Condiments"
+      }
+    ],
+    "cereals": [
+      {
+        "upc": "016000275577",
+        "product_name": "Cheerios Original",
+        "brand": "General Mills",
+        "points_per_serving": 4,
+        "points_per_100g": 13,
+        "serving_size": "28g (1 cup)",
+        "category": "Cereal"
+      }
+    ],
+    "frozen": [
+      {
+        "upc": "070038320470",
+        "product_name": "Ben & Jerry's Cherry Garcia Ice Cream",
+        "brand": "Ben & Jerry's",
+        "points_per_serving": 12,
+        "points_per_100g": 25,
+        "serving_size": "106g (1/2 cup)",
+        "category": "Frozen Desserts"
+      }
+    ]
+  },
+  "zero_point_foods": [
+    {
+      "name": "Apples",
+      "category": "Fruits",
+      "points": 0
+    },
+    {
+      "name": "Bananas",
+      "category": "Fruits",
+      "points": 0
+    },
+    {
+      "name": "Chicken Breast (skinless)",
+      "category": "Proteins",
+      "points": 0
+    },
+    {
+      "name": "Eggs",
+      "category": "Proteins",
+      "points": 0
+    },
+    {
+      "name": "Fish (most varieties)",
+      "category": "Proteins",
+      "points": 0
+    },
+    {
+      "name": "Non-fat Greek Yogurt (plain)",
+      "category": "Dairy",
+      "points": 0
+    },
+    {
+      "name": "Broccoli",
+      "category": "Vegetables",
+      "points": 0
+    },
+    {
+      "name": "Carrots",
+      "category": "Vegetables",
+      "points": 0
+    },
+    {
+      "name": "Spinach",
+      "category": "Vegetables",
+      "points": 0
+    },
+    {
+      "name": "Tomatoes",
+      "category": "Vegetables",
+      "points": 0
+    }
+  ],
+  "notes": "This is a starter database of common US grocery products. UPCs are real but data should be verified. Point values are estimates based on typical nutrition information."
+}
