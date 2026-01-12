@@ -289,11 +289,22 @@ async function init() {
         }
         
         if (!userSettings) {
-            // Show setup screen
-            const setupEl = document.getElementById('setupScreen'); if (setupEl) setupEl.classList.add('active');
-            console.log('👋 New user - showing setup screen');
+            // New user - go to Settings tab for initial setup
+            console.log('👋 New user - opening Settings tab for initial setup');
             
-            // Show current app version on setup screen
+            // Show main app
+            const setupScreen = document.getElementById('setupScreen');
+            if (setupScreen) setupScreen.style.display = 'none';
+            
+            // Switch to settings tab
+            setTimeout(() => {
+                switchTab('settings');
+                alert('👋 Welcome to Ultimate Wellness!\n\n' +
+                      'Please complete your profile in the Settings tab to get started.\n\n' +
+                      'We\'ll calculate your daily points allowance based on your information.');
+            }, 500);
+            
+            // Show current app version
             await updateVersionDisplay();
         } else {
             // Hide setup screen
@@ -905,26 +916,33 @@ async function handleSaveSettings() {
     // Get elements with null checks
     const nameEl = document.getElementById('settingsName');
     const emailEl = document.getElementById('settingsEmail');
+    const birthdayEl = document.getElementById('settingsBirthday');
+    const genderEl = document.getElementById('settingsGender');
+    const weightEl = document.getElementById('settingsWeight');
     const goalWeightEl = document.getElementById('settingsGoalWeight');
     const heightFeetEl = document.getElementById('settingsHeightFeet');
     const heightInchesEl = document.getElementById('settingsHeightInches');
     const activityEl = document.getElementById('settingsActivity');
     
     // Bail out if elements don't exist yet
-    if (!nameEl || !emailEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
+    if (!nameEl || !emailEl || !birthdayEl || !genderEl || !weightEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
         console.warn('Settings form not ready yet');
         return;
     }
     
     const name = nameEl.value.trim();
     const email = emailEl.value.trim();
+    const birthday = birthdayEl.value;
+    const gender = genderEl.value;
+    const weight = parseFloat(weightEl.value);
     const goalWeight = parseFloat(goalWeightEl.value);
     const heightFeet = parseInt(heightFeetEl.value);
     const heightInches = parseInt(heightInchesEl.value);
     const activity = activityEl.value;
 
-    if (!name || !email || !goalWeight || !heightFeet) {
-        alert('Please fill in all fields');
+    // Validate all required fields
+    if (!name || !email || !birthday || !gender || !weight || !goalWeight || !heightFeet) {
+        alert('Please fill in all required fields');
         return;
     }
 
@@ -935,49 +953,108 @@ async function handleSaveSettings() {
     }
 
     const heightInInches = (heightFeet * 12) + heightInches;
+    const age = calculateAge(birthday);
     
-    // Check if activity or goal changed (these affect points calculation)
-    // Only check if userSettings already exists (not a new user)
+    // Calculate daily points
+    const pointsResult = calculateDailyPoints(gender, age, weight, heightInInches, activity);
+    const dailyPoints = pointsResult.points;
+    
+    const isNewUser = !userSettings;
+    
+    // Check if activity or goal changed (for existing users)
     const activityChanged = userSettings && userSettings.activity !== activity;
-    const goalChanged = userSettings && Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
+    const goalChanged = userSettings && Math.abs(userSettings.goalWeight - goalWeight) > 5;
     
-    // Initialize userSettings if it doesn't exist (new user)
+    // Build or update userSettings
     if (!userSettings) {
+        // New user - create complete settings object
         const userId = getCurrentUserId();
-        userSettings = await createDefaultSettings(userId, { name, email });
-    }
-    
-    userSettings.name = name;
-    userSettings.email = email;
-    userSettings.goalWeight = goalWeight;
-    userSettings.heightInInches = heightInInches;
-    userSettings.activity = activity;
-    
-    // If significant changes, offer to restart 12-week period
-    if ((activityChanged || goalChanged) && userSettings.pointsPeriodStart) {
-        const confirm = window.confirm(
-            `You changed your ${activityChanged ? 'activity level' : 'goal weight'}.\n\n` +
-            `Would you like to restart your 12-week points period with new calculations?\n\n` +
-            `Current period: ${userSettings.lockedPoints} pts/day until ${userSettings.pointsPeriodEnd}\n\n` +
-            `Choose:\n` +
-            `✓ OK = Restart period with new points\n` +
-            `✗ Cancel = Keep current locked points`
-        );
+        const today = new Date().toISOString().split('T')[0];
         
-        if (confirm) {
-            startNewPointsPeriod();
-            alert(`New 12-week period started!\n\nPoints: ${userSettings.lockedPoints}/day`);
-        } else {
-            alert('Settings saved. Points remain locked at ' + userSettings.lockedPoints + '/day');
-        }
+        userSettings = {
+            id: `user_${userId}`,
+            userId: userId,
+            name,
+            email,
+            birthday,
+            gender,
+            currentWeight: weight,
+            goalWeight,
+            heightInInches,
+            activity,
+            dailyPoints,
+            lastPointsUpdate: today,
+            lastWeighIn: today,
+            joinDate: today,
+            appVersion: APP_VERSION
+        };
+        
+        console.log('💾 Creating new user profile...');
+    } else {
+        // Existing user - update fields
+        userSettings.name = name;
+        userSettings.email = email;
+        userSettings.birthday = birthday;
+        userSettings.gender = gender;
+        userSettings.currentWeight = weight;
+        userSettings.goalWeight = goalWeight;
+        userSettings.heightInInches = heightInInches;
+        userSettings.activity = activity;
+        
+        console.log('💾 Updating user profile...');
     }
-
-    // Save to database using the database.js version (avoid recursion)
-    await window.saveSettings(userSettings);
-    await updateAllUI();
     
-    if (!activityChanged && !goalChanged) {
-        alert('Settings saved!');
+    // Save to database
+    await window.saveSettings(userSettings);
+    
+    if (isNewUser) {
+        // First time setup
+        alert('✅ Profile created!\n\n' +
+              `Daily Points Allowance: ${dailyPoints} pts\n\n` +
+              'Starting your 12-week points period...');
+        
+        // Start first 12-week points period
+        startNewPointsPeriod();
+        await window.saveSettings(userSettings);
+        
+        // Log initial weight
+        await addWeightLog({
+            date: new Date().toISOString().split('T')[0],
+            weight: weight,
+            notes: 'Starting weight'
+        });
+        
+        // Load the UI
+        await updateAllUI();
+        
+        // Switch to home tab
+        setTimeout(() => switchTab('home'), 500);
+        
+        console.log('🎉 Initial setup complete!');
+    } else {
+        // Existing user update
+        if ((activityChanged || goalChanged) && userSettings.pointsPeriodStart) {
+            const confirm = window.confirm(
+                `You changed your ${activityChanged ? 'activity level' : 'goal weight'}.\n\n` +
+                `Would you like to restart your 12-week points period with new calculations?\n\n` +
+                `Current period: ${userSettings.lockedPoints} pts/day until ${userSettings.pointsPeriodEnd}\n\n` +
+                `Choose:\n` +
+                `✓ OK = Restart period with new points\n` +
+                `✗ Cancel = Keep current locked points`
+            );
+            
+            if (confirm) {
+                startNewPointsPeriod();
+                await window.saveSettings(userSettings);
+                alert(`New 12-week period started!\n\nPoints: ${userSettings.lockedPoints}/day`);
+            } else {
+                alert('Settings saved. Points remain locked at ' + userSettings.lockedPoints + '/day');
+            }
+        } else {
+            alert('✅ Settings saved!');
+        }
+        
+        await updateAllUI();
     }
 }
 
@@ -3904,6 +3981,8 @@ function switchTab(tab) {
         const els = {
             name: document.getElementById('settingsName'),
             email: document.getElementById('settingsEmail'),
+            birthday: document.getElementById('settingsBirthday'),
+            gender: document.getElementById('settingsGender'),
             weight: document.getElementById('settingsWeight'),
             goalWeight: document.getElementById('settingsGoalWeight'),
             heightFeet: document.getElementById('settingsHeightFeet'),
@@ -3913,6 +3992,8 @@ function switchTab(tab) {
         
         if (els.name) els.name.value = userSettings.name || '';
         if (els.email) els.email.value = userSettings.email || '';
+        if (els.birthday) els.birthday.value = userSettings.birthday || '';
+        if (els.gender) els.gender.value = userSettings.gender || 'male';
         if (els.weight) els.weight.value = userSettings.currentWeight || '';
         if (els.goalWeight) els.goalWeight.value = userSettings.goalWeight || '';
         
@@ -3930,6 +4011,60 @@ function switchTab(tab) {
             }
         }
     }
+    
+    // Add validation listeners if settings tab
+    if (tab === 'settings') {
+        setTimeout(() => validateSettingsForm(), 100);
+    }
+}
+
+// Validate settings form and enable/disable save button
+function validateSettingsForm() {
+    const fields = {
+        name: document.getElementById('settingsName'),
+        email: document.getElementById('settingsEmail'),
+        birthday: document.getElementById('settingsBirthday'),
+        gender: document.getElementById('settingsGender'),
+        weight: document.getElementById('settingsWeight'),
+        goalWeight: document.getElementById('settingsGoalWeight'),
+        heightFeet: document.getElementById('settingsHeightFeet'),
+        heightInches: document.getElementById('settingsHeightInches'),
+        activity: document.getElementById('settingsActivity')
+    };
+    
+    const saveButton = document.getElementById('saveSettingsBtn');
+    
+    if (!saveButton) return;
+    
+    // Check if all required fields are filled
+    const allFilled = 
+        fields.name && fields.name.value.trim() &&
+        fields.email && fields.email.value.trim() &&
+        fields.birthday && fields.birthday.value &&
+        fields.gender && fields.gender.value &&
+        fields.weight && fields.weight.value &&
+        fields.goalWeight && fields.goalWeight.value &&
+        fields.heightFeet && fields.heightFeet.value &&
+        fields.activity && fields.activity.value;
+    
+    if (allFilled) {
+        saveButton.disabled = false;
+        saveButton.style.opacity = '1';
+        saveButton.style.cursor = 'pointer';
+    } else {
+        saveButton.disabled = true;
+        saveButton.style.opacity = '0.5';
+        saveButton.style.cursor = 'not-allowed';
+    }
+    
+    // Add event listeners to re-validate on change
+    Object.values(fields).forEach(field => {
+        if (field && !field.dataset.validationAdded) {
+            field.addEventListener('input', validateSettingsForm);
+            field.addEventListener('change', validateSettingsForm);
+            field.dataset.validationAdded = 'true';
+        }
+    });
 }
 
 // Allow Enter key to send messages
