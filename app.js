@@ -435,8 +435,12 @@ async function completeSetup() {
         const pointsResult = calculateDailyPoints(gender, age, weight, heightInInches, activity);
         const dailyPoints = pointsResult.points;
 
+        // Get userId for multi-user support
+        const userId = getCurrentUserId();
+        
         userSettings = {
-            id: 'user', // REQUIRED for IndexedDB
+            id: `user_${userId}`, // REQUIRED format for IndexedDB
+            userId: userId, // REQUIRED for multi-user queries
             name,
             email,
             birthday,
