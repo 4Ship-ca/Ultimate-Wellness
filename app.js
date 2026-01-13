@@ -1523,6 +1523,52 @@ function manualAddFoodWater() {
     }
 }
 
+// Save settings to database (used by import and other functions)
+window.saveSettings = async function(settings) {
+    try {
+        if (!settings) return;
+        const userId = getCurrentUserId();
+        settings.userId = userId;
+        settings.id = `user_${userId}`;
+        await dbPut('settings', settings);
+        // Update global userSettings
+        userSettings = settings;
+    } catch (error) {
+        console.error('Error saving settings:', error);
+    }
+};
+
+// ============ USER & SETTINGS HELPERS ============
+
+function getCurrentUserId() {
+    // For single-user apps, return 'default'
+    // For multi-user apps, this would return the logged-in user's ID
+    return 'default';
+}
+
+async function getSettings() {
+    try {
+        const userId = getCurrentUserId();
+        const settings = await dbGet('settings', `user_${userId}`);
+        return settings || null;
+    } catch (error) {
+        console.warn('Error getting settings:', error);
+        return null;
+    }
+}
+
+// ============ ZERO-POINT FOOD HELPERS ============
+
+function isZeroPointFood(foodName) {
+    // Stub function - can be enhanced later with actual zero-point food list
+    return false;
+}
+
+function getZeroPointBadge(foodName) {
+    // Stub function - returns badge HTML for zero-point foods
+    return '';
+}
+
 // ============ DATABASE HELPER FUNCTIONS ============
 
 async function getAllTasks() {
@@ -2326,52 +2372,58 @@ async function logNap(quality) {
 }
 
 async function updateNapLog() {
-    const container = document.getElementById('napLog');
-    const allNaps = await dbGetAll('naps');
-    
-    if (!allNaps || allNaps.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
-    
-    // Group by date, show last 7 days
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    
-    const recentNaps = allNaps.filter(nap => new Date(nap.date) >= weekAgo)
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    if (recentNaps.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
-    
-    let html = '<h4 style="margin: 20px 0 10px;">Recent Naps</h4>';
-    
-    recentNaps.slice(0, 5).forEach(nap => {
-        const qualityIcon = {
-            'refreshed': '😊',
-            'okay': '😐',
-            'groggy': '😴',
-            'didnt-sleep': '😞'
-        }[nap.quality] || '💤';
+    try {
+        const container = document.getElementById('napLog');
+        if (!container) return;
         
-        const date = new Date(nap.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const allNaps = await dbGetAll('naps');
         
-        html += `
-            <div style="padding: 10px; background: var(--bg-light); border-radius: 8px; margin-bottom: 8px; font-size: 14px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <strong>${qualityIcon} ${nap.duration} min</strong>
-                        <span style="color: var(--text-secondary); margin-left: 10px;">${nap.time}</span>
+        if (!allNaps || allNaps.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        // Group by date, show last 7 days
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        
+        const recentNaps = allNaps.filter(nap => new Date(nap.date) >= weekAgo)
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        if (recentNaps.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        let html = '<h4 style="margin: 20px 0 10px;">Recent Naps</h4>';
+        
+        recentNaps.slice(0, 5).forEach(nap => {
+            const qualityIcon = {
+                'refreshed': '😊',
+                'okay': '😐',
+                'groggy': '😴',
+                'didnt-sleep': '😞'
+            }[nap.quality] || '💤';
+            
+            const date = new Date(nap.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            
+            html += `
+                <div style="padding: 10px; background: var(--bg-light); border-radius: 8px; margin-bottom: 8px; font-size: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>${qualityIcon} ${nap.duration} min</strong>
+                            <span style="color: var(--text-secondary); margin-left: 10px;">${nap.time}</span>
+                        </div>
+                        <div style="color: var(--text-secondary); font-size: 12px;">${date}</div>
                     </div>
-                    <div style="color: var(--text-secondary); font-size: 12px;">${date}</div>
                 </div>
-            </div>
-        `;
-    });
-    
-    container.innerHTML = html;
+            `;
+        });
+        
+        container.innerHTML = html;
+    } catch (error) {
+        console.warn('Error updating nap log:', error);
+    }
 }
 
 // ============ TASKS ============
@@ -2743,53 +2795,66 @@ async function updateWeightDisplay() {
 }
 
 async function updatePointsDisplay() {
-    const today = getTodayKey();
-    const foods = await getFoodsByDate(today);
-    const exercises = await getExerciseByDate(today);
-    
-    const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
-    const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
-    const netPoints = foodPoints - exercisePoints;
-    
-    const dailyAllowance = userSettings ? userSettings.dailyPoints : 22;
-    const remaining = dailyAllowance - netPoints;
-    
-    document.getElementById('pointsToday').textContent = netPoints;
-    document.getElementById('pointsRemaining').textContent = `${remaining} remaining`;
-    document.getElementById('dailyAllowance').textContent = dailyAllowance;
-    
-    // Bonus points (new system)
-    const bonusPoints = await getBonusPoints();
-    document.getElementById('pointsBank').textContent = bonusPoints;
-    
-    // Show "Resets Monday" instead of expiry date
-    document.getElementById('bankExpiry').textContent = 'Resets Monday';
+    try {
+        const userId = getCurrentUserId();
+        const today = getTodayKey();
+        const foods = await getFoodsByDate(userId, today);
+        const exercises = await getExerciseByDate(userId, today);
+        
+        const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
+        const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
+        const netPoints = foodPoints - exercisePoints;
+        
+        const dailyAllowance = userSettings ? userSettings.dailyPoints : 22;
+        const remaining = dailyAllowance - netPoints;
+        
+        // Safe DOM updates
+        safeSetText('pointsToday', netPoints);
+        safeSetText('pointsRemaining', `${remaining} remaining`);
+        safeSetText('dailyAllowance', dailyAllowance);
+        
+        // Bonus points (new system)
+        const bonusPoints = await getBonusPoints();
+        safeSetText('pointsBank', bonusPoints);
+        
+        // Show "Resets Monday" instead of expiry date
+        safeSetText('bankExpiry', 'Resets Monday');
+    } catch (error) {
+        console.warn('Error updating points display:', error);
+    }
 }
 
 async function updateTodayLog() {
-    const today = getTodayKey();
-    const foods = await getFoodsByDate(today);
-    const exercises = await getExerciseByDate(today);
-    
-    const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
-    const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
-    const netPoints = foodPoints - exercisePoints;
-    
-    const logContainer = document.getElementById('todayLog');
-    logContainer.innerHTML = `
-        <div style="margin-bottom: 15px;">
-            <strong>Food:</strong> ${foodPoints} pts
-            ${exercisePoints > 0 ? `<br><strong>Exercise:</strong> -${exercisePoints} pts` : ''}
-            <br><strong>Net:</strong> ${netPoints} pts
-        </div>
-        ${foods.map(f => {
-            const zeroPointBadge = isZeroPointFood(f.name) ? getZeroPointBadge(f.name) : '';
-            const pointsDisplay = f.points === 0 && isZeroPointFood(f.name) ? 
-                `<span style="color: #28a745; font-weight: bold;">0 pts</span>` : 
-                `${f.points}pts`;
-            return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})${zeroPointBadge}</div>`;
-        }).join('')}
-    `;
+    try {
+        const userId = getCurrentUserId();
+        const today = getTodayKey();
+        const foods = await getFoodsByDate(userId, today);
+        const exercises = await getExerciseByDate(userId, today);
+        
+        const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
+        const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
+        const netPoints = foodPoints - exercisePoints;
+        
+        const logContainer = document.getElementById('todayLog');
+        if (!logContainer) return;
+        
+        logContainer.innerHTML = `
+            <div style="margin-bottom: 15px;">
+                <strong>Food:</strong> ${foodPoints} pts
+                ${exercisePoints > 0 ? `<br><strong>Exercise:</strong> -${exercisePoints} pts` : ''}
+                <br><strong>Net:</strong> ${netPoints} pts
+            </div>
+            ${foods.map(f => {
+                const zeroPointBadge = isZeroPointFood(f.name) ? getZeroPointBadge(f.name) : '';
+                const pointsDisplay = f.points === 0 && isZeroPointFood(f.name) ? 
+                    `<span style="color: #28a745; font-weight: bold;">0 pts</span>` : 
+                    `${f.points}pts`;
+                return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})${zeroPointBadge}</div>`;
+            }).join('')}
+        `;
+    } catch (error) {
+        console.warn('Error updating today log:', error);
+    }
 }
 
 async function updateExercisePoints() {
@@ -2895,6 +2960,62 @@ async function updateMedsDisplay() {
 }
 
 // ============ EXPORT / IMPORT ============
+async function exportAllData() {
+    try {
+        const userId = getCurrentUserId();
+        const data = {
+            version: APP_VERSION,
+            exportDate: new Date().toISOString(),
+            userId: userId,
+            settings: await getSettings(),
+            foods: await dbGetAll('foods').catch(() => []),
+            exercise: await dbGetAll('exercise').catch(() => []),
+            water: await dbGetAll('water').catch(() => []),
+            sleep: await dbGetAll('sleep').catch(() => []),
+            tasks: await dbGetAll('tasks').catch(() => []),
+            medications: await dbGetAll('medications').catch(() => []),
+            med_logs: await dbGetAll('med_logs').catch(() => []),
+            weight_logs: await dbGetAll('weight_logs').catch(() => []),
+        };
+        return data;
+    } catch (error) {
+        console.error('Error exporting data:', error);
+        return {};
+    }
+}
+
+async function importAllData(data) {
+    try {
+        if (!data || !data.version) {
+            throw new Error('Invalid backup file');
+        }
+        
+        // Import settings
+        if (data.settings) {
+            await window.saveSettings(data.settings);
+        }
+        
+        // Import other data
+        const stores = ['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs'];
+        for (const store of stores) {
+            if (data[store] && Array.isArray(data[store])) {
+                for (const item of data[store]) {
+                    try {
+                        await dbPut(store, item);
+                    } catch (err) {
+                        console.warn(`Error importing ${store} item:`, err);
+                    }
+                }
+            }
+        }
+        
+        console.log('Data import complete');
+    } catch (error) {
+        console.error('Error importing data:', error);
+        throw error;
+    }
+}
+
 async function exportData() {
     const data = await exportAllData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
