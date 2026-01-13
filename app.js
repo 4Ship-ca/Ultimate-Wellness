@@ -1523,6 +1523,192 @@ function manualAddFoodWater() {
     }
 }
 
+// ============ DATABASE HELPER FUNCTIONS ============
+
+async function getAllTasks() {
+    try {
+        const userId = getCurrentUserId();
+        const allTasks = await dbGetAll('tasks');
+        return allTasks.filter(t => t.userId === userId);
+    } catch (error) {
+        console.warn('Error getting all tasks:', error);
+        return [];
+    }
+}
+
+async function getTasksByDate(userId, date) {
+    try {
+        const tasks = await dbGetByUserAndDate('tasks', userId, date);
+        return tasks || [];
+    } catch (error) {
+        console.warn('Error getting tasks by date:', error);
+        return [];
+    }
+}
+
+async function updateTask(id, updates) {
+    try {
+        const task = await dbGet('tasks', id);
+        if (task) {
+            Object.assign(task, updates);
+            await dbPut('tasks', task);
+        }
+    } catch (error) {
+        console.error('Error updating task:', error);
+    }
+}
+
+async function deleteTask(id) {
+    try {
+        await dbDelete('tasks', id);
+    } catch (error) {
+        console.error('Error deleting task:', error);
+    }
+}
+
+async function addFood(foodData) {
+    try {
+        const userId = getCurrentUserId();
+        const food = {
+            id: `food_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            userId: userId,
+            date: foodData.date,
+            name: foodData.name,
+            points: foodData.points,
+            time: foodData.time,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('foods', food);
+        return food;
+    } catch (error) {
+        console.error('Error adding food:', error);
+    }
+}
+
+async function getFoodsByDate(userId, date) {
+    try {
+        const foods = await dbGetByUserAndDate('foods', userId, date);
+        return foods || [];
+    } catch (error) {
+        console.warn('Error getting foods by date:', error);
+        return [];
+    }
+}
+
+async function getExerciseByDate(userId, date) {
+    try {
+        const exercises = await dbGetByUserAndDate('exercise', userId, date);
+        return exercises || [];
+    } catch (error) {
+        console.warn('Error getting exercise by date:', error);
+        return [];
+    }
+}
+
+async function getWaterByDate(userId, date) {
+    try {
+        const waters = await dbGetByUserAndDate('water', userId, date);
+        return waters.length > 0 ? waters[0] : { drops: 0, foodWater: 0 };
+    } catch (error) {
+        console.warn('Error getting water by date:', error);
+        return { drops: 0, foodWater: 0 };
+    }
+}
+
+async function addFoodWaterToDate(date, ml) {
+    try {
+        const userId = getCurrentUserId();
+        const water = await getWaterByDate(userId, date);
+        const newFoodWater = (water.foodWater || 0) + ml;
+        await updateWater(date, water.drops || 0, newFoodWater);
+    } catch (error) {
+        console.error('Error adding food water:', error);
+    }
+}
+
+async function getSleepByDate(userId, date) {
+    try {
+        const sleeps = await dbGetByUserAndDate('sleep', userId, date);
+        return sleeps.length > 0 ? sleeps[0] : null;
+    } catch (error) {
+        console.warn('Error getting sleep by date:', error);
+        return null;
+    }
+}
+
+async function updateSleepSession(id, updates) {
+    try {
+        const session = await dbGet('sleep', id);
+        if (session) {
+            Object.assign(session, updates);
+            await dbPut('sleep', session);
+        }
+    } catch (error) {
+        console.error('Error updating sleep session:', error);
+    }
+}
+
+async function addStoreVisit(visitData) {
+    try {
+        const userId = getCurrentUserId();
+        const visit = {
+            id: `store_${Date.now()}`,
+            userId: userId,
+            ...visitData,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('store_visits', visit);
+    } catch (error) {
+        console.error('Error adding store visit:', error);
+    }
+}
+
+async function addPhoto(photoData) {
+    try {
+        const userId = getCurrentUserId();
+        const photo = {
+            id: `photo_${Date.now()}`,
+            userId: userId,
+            ...photoData,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('photos', photo);
+    } catch (error) {
+        console.error('Error adding photo:', error);
+    }
+}
+
+async function logMedTaken(medId, date, time) {
+    try {
+        const userId = getCurrentUserId();
+        const log = {
+            id: `medlog_${Date.now()}`,
+            userId: userId,
+            medId: medId,
+            date: date,
+            time: time,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('med_logs', log);
+    } catch (error) {
+        console.error('Error logging med taken:', error);
+    }
+}
+
+async function deleteMedLogsByMedAndDate(medId, date) {
+    try {
+        const userId = getCurrentUserId();
+        const logs = await getMedLogsByDate(date);
+        for (const log of logs) {
+            if (log.medId === medId) {
+                await dbDelete('med_logs', log.id);
+            }
+        }
+    } catch (error) {
+        console.error('Error deleting med logs:', error);
+    }
+}
+
 // ============ EXERCISE TRACKING ============
 function setupExerciseGrid() {
     updateExerciseGrid();
