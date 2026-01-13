@@ -298,6 +298,46 @@ async function deleteUserAccount(userId, password) {
     console.log('✅ User account deleted');
 }
 
+/**
+ * Migrate old single-user data to multi-user format
+ * This is a stub function since the app is designed for single-user
+ */
+async function migrateToMultiUser() {
+    try {
+        // Check if there's any data in the old format (without userId)
+        const foods = await dbGetAll('foods');
+        const needsMigration = foods.some(food => !food.userId);
+        
+        if (needsMigration) {
+            console.log('📦 Migrating old data to multi-user format...');
+            
+            const defaultUserId = 'default';
+            const stores = ['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs'];
+            
+            for (const storeName of stores) {
+                try {
+                    const records = await dbGetAll(storeName);
+                    for (const record of records) {
+                        if (!record.userId) {
+                            record.userId = defaultUserId;
+                            await dbPut(storeName, record);
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`Could not migrate ${storeName}:`, err);
+                }
+            }
+            
+            console.log('✅ Data migration complete');
+        } else {
+            console.log('ℹ️ No migration needed - data already in multi-user format');
+        }
+    } catch (error) {
+        console.warn('⚠️ Migration check skipped:', error);
+        // Don't throw - migration is optional
+    }
+}
+
 // ============ FIRST-TIME SETUP ============
 
 /**
