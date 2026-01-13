@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "updated": "2026-01-12",
+  "products": [
+    {
+      "upc": "057000010874",
+      "product_name": "Heinz Beans in Tomato Sauce",
+      "brand": "Heinz",
+      "points": 4,
+      "points_per_serving": 4,
+      "points_per_100g": 2,
+      "serving_size": "1/2 can (199g)",
+      "verified": true,
+      "source": "preload"
+    },
+    {
+      "upc": "012000001314",
+      "product_name": "Coca-Cola Classic",
+      "brand": "Coca-Cola",
+      "points": 39,
+      "points_per_serving": 39,
+      "points_per_100g": 11,
+      "serving_size": "355ml (12 fl oz)",
+      "verified": true,
+      "source": "preload"
+    },
+    {
+      "upc": "028400047968",
+      "product_name": "Lay's Classic Potato Chips",
+      "brand": "Lay's",
+      "points": 8,
+      "points_per_serving": 8,
+      "points_per_100g": 27,
+      "serving_size": "28g (about 15 chips)",
+      "verified": true,
+      "source": "preload"
+    }
+  ]
+}
