@@ -12,6 +12,20 @@
 const APP_VERSION = '2.2.2';
 const APP_NAME = 'Ultimate Wellness';
 
+// Exercise types for tracking
+const EXERCISES = [
+    'Walking',
+    'Running',
+    'Cycling',
+    'Swimming',
+    'Yoga',
+    'Strength Training',
+    'Sports',
+    'Dancing',
+    'Hiking',
+    'Other Cardio'
+];
+
 let appReady = false;
 
 // ============ INITIALIZATION WRAPPER ============
