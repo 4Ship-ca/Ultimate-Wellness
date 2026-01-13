@@ -141,6 +141,32 @@ function getCurrentUsername() {
     return localStorage.getItem('currentUsername') || 'Guest';
 }
 
+/**
+ * Get all users from database
+ */
+async function getAllUsers() {
+    try {
+        const users = await dbGetAll('users');
+        return users || [];
+    } catch (error) {
+        console.warn('Error getting all users:', error);
+        return [];
+    }
+}
+
+/**
+ * Get user by username
+ */
+async function getUserByUsername(username) {
+    try {
+        const users = await getAllUsers();
+        return users.find(u => u.username === username) || null;
+    } catch (error) {
+        console.warn('Error getting user by username:', error);
+        return null;
+    }
+}
+
 // ============ PASSWORD MANAGEMENT ============
 
 /**
