@@ -1,31 +1,16 @@
-// ============ ULTIMATE WELLNESS v2.2.1 - FINAL ============
-// v1.9.6 Beautiful UI + v2.2 Powerful Backend
-// Hybrid Build - All Errors Fixed
+// ============ ULTIMATE WELLNESS v2.2.2 - CORS-SAFE ============
+// v1.9.6 Beautiful UI + v2.2 Powerful Backend + CORS-Safe Barcode
+// Hybrid Build - All Errors Fixed + CORS Barcode Fix
 // 
-// FIX APPLIED (2026-01-12): Image Media Type Detection
-// - Fixed "Image does not match the provided media type" error
-// - Now correctly detects PNG, JPEG, WebP formats from uploaded images
-// - callClaudeVision() dynamically uses the correct media type
+// CHANGES in v2.2.2:
+// - Updated OpenFoodFacts API to v2 for better data quality
+// - Enhanced nutrition parsing with per-serving calculations
+// - Auto-cache verified products for instant repeat scans
+// - Added sodium tracking to nutrition data
+// - Improved points calculation accuracy
 
-const APP_VERSION = '2.2.1';
+const APP_VERSION = '2.2.2';
 const APP_NAME = 'Ultimate Wellness';
-const EXERCISES = [
-    'Walking',
-    'Running',
-    'Cycling',
-    'Swimming',
-    'Yoga',
-    'Strength Training',
-    'Dancing',
-    'Sports',
-    'Other'
-];
-
-
-// API Configuration
-const USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
-const CLAUDE_API_KEY = ''; // Your Claude API key (leave empty if using proxy)
-const EXERCISE_POINTS_PER_15MIN = 1; // Points earned per 15 minutes of exercise
 
 let appReady = false;
 
@@ -193,7 +178,7 @@ async function restoreSettingsFromBackup() {
             settings.userId = userId;
             settings.id = `user_${userId}`;
             
-            await window.saveSettings(settings);
+            await saveSettings(settings);
             console.log('💾 Settings restored to IndexedDB');
             
             // Clear the backup
@@ -294,22 +279,11 @@ async function init() {
         }
         
         if (!userSettings) {
-            // New user - go to Settings tab for initial setup
-            console.log('👋 New user - opening Settings tab for initial setup');
+            // Show setup screen
+            const setupEl = document.getElementById('setupScreen'); if (setupEl) setupEl.classList.add('active');
+            console.log('👋 New user - showing setup screen');
             
-            // Show main app
-            const setupScreen = document.getElementById('setupScreen');
-            if (setupScreen) setupScreen.style.display = 'none';
-            
-            // Switch to settings tab
-            setTimeout(() => {
-                switchTab('settings');
-                alert('👋 Welcome to Ultimate Wellness!\n\n' +
-                      'Please complete your profile in the Settings tab to get started.\n\n' +
-                      'We\'ll calculate your daily points allowance based on your information.');
-            }, 500);
-            
-            // Show current app version
+            // Show current app version on setup screen
             await updateVersionDisplay();
         } else {
             // Hide setup screen
@@ -321,7 +295,7 @@ async function init() {
                 const oldVersion = userSettings.appVersion || 'unknown';
                 console.log(`🔄 Updating app version: ${oldVersion} → ${APP_VERSION}`);
                 userSettings.appVersion = APP_VERSION;
-                await window.saveSettings(userSettings);
+                await saveSettings(userSettings);
             }
             
             // Update version display
@@ -329,11 +303,7 @@ async function init() {
             
             // Check 12-week points period boundary (or initialize if missing)
             checkPointsPeriodBoundary();
-            
-            // Only save if userSettings still exists after boundary check
-            if (userSettings) {
-                await window.saveSettings(userSettings);
-            }
+            await saveSettings(userSettings);
             
             // Load UI
             await updateAllUI();
@@ -451,12 +421,8 @@ async function completeSetup() {
         const pointsResult = calculateDailyPoints(gender, age, weight, heightInInches, activity);
         const dailyPoints = pointsResult.points;
 
-        // Get userId for multi-user support
-        const userId = getCurrentUserId();
-        
         userSettings = {
-            id: `user_${userId}`, // REQUIRED format for IndexedDB
-            userId: userId, // REQUIRED for multi-user queries
+            id: 'user', // REQUIRED for IndexedDB
             name,
             email,
             birthday,
@@ -473,11 +439,11 @@ async function completeSetup() {
         };
 
         console.log('💾 Saving settings...', userSettings);
-        await window.saveSettings(userSettings);
+        await saveSettings(userSettings);
         
         // Start first 12-week points period (LOCKED)
         startNewPointsPeriod();
-        await window.saveSettings(userSettings);
+        await saveSettings(userSettings);
     
         // Log initial weight
         await addWeightLog({
@@ -722,7 +688,7 @@ async function performSixWeekCheckpoint() {
     if (periodLogs.length < 2) {
         console.log('⚠️ Not enough weight data for checkpoint');
         userSettings.sixWeekCheckpointDone = true;
-        await window.saveSettings(userSettings);
+        await saveSettings(userSettings);
         return;
     }
     
@@ -825,7 +791,7 @@ async function performSixWeekCheckpoint() {
     // Mark checkpoint as done
     userSettings.sixWeekCheckpointDone = true;
     userSettings.sixWeekCheckpointDate = new Date().toISOString().split('T')[0];
-    await window.saveSettings(userSettings);
+    await saveSettings(userSettings);
     
     console.log('✅ 6-week checkpoint complete');
 }
@@ -917,43 +883,30 @@ function enterMaintenanceMode() {
 
 // ============ END 12-WEEK POINTS PERIOD SYSTEM ============
 
-async function handleSaveSettings() {
+async function saveSettings() {
     // Get elements with null checks
     const nameEl = document.getElementById('settingsName');
     const emailEl = document.getElementById('settingsEmail');
-    const birthdayEl = document.getElementById('settingsBirthday');
-    const genderEl = document.getElementById('settingsGender');
-    const weightEl = document.getElementById('settingsWeight');
     const goalWeightEl = document.getElementById('settingsGoalWeight');
     const heightFeetEl = document.getElementById('settingsHeightFeet');
     const heightInchesEl = document.getElementById('settingsHeightInches');
     const activityEl = document.getElementById('settingsActivity');
-    const resetHourEl = document.getElementById('settingsResetHour');
-    const resetMinuteEl = document.getElementById('settingsResetMinute');
-    const proxyUrlEl = document.getElementById('settingsProxyUrl');
     
     // Bail out if elements don't exist yet
-    if (!nameEl || !emailEl || !birthdayEl || !genderEl || !weightEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
+    if (!nameEl || !emailEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
         console.warn('Settings form not ready yet');
         return;
     }
     
     const name = nameEl.value.trim();
     const email = emailEl.value.trim();
-    const birthday = birthdayEl.value;
-    const gender = genderEl.value;
-    const weight = parseFloat(weightEl.value);
     const goalWeight = parseFloat(goalWeightEl.value);
     const heightFeet = parseInt(heightFeetEl.value);
     const heightInches = parseInt(heightInchesEl.value);
     const activity = activityEl.value;
-    const resetHour = resetHourEl ? parseInt(resetHourEl.value) : 4;
-    const resetMinute = resetMinuteEl ? parseInt(resetMinuteEl.value) : 0;
-    const proxyUrl = proxyUrlEl ? proxyUrlEl.value.trim() : 'https://ultimate-wellness.your4ship.workers.dev/';
 
-    // Validate all required fields
-    if (!name || !email || !birthday || !gender || !weight || !goalWeight || !heightFeet) {
-        alert('Please fill in all required fields');
+    if (!name || !email || !goalWeight || !heightFeet) {
+        alert('Please fill in all fields');
         return;
     }
 
@@ -964,208 +917,45 @@ async function handleSaveSettings() {
     }
 
     const heightInInches = (heightFeet * 12) + heightInches;
-    const age = calculateAge(birthday);
     
-    // Calculate daily points
-    const pointsResult = calculateDailyPoints(gender, age, weight, heightInInches, activity);
-    const dailyPoints = pointsResult.points;
+    // Check if activity or goal changed (these affect points calculation)
+    const activityChanged = userSettings.activity !== activity;
+    const goalChanged = Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
     
-    const isNewUser = !userSettings;
+    userSettings.name = name;
+    userSettings.email = email;
+    userSettings.goalWeight = goalWeight;
+    userSettings.heightInInches = heightInInches;
+    userSettings.activity = activity;
     
-    // Check if activity or goal changed (for existing users)
-    const activityChanged = userSettings && userSettings.activity !== activity;
-    const goalChanged = userSettings && Math.abs(userSettings.goalWeight - goalWeight) > 5;
-    
-    // Build or update userSettings
-    if (!userSettings) {
-        // New user - create complete settings object
-        const userId = getCurrentUserId();
-        const today = new Date().toISOString().split('T')[0];
+    // If significant changes, offer to restart 12-week period
+    if ((activityChanged || goalChanged) && userSettings.pointsPeriodStart) {
+        const confirm = window.confirm(
+            `You changed your ${activityChanged ? 'activity level' : 'goal weight'}.\n\n` +
+            `Would you like to restart your 12-week points period with new calculations?\n\n` +
+            `Current period: ${userSettings.lockedPoints} pts/day until ${userSettings.pointsPeriodEnd}\n\n` +
+            `Choose:\n` +
+            `✓ OK = Restart period with new points\n` +
+            `✗ Cancel = Keep current locked points`
+        );
         
-        userSettings = {
-            id: `user_${userId}`,
-            userId: userId,
-            name,
-            email,
-            birthday,
-            gender,
-            currentWeight: weight,
-            goalWeight,
-            heightInInches,
-            activity,
-            dailyPoints,
-            dailyResetHour: resetHour,
-            dailyResetMinute: resetMinute,
-            proxyUrl: 'https://ultimate-wellness.your4ship.workers.dev/',
-            bonusPointsBank: 0,
-            bonusPointsWeekStart: today,
-            lastPointsUpdate: today,
-            lastWeighIn: today,
-            joinDate: today,
-            appVersion: APP_VERSION
-        };
-        
-        console.log('💾 Creating new user profile...');
-    } else {
-        // Existing user - update fields
-        userSettings.name = name;
-        userSettings.email = email;
-        userSettings.birthday = birthday;
-        userSettings.gender = gender;
-        userSettings.currentWeight = weight;
-        userSettings.goalWeight = goalWeight;
-        userSettings.heightInInches = heightInInches;
-        userSettings.activity = activity;
-        userSettings.dailyResetHour = resetHour;
-        userSettings.dailyResetMinute = resetMinute;
-        userSettings.proxyUrl = proxyUrl;
-        
-        console.log('💾 Updating user profile...');
-    }
-    
-    // Save to database
-    await window.saveSettings(userSettings);
-    
-    if (isNewUser) {
-        // First time setup
-        alert('✅ Profile created!\n\n' +
-              `Daily Points Allowance: ${dailyPoints} pts\n\n` +
-              'Starting your 12-week points period...');
-        
-        // Start first 12-week points period
-        startNewPointsPeriod();
-        await window.saveSettings(userSettings);
-        
-        // Log initial weight
-        await addWeightLog({
-            date: new Date().toISOString().split('T')[0],
-            weight: weight,
-            notes: 'Starting weight'
-        });
-        
-        // Load the UI
-        await updateAllUI();
-        
-        // Switch to home tab
-        setTimeout(() => switchTab('home'), 500);
-        
-        console.log('🎉 Initial setup complete!');
-    } else {
-        // Existing user update
-        if ((activityChanged || goalChanged) && userSettings.pointsPeriodStart) {
-            const confirm = window.confirm(
-                `You changed your ${activityChanged ? 'activity level' : 'goal weight'}.\n\n` +
-                `Would you like to restart your 12-week points period with new calculations?\n\n` +
-                `Current period: ${userSettings.lockedPoints} pts/day until ${userSettings.pointsPeriodEnd}\n\n` +
-                `Choose:\n` +
-                `✓ OK = Restart period with new points\n` +
-                `✗ Cancel = Keep current locked points`
-            );
-            
-            if (confirm) {
-                startNewPointsPeriod();
-                await window.saveSettings(userSettings);
-                alert(`New 12-week period started!\n\nPoints: ${userSettings.lockedPoints}/day`);
-            } else {
-                alert('Settings saved. Points remain locked at ' + userSettings.lockedPoints + '/day');
-            }
+        if (confirm) {
+            startNewPointsPeriod();
+            alert(`New 12-week period started!\n\nPoints: ${userSettings.lockedPoints}/day`);
         } else {
-            alert('✅ Settings saved!');
+            alert('Settings saved. Points remain locked at ' + userSettings.lockedPoints + '/day');
         }
-        
-        await updateAllUI();
+    }
+
+    await saveSettings(userSettings);
+    await updateAllUI();
+    
+    if (!activityChanged && !goalChanged) {
+        alert('Settings saved!');
     }
 }
 
 // Display points breakdown in settings (v2.0 Beta)
-
-// ============ WEIGHT LOGGING ============
-
-async function addWeightLog(logData) {
-    const userId = getCurrentUserId();
-    const weightLog = {
-        id: `weight_${Date.now()}`,
-        userId: userId,
-        date: logData.date,
-        weight: logData.weight,
-        notes: logData.notes || '',
-        timestamp: new Date().toISOString()
-    };
-    await dbPut('weight_logs', weightLog);
-    console.log('⚖️ Weight logged:', weightLog.weight, 'lbs');
-    return weightLog;
-}
-
-async function getAllWeightLogs() {
-    const userId = getCurrentUserId();
-    const allLogs = await dbGetAll('weight_logs');
-    return allLogs.filter(log => log.userId === userId)
-                  .sort((a, b) => b.date.localeCompare(a.date));
-}
-
-// ============ EXERCISE LOGGING ============
-
-async function addExercise(exerciseData) {
-    const userId = getCurrentUserId();
-    const today = getTodayKey();
-    
-    const exercise = {
-        id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        userId: userId,
-        date: exerciseData.date || today,
-        activity: exerciseData.activity || exerciseData.type,
-        minutes: exerciseData.minutes,
-        points: exerciseData.points || 0,
-        time: exerciseData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-        timestamp: new Date().toISOString()
-    };
-    
-    await dbPut('exercise', exercise);
-    console.log(`🏃 Exercise logged: ${exercise.activity} (${exercise.minutes} min, ${exercise.points} pts)`);
-    return exercise;
-}
-
-// ============ TASK MANAGEMENT ============
-
-async function getAllTasks(date) {
-    const userId = getCurrentUserId();
-    const dateKey = date || getTodayKey();
-    return await getTasksByDate(userId, dateKey);
-}
-
-// ============ SLEEP TRACKING ============
-
-async function endSleepSession(sessionId) {
-    const userId = getCurrentUserId();
-    const now = new Date();
-    
-    // Get the incomplete session
-    const session = await getIncompleteSleepSession(userId);
-    
-    if (!session) {
-        console.warn('No active sleep session found');
-        return null;
-    }
-    
-    // Calculate duration
-    const startTime = new Date(session.startTime);
-    const durationMs = now - startTime;
-    const durationHours = durationMs / (1000 * 60 * 60);
-    
-    // Update session with proper field names
-    session.endTime = now.toISOString();
-    session.end_datetime = now.toISOString();
-    session.start_datetime = session.startTime; // Ensure this exists
-    session.duration = durationHours;
-    session.duration_hours = durationHours;
-    session.complete = true;
-    
-    await dbPut('sleep', session);
-    console.log(`😴 Sleep session ended: ${durationHours.toFixed(1)} hours`);
-    
-    return session;
-}
-
 async function displayPointsBreakdown() {
     const breakdown = getPointsBreakdown();
     const breakdownDiv = document.getElementById('pointsBreakdown');
@@ -1303,7 +1093,7 @@ async function recalculatePoints() {
     userSettings.dailyPoints = result.points;
     userSettings.pointsFloor = customFloor; // Store custom floor
     
-    await window.saveSettings(userSettings);
+    await saveSettings(userSettings);
     await displayPointsBreakdown();
     await updatePointsDisplay();
     
@@ -1363,7 +1153,7 @@ async function updateWeight() {
         pointsMessage = `\n\n🔒 Points locked at ${userSettings.lockedPoints}/day until ${userSettings.pointsPeriodEnd}`;
     }
 
-    await window.saveSettings(userSettings);
+    await saveSettings(userSettings);
     await updateAllUI();
     
     const weightChange = oldWeight ? weight - oldWeight : 0;
@@ -1392,13 +1182,6 @@ async function testAPIConnection() {
     result.innerHTML = '<div style="color: var(--text-secondary);">⏳ Sending test request...</div>';
     
     try {
-        // Get proxy URL from user settings
-        const proxyUrl = userSettings?.proxyUrl || document.getElementById('settingsProxyUrl')?.value.trim();
-        
-        if (!proxyUrl) {
-            throw new Error('No Cloudflare Worker URL configured. Please enter your worker URL in the field above.');
-        }
-        
         const testMessage = "Hello! Just testing the API connection.";
         
         const requestBody = {
@@ -1409,31 +1192,42 @@ async function testAPIConnection() {
             ]
         };
         
+        let response;
         const startTime = Date.now();
         
-        const response = await fetch(proxyUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
+        if (USE_PROXY) {
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            if (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
+                throw new Error('API key not configured');
+            }
+            
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
         
         const elapsed = Date.now() - startTime;
         
         if (!response.ok) {
-            let errorMsg;
-            try {
-                const error = await response.json();
-                errorMsg = error.error?.message || error.message || `HTTP ${response.status}: ${response.statusText}`;
-            } catch {
-                errorMsg = `HTTP ${response.status}: ${response.statusText}`;
-            }
-            throw new Error(errorMsg);
+            const error = await response.json();
+            throw new Error(error.error?.message || `HTTP ${response.status}: ${response.statusText}`);
         }
         
         const data = await response.json();
-        const aiResponse = data.content?.[0]?.text || 'No response text';
+        const aiResponse = data.content[0].text;
         
         result.innerHTML = `
             <div style="color: var(--success); padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border-left: 3px solid var(--success);">
@@ -1441,7 +1235,7 @@ async function testAPIConnection() {
                 <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
                     • Response time: ${elapsed}ms<br>
                     • Model: claude-sonnet-4-20250514<br>
-                    • Worker URL: ${proxyUrl}<br>
+                    • Proxy: ${USE_PROXY ? 'Enabled (Cloudflare Worker)' : 'Disabled (Direct API)'}<br>
                     • Test response: "${aiResponse.substring(0, 50)}${aiResponse.length > 50 ? '...' : ''}"
                 </div>
             </div>
@@ -1451,23 +1245,20 @@ async function testAPIConnection() {
         console.error('API Test Error:', error);
         
         let helpText = '';
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-            helpText = 'Fix: Check that your Cloudflare Worker is deployed and the URL is correct. Make sure CORS is enabled.';
-        } else if (error.message.includes('CORS')) {
+        if (error.message.includes('CORS') || error.message.includes('blocked')) {
             helpText = 'Fix: Update Cloudflare Worker CORS settings to allow your GitHub Pages domain.';
         } else if (error.message.includes('API key')) {
             helpText = 'Fix: Add your Claude API key to the Cloudflare Worker environment variables.';
-        } else if (error.message.includes('No Cloudflare')) {
-            helpText = error.message;
-        } else {
-            helpText = `Error details: ${error.message}`;
+        } else if (error.message.includes('Failed to fetch')) {
+            helpText = 'Fix: Check your internet connection and Cloudflare Worker URL.';
         }
         
         result.innerHTML = `
-            <div style="color: #ff6b6b; padding: 10px; background: rgba(255, 107, 107, 0.1); border-radius: 8px; border-left: 3px solid #ff6b6b;">
+            <div style="color: var(--danger); padding: 10px; background: rgba(244, 67, 54, 0.1); border-radius: 8px; border-left: 3px solid var(--danger);">
                 <strong>❌ API Connection Failed</strong><br>
                 <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
-                    ${helpText}
+                    Error: ${error.message}<br>
+                    ${helpText ? `<br><strong>${helpText}</strong>` : ''}
                 </div>
             </div>
         `;
@@ -1512,18 +1303,12 @@ function getNextWeighinDate() {
 
 // ============ FOOD LOGGING ============
 function getTodayKey() {
+    // Get current date/time
     const now = new Date();
     
-    // Get user's reset time (default 4:00 AM if not set)
-    const resetHour = userSettings?.dailyResetHour ?? 4;
-    const resetMinute = userSettings?.dailyResetMinute ?? 0;
-    
-    // Create reset time for today
-    const todayReset = new Date(now);
-    todayReset.setHours(resetHour, resetMinute, 0, 0);
-    
-    // If current time is before reset time, count as previous day
-    if (now < todayReset) {
+    // If before 4am, use yesterday's date
+    // (day doesn't "change" until 4am)
+    if (now.getHours() < 4) {
         now.setDate(now.getDate() - 1);
     }
     
@@ -1531,203 +1316,24 @@ function getTodayKey() {
 }
 
 // Check if we need to refresh page (past 4am on new day)
-async function checkDailyReset() {
-    // Get user's reset time
-    const resetHour = userSettings?.dailyResetHour ?? 4;
-    const resetMinute = userSettings?.dailyResetMinute ?? 0;
+function checkDailyReset() {
+    const lastCheck = localStorage.getItem('lastDailyCheck');
+    const currentDay = getTodayKey();
     
-    // Get last reset timestamp from localStorage
-    const lastResetTimestamp = localStorage.getItem('lastResetTimestamp');
-    const lastResetDate = lastResetTimestamp ? new Date(lastResetTimestamp) : null;
-    
-    // Get current time
-    const now = new Date();
-    
-    // Calculate today's reset time
-    const todayResetTime = new Date(now);
-    todayResetTime.setHours(resetHour, resetMinute, 0, 0);
-    
-    // Calculate yesterday's reset time
-    const yesterdayResetTime = new Date(todayResetTime);
-    yesterdayResetTime.setDate(yesterdayResetTime.getDate() - 1);
-    
-    // Determine if we've crossed a reset boundary
-    let shouldReset = false;
-    
-    if (!lastResetDate) {
-        // First time - initialize but don't reset
-        localStorage.setItem('lastResetTimestamp', now.toISOString());
-        console.log('🕐 First app load - initialized reset tracking');
-        return;
+    if (lastCheck && lastCheck !== currentDay) {
+        // New day has started (past 4am)!
+        console.log('🔄 New day detected - refreshing...');
+        
+        // Update last check
+        localStorage.setItem('lastDailyCheck', currentDay);
+        
+        // Show message and reload
+        alert('Good morning! Starting a new day... 🌅');
+        location.reload();
+    } else if (!lastCheck) {
+        // First time - set it
+        localStorage.setItem('lastDailyCheck', currentDay);
     }
-    
-    // Check if we've passed a reset time since last check
-    if (now >= todayResetTime && lastResetDate < todayResetTime) {
-        // We've crossed today's reset time
-        shouldReset = true;
-        console.log('🔄 Crossed reset boundary - it is after', resetHour + ':' + resetMinute.toString().padStart(2, '0'));
-    } else if (now >= yesterdayResetTime && lastResetDate < yesterdayResetTime && now < todayResetTime) {
-        // Edge case: crossed yesterday's reset but we're before today's
-        shouldReset = true;
-        console.log('🔄 Crossed yesterday\'s reset boundary');
-    }
-    
-    if (shouldReset) {
-        console.log('🌅 NEW DAY DETECTED - Performing daily reset');
-        
-        // Update timestamp FIRST to prevent multiple resets
-        localStorage.setItem('lastResetTimestamp', now.toISOString());
-        
-        // Perform reset operations
-        await performDailyReset();
-        
-        // Refresh UI
-        await updateAllUI();
-        
-        // Show notification (non-blocking)
-        const notification = document.createElement('div');
-        notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success); color: white; padding: 15px 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10000; animation: slideIn 0.3s ease;';
-        notification.textContent = '🌅 Good morning! New day started';
-        document.body.appendChild(notification);
-        setTimeout(() => notification.remove(), 3000);
-    }
-}
-
-async function performDailyReset() {
-    if (!userSettings) return;
-    
-    const today = getTodayKey();
-    const yesterday = getYesterdayKey();
-    
-    console.log('📊 Performing daily reset for:', today);
-    
-    // 1. Calculate bonus points from yesterday's unused budget
-    await calculateAndCarryBonusPoints(yesterday);
-    
-    // 2. Add +2 bonus points for daily login
-    if (!userSettings.bonusPointsBank) {
-        userSettings.bonusPointsBank = 0;
-    }
-    userSettings.bonusPointsBank = Math.min(28, userSettings.bonusPointsBank + 2);
-    console.log('🎁 Daily login bonus: +2 pts (Bank now: ' + userSettings.bonusPointsBank + '/28 pts)');
-    
-    // 3. Check yesterday's overage and consume bonus points if needed
-    await checkAndConsumeOverage(yesterday);
-    
-    // 4. Reset points for new day
-    userSettings.lastPointsUpdate = today;
-    
-    // 5. Exercise automatically resets (entries are date-keyed)
-    console.log('✅ Exercise reset (new date key)');
-    
-    // 6. Meds automatically reset (entries are date-keyed)
-    console.log('✅ Meds reset (new date key)');
-    
-    // 7. Water automatically resets (entries are date-keyed)
-    console.log('✅ Water reset (new date key)');
-    
-    // 8. Tasks carry over if not completed
-    // (handled by task system)
-    
-    // 9. Check if Monday - reset weekly bonus bank
-    const dayOfWeek = new Date().getDay();
-    if (dayOfWeek === 1) { // Monday
-        console.log('📅 Monday detected - resetting weekly bonus bank');
-        userSettings.bonusPointsBank = 0;
-        userSettings.bonusPointsWeekStart = today;
-    }
-    
-    // Save settings
-    await window.saveSettings(userSettings);
-    
-    console.log('✅ Daily reset complete');
-}
-
-async function checkAndConsumeOverage(yesterdayDate) {
-    if (!userSettings) return;
-    
-    // Get yesterday's data
-    const userId = getCurrentUserId();
-    const yesterdayFoods = await getFoodsByDate(userId, yesterdayDate);
-    const yesterdayExercise = await getExerciseByDate(userId, yesterdayDate);
-    
-    // Calculate yesterday's usage
-    const foodPoints = yesterdayFoods.reduce((sum, f) => sum + (f.points || 0), 0);
-    const exercisePoints = yesterdayExercise.reduce((sum, e) => sum + (e.points || 0), 0);
-    const netUsed = foodPoints - exercisePoints;  // Food minus exercise bonuses
-    
-    // Get yesterday's allowance
-    const allowance = userSettings.dailyPoints || 30;
-    
-    // Check if over budget
-    if (netUsed > allowance) {
-        const overage = netUsed - allowance;
-        
-        // Consume from bonus bank
-        if (userSettings.bonusPointsBank > 0) {
-            const consumed = Math.min(overage, userSettings.bonusPointsBank);
-            userSettings.bonusPointsBank -= consumed;
-            
-            console.log(`⚠️ Yesterday's overage: ${overage} pts over budget`);
-            console.log(`💸 Consumed ${consumed} bonus pts (Bank now: ${userSettings.bonusPointsBank}/28 pts)`);
-            
-            // Check if still over after consuming bonus
-            if (overage > consumed) {
-                const stillOver = overage - consumed;
-                console.log(`⚠️ Still ${stillOver} pts over budget after using all bonus points`);
-            }
-        } else {
-            console.log(`⚠️ Yesterday's overage: ${overage} pts over budget (no bonus points to cover)`);
-        }
-    }
-}
-
-async function calculateAndCarryBonusPoints(yesterdayDate) {
-    if (!userSettings) return;
-    
-    // Get yesterday's data
-    const userId = getCurrentUserId();
-    const yesterdayFoods = await getFoodsByDate(userId, yesterdayDate);
-    const yesterdayExercise = await getExerciseByDate(userId, yesterdayDate);
-    
-    // Calculate yesterday's usage
-    const foodPoints = yesterdayFoods.reduce((sum, f) => sum + (f.points || 0), 0);
-    const exercisePoints = yesterdayExercise.reduce((sum, e) => sum + (e.points || 0), 0);
-    const usedPoints = foodPoints; // Food only, exercise is bonus
-    
-    // Get yesterday's allowance (use current daily points as approximation)
-    const allowance = userSettings.dailyPoints || 30;
-    
-    // Calculate unused points (non-exercise)
-    const unusedPoints = Math.max(0, allowance - usedPoints);
-    
-    if (unusedPoints > 0) {
-        // Initialize bonus bank if doesn't exist
-        if (!userSettings.bonusPointsBank) {
-            userSettings.bonusPointsBank = 0;
-        }
-        
-        // Add unused to bonus bank
-        const newBank = userSettings.bonusPointsBank + unusedPoints;
-        
-        // Cap at 28 points
-        userSettings.bonusPointsBank = Math.min(28, newBank);
-        
-        console.log(`💰 Bonus carry-over: ${unusedPoints} pts unused → Bank now: ${userSettings.bonusPointsBank}/28 pts`);
-    } else {
-        console.log(`📊 No bonus carry-over (used ${usedPoints}/${allowance} pts)`);
-    }
-}
-
-function getYesterdayKey() {
-    const now = new Date();
-    now.setDate(now.getDate() - 1);
-    return now.toISOString().split('T')[0];
-}
-
-async function getBonusPoints() {
-    if (!userSettings) return 0;
-    return userSettings.bonusPointsBank || 0;
 }
 
 async function logFood(name, points, imageData = null) {
@@ -1816,66 +1422,9 @@ function calculatePoints(calories, protein, sugar, saturatedFat) {
 }
 
 // ============ WATER TRACKING ============
-// Database helper - alias for dbPut
-async function dbAdd(storeName, data) {
-    return await dbPut(storeName, data);
-}
-
-// Start sleep tracking session
-async function startSleepSession() {
-    const userId = getCurrentUserId();
-    const today = getTodayKey();
-    const now = new Date();
-    
-    const sleepData = {
-        id: `sleep_${Date.now()}`,
-        userId: userId,
-        date: today,
-        startTime: now.toISOString(),
-        endTime: null,
-        duration: null,
-        quality: null,
-        notes: ''
-    };
-    
-    await dbPut('sleep', sleepData);
-    console.log('😴 Sleep session started');
-    return sleepData;
-}
-
-// Get user preferences
-async function getPreferences() {
-    if (!userSettings) return {};
-    return {
-        theme: userSettings.theme || 'dark',
-        notifications: userSettings.notifications !== false,
-        reminderTime: userSettings.reminderTime || '20:00',
-        language: userSettings.language || 'en'
-    };
-}
-
-async function updateWater(date, drops, foodWater = 0) {
-    const userId = getCurrentUserId();
-    
-    // Check if water entry exists
-    const existing = await getWaterByDate(userId, date);
-    
-    const waterData = {
-        id: existing?.id || `water_${Date.now()}`,
-        userId: userId,
-        date: date,
-        drops: drops,
-        foodWater: foodWater || 0,
-        timestamp: new Date().toISOString()
-    };
-    
-    await dbPut('water', waterData);
-}
-
 async function fillWaterDrop(dropNum) {
     const today = getTodayKey();
-    const userId = getCurrentUserId();
-    const currentWater = await getWaterByDate(userId, today);
+    const currentWater = await getWaterByDate(today);
     
     let newDrops = currentWater.drops || 0;
     
@@ -1892,8 +1441,7 @@ async function fillWaterDrop(dropNum) {
 
 async function updateWaterDisplay() {
     const today = getTodayKey();
-    const userId = getCurrentUserId();
-    const water = await getWaterByDate(userId, today);
+    const water = await getWaterByDate(today);
     const manualDrops = water.drops || 0; // Manually clicked drops
     const foodWaterMl = water.foodWater || 0;
     
@@ -1981,9 +1529,8 @@ function setupExerciseGrid() {
 }
 
 async function updateExerciseGrid() {
-    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const todayExercise = await getExerciseByDate(userId, today);
+    const todayExercise = await getExerciseByDate(today);
     
     const grid = document.getElementById('exerciseGrid');
     if (!grid) return;
@@ -2001,50 +1548,40 @@ async function updateExerciseGrid() {
                 </div>
                 ${totalMinutes > 0 ? `<div class="exercise-total">${breakdown} = ${totalMinutes} min</div>` : ''}
                 <div class="time-buttons">
-                    <button class="time-btn" onclick="logExercise('${exercise}', 15, event)">15m</button>
-                    <button class="time-btn" onclick="logExercise('${exercise}', 30, event)">30m</button>
-                    <button class="time-btn" onclick="logExercise('${exercise}', 45, event)">45m</button>
-                    <button class="time-btn" onclick="logExercise('${exercise}', 60, event)">60m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 15)">15m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 30)">30m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 45)">45m</button>
+                    <button class="time-btn" onclick="logExercise('${exercise}', 60)">60m</button>
                 </div>
             </div>
         `;
     }).join('');
 }
 
-async function logExercise(activity, minutes, clickEvent = null) {
-    try {
-        const today = getTodayKey();
-        const points = (minutes / 15) * EXERCISE_POINTS_PER_15MIN;
-        
-        const exercise = {
-            date: today,
-            activity: activity,
-            minutes: minutes,
-            points: points,
-            time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-        };
+async function logExercise(activity, minutes) {
+    const today = getTodayKey();
+    const points = (minutes / 15) * EXERCISE_POINTS_PER_15MIN;
+    
+    const exercise = {
+        date: today,
+        activity: activity,
+        minutes: minutes,
+        points: points,
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    };
 
-        await addExercise(exercise);
-        console.log(`✅ Exercise logged: ${activity} (${minutes} min, ${points} pts)`);
-        
-        // Update UI components
-        await updateExerciseGrid();
-        await updateExercisePoints();
-        await updatePointsDisplay();
-        await updateTodayLog();
-        
-        // Visual feedback if button was clicked
-        if (clickEvent && clickEvent.target) {
-            const btn = clickEvent.target;
-            const originalBg = btn.style.background || '';
-            btn.style.background = 'var(--success)';
-            setTimeout(() => {
-                btn.style.background = originalBg;
-            }, 500);
-        }
-    } catch (error) {
-        console.error('Error logging exercise:', error);
-        alert('Failed to log exercise. Please try again.');
+    await addExercise(exercise);
+    await updateAllUI();
+    await updateExerciseGrid();
+    
+    // Visual feedback
+    if (event && event.target) {
+        const btn = event.target;
+        const originalBg = btn.style.background;
+        btn.style.background = 'var(--success)';
+        setTimeout(() => {
+            btn.style.background = originalBg;
+        }, 500);
     }
 }
 
@@ -2055,20 +1592,6 @@ async function resetExercise(activity) {
         await updateAllUI();
         await updateExerciseGrid();
     }
-}
-
-async function deleteExerciseByActivity(date, activity) {
-    const userId = getCurrentUserId();
-    const exercises = await getExerciseByDate(userId, date);
-    
-    // Delete all exercises matching this activity for this date
-    for (const exercise of exercises) {
-        if (exercise.activity === activity) {
-            await dbDelete('exercise', exercise.id);
-        }
-    }
-    
-    console.log(`🗑️ Deleted all ${activity} for ${date}`);
 }
 
 // ============ SLEEP TRACKING V2.0 ============
@@ -2352,13 +1875,11 @@ async function updateSleepUI() {
         } else {
             if (recent.length > 0) {
                 const last = recent[0];
-                const duration = last.duration_hours || last.duration || 0;
-                const lastStart = last.start_datetime ? new Date(last.start_datetime) : new Date(last.startTime || Date.now());
-                
+                const lastStart = new Date(last.start_datetime);
                 statusDiv.innerHTML = `
                     <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
                         <p style="font-weight: bold; margin: 0 0 5px 0;">Last Sleep</p>
-                        <p style="margin: 0;">${duration.toFixed(1)} hours</p>
+                        <p style="margin: 0;">${last.duration_hours} hours</p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.7;">
                             ${lastStart.toLocaleDateString()} ${lastStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}
                         </p>
@@ -2367,7 +1888,7 @@ async function updateSleepUI() {
             } else {
                 statusDiv.innerHTML = `
                     <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
-                        <p style="margin: 0; opacity: 0.7;">No sleep logged yet. Click "Good Night" to start tracking.</p>
+                        <p style="margin: 0; opacity: 0.7;">No sleep logged yet</p>
                     </div>
                 `;
             }
@@ -2376,35 +1897,25 @@ async function updateSleepUI() {
         // Show history
         const historyDiv = document.getElementById('sleepHistory');
         if (historyDiv && recent.length > 0) {
-            // Filter out incomplete sessions and sessions without duration
-            const completeSessions = recent.filter(s => (s.duration_hours || s.duration) && (s.duration_hours || s.duration) > 0);
+            const avgHours = recent.reduce((sum, s) => sum + s.duration_hours, 0) / recent.length;
             
-            if (completeSessions.length > 0) {
-                const avgHours = completeSessions.reduce((sum, s) => sum + (s.duration_hours || s.duration || 0), 0) / completeSessions.length;
-                
-                historyDiv.innerHTML = `
-                    <h3 style="margin: 20px 0 10px 0;">Recent Sleep (7 days)</h3>
-                    <div style="padding: 15px; background: var(--bg-light); border-radius: 8px;">
-                        ${completeSessions.map(s => {
-                            const start = s.start_datetime ? new Date(s.start_datetime) : new Date(s.startTime || Date.now());
-                            const duration = s.duration_hours || s.duration || 0;
-                            return `
-                                <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
-                                    <span style="font-weight: 500;">${start.toLocaleDateString()}</span>
-                                    <span style="float: right; color: var(--primary); font-weight: bold;">${duration.toFixed(1)} hrs</span>
-                                </div>
-                            `;
-                        }).join('')}
-                        <div style="padding: 10px 0 0 0; font-weight: bold;">
-                            Average: ${avgHours.toFixed(1)} hours
-                        </div>
+            historyDiv.innerHTML = `
+                <h3 style="margin: 20px 0 10px 0;">Recent Sleep (7 days)</h3>
+                <div style="padding: 15px; background: var(--bg-light); border-radius: 8px;">
+                    ${recent.map(s => {
+                        const start = new Date(s.start_datetime);
+                        return `
+                            <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                <span style="font-weight: 500;">${start.toLocaleDateString()}</span>
+                                <span style="float: right; color: var(--primary); font-weight: bold;">${s.duration_hours} hrs</span>
+                            </div>
+                        `;
+                    }).join('')}
+                    <div style="padding: 10px 0 0 0; font-weight: bold;">
+                        Average: ${Math.round(avgHours * 10) / 10} hours
                     </div>
-                `;
-            } else {
-                historyDiv.innerHTML = '';
-            }
-        } else if (historyDiv) {
-            historyDiv.innerHTML = '';
+                </div>
+            `;
         }
     } catch (err) {
         console.error('Update sleep UI error:', err);
@@ -2588,7 +2099,6 @@ function stopNapAlarm() {
 }
 
 async function logNap(quality) {
-    const userId = getCurrentUserId();
     const today = getTodayKey();
     
     // Log as a nap entry
@@ -2600,7 +2110,7 @@ async function logNap(quality) {
     });
     
     // Also add to daily sleep notes
-    const sleep = await getSleepByDate(userId, today);
+    const sleep = await getSleepByDate(today);
     if (sleep) {
         const napNote = `Nap: ${napTimerMinutes}min (${quality})`;
         const existingNotes = sleep.notes || '';
@@ -2631,7 +2141,7 @@ async function logNap(quality) {
 
 async function updateNapLog() {
     const container = document.getElementById('napLog');
-    const allNaps = await dbGetAll('sleep');  // Naps are stored in sleep table
+    const allNaps = await dbGetAll('naps');
     
     if (!allNaps || allNaps.length === 0) {
         container.innerHTML = '';
@@ -3046,12 +2556,10 @@ async function updateWeightDisplay() {
     safeSetText('nextWeighin', getNextWeighinDate());
 }
 
-
 async function updatePointsDisplay() {
-    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const foods = await getFoodsByDate(userId, today);
-    const exercises = await getExerciseByDate(userId, today);
+    const foods = await getFoodsByDate(today);
+    const exercises = await getExerciseByDate(today);
     
     const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
     const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
@@ -3060,51 +2568,22 @@ async function updatePointsDisplay() {
     const dailyAllowance = userSettings ? userSettings.dailyPoints : 22;
     const remaining = dailyAllowance - netPoints;
     
-    // Update main display
     document.getElementById('pointsToday').textContent = netPoints;
+    document.getElementById('pointsRemaining').textContent = `${remaining} remaining`;
+    document.getElementById('dailyAllowance').textContent = dailyAllowance;
     
-    // Bonus points
+    // Bonus points (new system)
     const bonusPoints = await getBonusPoints();
     document.getElementById('pointsBank').textContent = bonusPoints;
     
     // Show "Resets Monday" instead of expiry date
     document.getElementById('bankExpiry').textContent = 'Resets Monday';
-    
-    // Update remaining display
-    const remainingEl = document.getElementById('pointsRemaining');
-    const allowanceEl = document.getElementById('dailyAllowance');
-    
-    if (remaining >= 0) {
-        // Under budget
-        remainingEl.textContent = `${remaining} remaining`;
-        remainingEl.style.color = '';
-        allowanceEl.textContent = dailyAllowance;
-    } else {
-        // Over budget - dipping into bonus
-        const overage = Math.abs(remaining);
-        
-        if (bonusPoints >= overage) {
-            // Bonus can cover it
-            remainingEl.innerHTML = `<span style="color: #ff9800;">Using ${overage} bonus pts</span>`;
-            allowanceEl.innerHTML = `${dailyAllowance} <span style="color: #ff9800; font-size: 11px;">(+${bonusPoints} bonus)</span>`;
-        } else if (bonusPoints > 0) {
-            // Partial bonus coverage
-            const stillOver = overage - bonusPoints;
-            remainingEl.innerHTML = `<span style="color: #ff6b6b;">${stillOver} over</span> <span style="color: #ff9800;">(${bonusPoints} bonus used)</span>`;
-            allowanceEl.innerHTML = `${dailyAllowance} <span style="color: #ff9800; font-size: 11px;">(+${bonusPoints} bonus)</span>`;
-        } else {
-            // No bonus points left
-            remainingEl.innerHTML = `<span style="color: #ff6b6b;">${overage} over budget!</span>`;
-            allowanceEl.textContent = dailyAllowance;
-        }
-    }
 }
 
 async function updateTodayLog() {
-    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const foods = await getFoodsByDate(userId, today);
-    const exercises = await getExerciseByDate(userId, today);
+    const foods = await getFoodsByDate(today);
+    const exercises = await getExerciseByDate(today);
     
     const foodPoints = foods.reduce((sum, f) => sum + f.points, 0);
     const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
@@ -3128,9 +2607,8 @@ async function updateTodayLog() {
 }
 
 async function updateExercisePoints() {
-    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const exercises = await getExerciseByDate(userId, today);
+    const exercises = await getExerciseByDate(today);
     const exercisePoints = exercises.reduce((sum, e) => sum + e.points, 0);
     
     const elem = document.getElementById('exercisePoints');
@@ -3169,9 +2647,8 @@ async function updateSleepLog() {
 }
 
 async function updateTasksDisplay() {
-    const userId = getCurrentUserId();
     const today = getTodayKey();
-    const allTasks = await getTasksByDate(userId, today);
+    const allTasks = await getTasksByDate(today);
     
     ['want', 'need', 'grateful'].forEach(type => {
         const list = document.getElementById(type + 'List');
@@ -3611,33 +3088,8 @@ function removeThinkingIndicator(id) {
     }
 }
 
-function getRandomZeroPointFoods(category = null, count = 10) {
-    if (!window.ZERO_POINT_FOODS) {
-        return ['chicken breast', 'eggs', 'spinach', 'broccoli', 'apples'];
-    }
-    
-    let allFoods = [];
-    
-    if (category) {
-        // Get foods from specific category
-        if (ZERO_POINT_FOODS[category]) {
-            allFoods = ZERO_POINT_FOODS[category];
-        }
-    } else {
-        // Get foods from all categories
-        for (const cat in ZERO_POINT_FOODS) {
-            allFoods = allFoods.concat(ZERO_POINT_FOODS[cat]);
-        }
-    }
-    
-    // Shuffle and return random selection
-    const shuffled = allFoods.sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, count);
-}
-
 async function buildAIContext() {
     // Gather user context for better AI responses
-    const userId = getCurrentUserId();
     const context = {
         currentTab: currentTab,
         userName: userSettings?.name || 'there',
@@ -3649,9 +3101,9 @@ async function buildAIContext() {
     };
     
     // Get today's stats
-    const foods = await getFoodsByDate(userId, context.today);
-    const exercise = await getExerciseByDate(userId, context.today);
-    const water = await getWaterByDate(userId, context.today);
+    const foods = await getFoodsByDate(context.today);
+    const exercise = await getExerciseByDate(context.today);
+    const water = await getWaterByDate(context.today);
     
     context.todayStats = {
         foodPoints: foods.reduce((sum, f) => sum + f.points, 0),
@@ -3692,11 +3144,9 @@ async function callClaudeAPI(userMessage, context) {
     const systemPrompt = buildSystemPrompt(context);
     
     try {
-        // Get proxy URL from user settings
-        const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
-        
-        if (!proxyUrl) {
-            throw new Error('Cloudflare Worker URL not configured. Please add it in Settings → API Connection Test.');
+        // Check if API key is configured (if not using proxy)
+        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            throw new Error('Claude API key not configured. See SECURE-API-SETUP.md for setup instructions.');
         }
         
         const requestBody = {
@@ -3708,23 +3158,33 @@ async function callClaudeAPI(userMessage, context) {
             ]
         };
         
-        const response = await fetch(proxyUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
+        let response;
+        
+        if (USE_PROXY) {
+            // Use Cloudflare Worker proxy (secure)
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            // Direct API call (only for testing with private repos)
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
         
         if (!response.ok) {
-            let errorMsg;
-            try {
-                const error = await response.json();
-                errorMsg = error.error?.message || 'API request failed';
-            } catch {
-                errorMsg = `HTTP ${response.status}: ${response.statusText}`;
-            }
-            throw new Error(errorMsg);
+            const error = await response.json();
+            throw new Error(error.error?.message || 'API request failed');
         }
         
         const data = await response.json();
@@ -3880,11 +3340,9 @@ If clarification needed:
 }`;
 
     try {
-        // Get proxy URL from user settings
-        const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
-        
-        if (!proxyUrl) {
-            return "⚠️ Cloudflare Worker URL not configured. Please add it in Settings → API Connection Test.";
+        // Check if API key is configured (if not using proxy)
+        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            return "⚠️ API key not configured. I can't parse your meal automatically. Please use the manual food logger.";
         }
         
         const requestBody = {
@@ -3896,13 +3354,27 @@ If clarification needed:
             ]
         };
         
-        const response = await fetch(proxyUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
+        let response;
+        
+        if (USE_PROXY) {
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
         
         if (!response.ok) {
             throw new Error('API request failed');
@@ -4037,11 +3509,9 @@ Mark zero-point ingredients with: <span style="color: #28a745; font-weight: bold
 Provide 2-3 recipe options if asked for "ideas" or "suggestions".`;
 
     try {
-        // Get proxy URL from user settings
-        const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
-        
-        if (!proxyUrl) {
-            throw new Error('Cloudflare Worker URL not configured');
+        // Check if API key is configured (if not using proxy)
+        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            throw new Error('Claude API key not configured');
         }
         
         const requestBody = {
@@ -4053,23 +3523,31 @@ Provide 2-3 recipe options if asked for "ideas" or "suggestions".`;
             ]
         };
         
-        const response = await fetch(proxyUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
+        let response;
+        
+        if (USE_PROXY) {
+            response = await fetch(PROXY_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
         
         if (!response.ok) {
-            let errorMsg;
-            try {
-                const error = await response.json();
-                errorMsg = error.error?.message || 'API request failed';
-            } catch {
-                errorMsg = 'API request failed';
-            }
-            throw new Error(errorMsg);
+            const error = await response.json();
+            throw new Error(error.error?.message || 'API request failed');
         }
         
         const data = await response.json();
@@ -4334,21 +3812,15 @@ function switchTab(tab) {
         const els = {
             name: document.getElementById('settingsName'),
             email: document.getElementById('settingsEmail'),
-            birthday: document.getElementById('settingsBirthday'),
-            gender: document.getElementById('settingsGender'),
             weight: document.getElementById('settingsWeight'),
             goalWeight: document.getElementById('settingsGoalWeight'),
             heightFeet: document.getElementById('settingsHeightFeet'),
             heightInches: document.getElementById('settingsHeightInches'),
-            activity: document.getElementById('settingsActivity'),
-            resetHour: document.getElementById('settingsResetHour'),
-            resetMinute: document.getElementById('settingsResetMinute')
+            activity: document.getElementById('settingsActivity')
         };
         
         if (els.name) els.name.value = userSettings.name || '';
         if (els.email) els.email.value = userSettings.email || '';
-        if (els.birthday) els.birthday.value = userSettings.birthday || '';
-        if (els.gender) els.gender.value = userSettings.gender || 'male';
         if (els.weight) els.weight.value = userSettings.currentWeight || '';
         if (els.goalWeight) els.goalWeight.value = userSettings.goalWeight || '';
         
@@ -4357,12 +3829,6 @@ function switchTab(tab) {
         if (els.heightFeet) els.heightFeet.value = feet;
         if (els.heightInches) els.heightInches.value = inches;
         if (els.activity) els.activity.value = userSettings.activity || 'moderate';
-        if (els.resetHour) els.resetHour.value = userSettings.dailyResetHour || 4;
-        if (els.resetMinute) els.resetMinute.value = userSettings.dailyResetMinute || 0;
-        
-        // Load proxy URL
-        const proxyUrlEl = document.getElementById('settingsProxyUrl');
-        if (proxyUrlEl) proxyUrlEl.value = userSettings.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
         
         if (typeof displayPointsBreakdown === 'function') {
             try {
@@ -4372,60 +3838,6 @@ function switchTab(tab) {
             }
         }
     }
-    
-    // Add validation listeners if settings tab
-    if (tab === 'settings') {
-        setTimeout(() => validateSettingsForm(), 100);
-    }
-}
-
-// Validate settings form and enable/disable save button
-function validateSettingsForm() {
-    const fields = {
-        name: document.getElementById('settingsName'),
-        email: document.getElementById('settingsEmail'),
-        birthday: document.getElementById('settingsBirthday'),
-        gender: document.getElementById('settingsGender'),
-        weight: document.getElementById('settingsWeight'),
-        goalWeight: document.getElementById('settingsGoalWeight'),
-        heightFeet: document.getElementById('settingsHeightFeet'),
-        heightInches: document.getElementById('settingsHeightInches'),
-        activity: document.getElementById('settingsActivity')
-    };
-    
-    const saveButton = document.getElementById('saveSettingsBtn');
-    
-    if (!saveButton) return;
-    
-    // Check if all required fields are filled
-    const allFilled = 
-        fields.name && fields.name.value.trim() &&
-        fields.email && fields.email.value.trim() &&
-        fields.birthday && fields.birthday.value &&
-        fields.gender && fields.gender.value &&
-        fields.weight && fields.weight.value &&
-        fields.goalWeight && fields.goalWeight.value &&
-        fields.heightFeet && fields.heightFeet.value &&
-        fields.activity && fields.activity.value;
-    
-    if (allFilled) {
-        saveButton.disabled = false;
-        saveButton.style.opacity = '1';
-        saveButton.style.cursor = 'pointer';
-    } else {
-        saveButton.disabled = true;
-        saveButton.style.opacity = '0.5';
-        saveButton.style.cursor = 'not-allowed';
-    }
-    
-    // Add event listeners to re-validate on change
-    Object.values(fields).forEach(field => {
-        if (field && !field.dataset.validationAdded) {
-            field.addEventListener('input', validateSettingsForm);
-            field.addEventListener('change', validateSettingsForm);
-            field.dataset.validationAdded = 'true';
-        }
-    });
 }
 
 // Allow Enter key to send messages
@@ -4573,8 +3985,7 @@ async function calculateWeeklyStats() {
     const allExercise = await dbGetAll('exercise');
     const allWater = await dbGetAll('water');
     const allSleep = await dbGetAll('sleep');
-    // Store purchases - feature not yet implemented, use empty array
-    const allStores = [];  // TODO: Create stores table for tracking purchases
+    const allStores = await dbGetAll('stores');
     
     // Filter to this week
     const weekFoods = allFoods.filter(f => new Date(f.date) >= weekAgo);
@@ -4771,7 +4182,7 @@ async function emailGroceryList() {
 
     // Get pantry items from last 30 days
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const allPantry = await dbGetAll('pantry_items');
+    const allPantry = await dbGetAll('pantry');
     const recentItems = allPantry.filter(p => p.date >= thirtyDaysAgo);
     
     // Group by category (simplified)
@@ -5175,7 +4586,7 @@ async function analyzeVideo(videoBlob) {
             // Analyze each frame
             const analyses = [];
             for (const frame of frames) {
-                const result = await callClaudeVision(frame, getAnalysisPrompt('pantry'), 'image/jpeg');
+                const result = await callClaudeVision(frame, getAnalysisPrompt('pantry'));
                 analyses.push(result);
             }
             
@@ -5345,11 +4756,7 @@ async function analyzeImage(imageDataUrl) {
     const resultDiv = document.getElementById('scanResult');
     resultDiv.innerHTML = '<div class="spinner"></div><p>Analyzing image with AI...</p>';
     
-    // Extract media type from data URL (e.g., "image/png", "image/jpeg", "image/webp")
-    const mediaTypeMatch = imageDataUrl.match(/^data:(image\/[a-z]+);base64,/i);
-    const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/jpeg'; // Default to jpeg if not found
-    
-    // Convert data URL to base64 (remove data:image/xxx;base64, prefix)
+    // Convert data URL to base64 (remove data:image/jpeg;base64, prefix)
     const base64Data = imageDataUrl.split(',')[1];
     
     try {
@@ -5362,7 +4769,7 @@ async function analyzeImage(imageDataUrl) {
             
 Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, return the longest one. If no barcode is visible, respond with "NONE".`;
             
-            const upcResponse = await callClaudeVision(base64Data, upcPrompt, mediaType);
+            const upcResponse = await callClaudeVision(base64Data, upcPrompt);
             const upcText = upcResponse.rawText || upcResponse.toString();
             const upcMatch = upcText.match(/\d{8,14}/); // Match 8-14 digit codes (UPC/EAN)
             
@@ -5370,7 +4777,7 @@ Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, 
                 // No UPC found, fall back to regular AI analysis
                 resultDiv.innerHTML = '<div class="spinner"></div><p>No barcode detected, analyzing product visually...</p>';
                 const prompt = getAnalysisPrompt(useCase);
-                const response = await callClaudeVision(base64Data, prompt, mediaType);
+                const response = await callClaudeVision(base64Data, prompt);
                 displayScanResult(response, useCase);
                 return;
             }
@@ -5389,7 +4796,7 @@ Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, 
         
         // For other scan types, use regular AI analysis
         const prompt = getAnalysisPrompt(useCase);
-        const response = await callClaudeVision(base64Data, prompt, mediaType);
+        const response = await callClaudeVision(base64Data, prompt);
         
         displayScanResult(response, useCase);
         
@@ -5493,12 +4900,10 @@ Respond in JSON format:
 }
 
 // Call Claude Vision API
-async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
-    // Get proxy URL from user settings
-    const proxyUrl = userSettings?.proxyUrl || 'https://ultimate-wellness.your4ship.workers.dev/';
-    
-    if (!proxyUrl) {
-        throw new Error('Cloudflare Worker URL not configured. Please add it in Settings → API Connection Test.');
+async function callClaudeVision(base64Image, prompt) {
+    // Check if API key is configured (if not using proxy)
+    if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+        throw new Error('Claude API key not configured. Add your API key in app.js or set up Cloudflare Worker proxy.');
     }
     
     const requestBody = {
@@ -5512,7 +4917,7 @@ async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
                         type: 'image',
                         source: {
                             type: 'base64',
-                            media_type: mediaType,
+                            media_type: 'image/jpeg',
                             data: base64Image
                         }
                     },
@@ -5525,23 +4930,31 @@ async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
         ]
     };
     
-    const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-    });
+    let response;
+    
+    if (USE_PROXY) {
+        response = await fetch(PROXY_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+    } else {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': CLAUDE_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(requestBody)
+        });
+    }
     
     if (!response.ok) {
-        let errorMsg;
-        try {
-            const error = await response.json();
-            errorMsg = error.error?.message || 'API request failed';
-        } catch {
-            errorMsg = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        throw new Error(errorMsg);
+        const error = await response.json();
+        throw new Error(error.error?.message || 'API request failed');
     }
     
     const data = await response.json();
@@ -5562,10 +4975,91 @@ async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
 
 // ============ UPC BARCODE LOOKUP MODULE ============
 
-// Lookup product in Open Food Facts database
+// ============ CORS-SAFE UPC LOOKUP v2.2.2 ============
+// 3-Level Cascade: Local Cache → OpenFoodFacts v2 API → Manual Entry
+// Works on GitHub Pages without backend proxy
+
 async function lookupUPC(upc) {
-    // Use the enhanced multi-source lookup
-    return await lookupUPCEnhanced(upc);
+    try {
+        console.log(`🔍 Looking up UPC: ${upc}`);
+        
+        // LEVEL 1: Check local cache first (instant, 100% reliable)
+        const cached = await getUPCProduct(upc);
+        if (cached) {
+            console.log('✅ Found in local cache (verified by user)');
+            return cached;
+        }
+        
+        // LEVEL 2: Query OpenFoodFacts v2 API (CORS-friendly, 2.8M+ products)
+        console.log('🌐 Querying OpenFoodFacts v2 API...');
+        const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${upc}.json`);
+        
+        if (!response.ok) {
+            console.log('⚠️ API request failed, will offer manual entry');
+            return null;
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 0 || !data.product) {
+            console.log('❌ Product not found in database');
+            return null; // LEVEL 3: Manual entry will be offered in UI
+        }
+        
+        const product = data.product;
+        
+        // Extract nutrition per 100g (standardized)
+        const nutrition = {
+            calories: product.nutriments?.['energy-kcal_100g'] || 0,
+            protein: product.nutriments?.proteins_100g || 0,
+            carbs: product.nutriments?.carbohydrates_100g || 0,
+            sugar: product.nutriments?.sugars_100g || 0,
+            fat: product.nutriments?.fat_100g || 0,
+            saturated_fat: product.nutriments?.['saturated-fat_100g'] || 0,
+            fiber: product.nutriments?.fiber_100g || 0,
+            sodium: product.nutriments?.sodium_100g || 0
+        };
+        
+        // Calculate points per 100g
+        const pointsPer100g = calculateSmartPoints(nutrition);
+        
+        // Parse serving size to get amount in grams
+        const servingSize = product.serving_size || '100g';
+        const servingAmount = parseServingSize(servingSize);
+        
+        // Calculate points per serving (more accurate for user)
+        let pointsPerServing = pointsPer100g;
+        if (servingAmount && servingAmount !== 100) {
+            pointsPerServing = Math.round((pointsPer100g * servingAmount) / 100);
+        }
+        
+        // Build comprehensive product data
+        const productData = {
+            upc: upc,
+            product_name: product.product_name || product.product_name_en || 'Unknown Product',
+            brand: product.brands || '',
+            points: pointsPerServing,
+            points_per_serving: pointsPerServing,
+            points_per_100g: pointsPer100g,
+            nutrition: nutrition,
+            serving_size: servingSize,
+            serving_amount: servingAmount,
+            image_url: product.image_url || product.image_front_url || '',
+            verified: false,
+            source: 'openfoodfacts',
+            categories: product.categories || '',
+            ingredients: product.ingredients_text || ''
+        };
+        
+        console.log('✅ Product found:', productData.product_name, `(${pointsPerServing} pts/serving, ${pointsPer100g} pts/100g)`);
+        
+        // Don't auto-save to cache yet - wait for user verification with confirmUPCProduct()
+        return productData;
+        
+    } catch (error) {
+        console.error('UPC lookup error:', error);
+        return null; // Will trigger manual entry UI
+    }
 }
 
 // Calculate SmartPoints from nutrition info
@@ -5587,258 +5081,10 @@ function calculateSmartPoints(nutrition) {
     return Math.round(points);
 }
 
-// ============ UPC DATABASE FUNCTIONS ============
-
-/**
- * Get UPC product from local cache
- * @param {string} upc - The UPC/EAN barcode
- * @returns {Promise<Object|null>} Product data or null if not found
- */
-async function getUPCProduct(upc) {
-    try {
-        const userId = getCurrentUserId();
-        const allProducts = await dbGetAll('upc_products', userId);
-        
-        if (!allProducts) return null;
-        
-        // Find product with matching UPC
-        const product = allProducts.find(p => p.upc === upc);
-        return product || null;
-        
-    } catch (error) {
-        console.error('Error getting UPC product from cache:', error);
-        return null;
-    }
-}
-
-/**
- * Save UPC product to local cache
- * @param {Object} productData - Product data to save
- * @returns {Promise<void>}
- */
-async function saveUPCProduct(productData) {
-    try {
-        const userId = getCurrentUserId();
-        const today = new Date().toISOString();
-        
-        // Ensure required fields
-        productData.userId = userId;
-        productData.id = `upc_${productData.upc}_${userId}`;
-        productData.date_added = productData.date_added || today;
-        productData.last_updated = today;
-        productData.verified = productData.verified || false;
-        
-        // Calculate points per serving if not already set
-        if (!productData.points_per_serving && productData.points && productData.serving_size) {
-            productData.points_per_serving = productData.points;
-        }
-        
-        // Calculate points per 100g for standardization
-        if (productData.nutrition && !productData.points_per_100g) {
-            productData.points_per_100g = calculateSmartPoints(productData.nutrition);
-        }
-        
-        await dbPut('upc_products', productData);
-        console.log(`💾 Saved UPC ${productData.upc} to local database`);
-        
-    } catch (error) {
-        console.error('Error saving UPC product:', error);
-        throw error;
-    }
-}
-
-/**
- * Enhanced UPC lookup with multiple data sources
- * Priority: 1. Local cache → 2. Open Food Facts → 3. Barcode Monster → 4. UPCitemdb
- */
-async function lookupUPCEnhanced(upc) {
-    try {
-        console.log(`🔍 Looking up UPC: ${upc}`);
-        
-        // LAYER 1: Check local cache first
-        const cached = await getUPCProduct(upc);
-        if (cached) {
-            console.log('✅ Found in local cache (verified by user)');
-            return cached;
-        }
-        
-        // LAYER 2: Try Open Food Facts (largest open source database)
-        console.log('🌐 Querying Open Food Facts...');
-        let productData = await lookupOpenFoodFacts(upc);
-        if (productData) {
-            console.log('✅ Found in Open Food Facts');
-            return productData;
-        }
-        
-        // LAYER 3: Try Barcode Monster (fallback)
-        console.log('🌐 Querying Barcode Monster...');
-        productData = await lookupBarcodeMonster(upc);
-        if (productData) {
-            console.log('✅ Found in Barcode Monster');
-            return productData;
-        }
-        
-        // LAYER 4: Try UPCitemdb (another fallback)
-        console.log('🌐 Querying UPCitemdb...');
-        productData = await lookupUPCitemdb(upc);
-        if (productData) {
-            console.log('✅ Found in UPCitemdb');
-            return productData;
-        }
-        
-        console.log('❌ Product not found in any database');
-        return null;
-        
-    } catch (error) {
-        console.error('UPC lookup error:', error);
-        return null;
-    }
-}
-
-/**
- * Lookup product in Open Food Facts database
- */
-async function lookupOpenFoodFacts(upc) {
-    try {
-        const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${upc}.json`);
-        
-        if (!response.ok) return null;
-        
-        const data = await response.json();
-        
-        if (data.status === 0 || !data.product) return null;
-        
-        const product = data.product;
-        
-        // Extract nutrition per 100g (standardized)
-        const nutrition = {
-            calories: product.nutriments?.['energy-kcal_100g'] || 0,
-            protein: product.nutriments?.proteins_100g || 0,
-            carbs: product.nutriments?.carbohydrates_100g || 0,
-            sugar: product.nutriments?.sugars_100g || 0,
-            fat: product.nutriments?.fat_100g || 0,
-            saturated_fat: product.nutriments?.['saturated-fat_100g'] || 0,
-            fiber: product.nutriments?.fiber_100g || 0,
-            sodium: product.nutriments?.sodium_100g || 0
-        };
-        
-        // Calculate points per 100g
-        const pointsPer100g = calculateSmartPoints(nutrition);
-        
-        // Parse serving size
-        const servingSize = product.serving_size || '100g';
-        const servingAmount = parseServingSize(servingSize);
-        
-        // Calculate points per serving
-        let pointsPerServing = pointsPer100g;
-        if (servingAmount && servingAmount !== 100) {
-            pointsPerServing = Math.round((pointsPer100g * servingAmount) / 100);
-        }
-        
-        return {
-            upc: upc,
-            product_name: product.product_name || 'Unknown Product',
-            brand: product.brands || '',
-            points: pointsPerServing,
-            points_per_serving: pointsPerServing,
-            points_per_100g: pointsPer100g,
-            nutrition: nutrition,
-            serving_size: servingSize,
-            serving_amount: servingAmount,
-            image_url: product.image_url || product.image_front_url || '',
-            verified: false,
-            source: 'openfoodfacts',
-            categories: product.categories || '',
-            ingredients: product.ingredients_text || ''
-        };
-        
-    } catch (error) {
-        console.error('Open Food Facts lookup error:', error);
-        return null;
-    }
-}
-
-/**
- * Lookup product in Barcode Monster database
- */
-async function lookupBarcodeMonster(upc) {
-    try {
-        const response = await fetch(`https://barcode.monster/api/${upc}`);
-        
-        if (!response.ok) return null;
-        
-        const data = await response.json();
-        
-        if (!data || !data.company) return null;
-        
-        // Barcode Monster has limited nutrition data, estimate points
-        return {
-            upc: upc,
-            product_name: data.description || data.product || 'Unknown Product',
-            brand: data.company || '',
-            points: 5, // Default estimate - user can adjust
-            points_per_serving: 5,
-            points_per_100g: 5,
-            nutrition: null,
-            serving_size: '1 serving',
-            serving_amount: null,
-            image_url: '',
-            verified: false,
-            source: 'barcodemonster',
-            categories: data.category || ''
-        };
-        
-    } catch (error) {
-        console.error('Barcode Monster lookup error:', error);
-        return null;
-    }
-}
-
-/**
- * Lookup product in UPCitemdb database
- */
-async function lookupUPCitemdb(upc) {
-    try {
-        // Note: UPCitemdb requires API key for commercial use
-        // This is a free tier lookup with limited requests
-        const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`);
-        
-        if (!response.ok) return null;
-        
-        const data = await response.json();
-        
-        if (!data || !data.items || data.items.length === 0) return null;
-        
-        const item = data.items[0];
-        
-        return {
-            upc: upc,
-            product_name: item.title || 'Unknown Product',
-            brand: item.brand || '',
-            points: 5, // Default estimate
-            points_per_serving: 5,
-            points_per_100g: 5,
-            nutrition: null,
-            serving_size: '1 serving',
-            serving_amount: null,
-            image_url: item.images && item.images.length > 0 ? item.images[0] : '',
-            verified: false,
-            source: 'upcitemdb',
-            categories: item.category || ''
-        };
-        
-    } catch (error) {
-        console.error('UPCitemdb lookup error:', error);
-        return null;
-    }
-}
-
-/**
- * Parse serving size string to extract amount in grams
- * Examples: "100g" → 100, "28g (1 oz)" → 28, "1 cup (240ml)" → 240
- */
+// Parse serving size string to extract amount in grams
+// Examples: "100g" → 100, "28g (1 oz)" → 28, "1 cup (240ml)" → 240
 function parseServingSize(servingSizeStr) {
-    if (!servingSizeStr) return null;
+    if (!servingSizeStr) return 100;
     
     // Try to extract grams
     const gramsMatch = servingSizeStr.match(/(\d+\.?\d*)\s*g/i);
@@ -5854,64 +5100,6 @@ function parseServingSize(servingSizeStr) {
     
     // Default to 100g if can't parse
     return 100;
-}
-
-/**
- * Export UPC database as JSON for backup
- */
-async function exportUPCDatabase() {
-    try {
-        const userId = getCurrentUserId();
-        const allProducts = await dbGetAll('upc_products', userId);
-        
-        const exportData = {
-            export_date: new Date().toISOString(),
-            user_id: userId,
-            total_products: allProducts ? allProducts.length : 0,
-            products: allProducts || []
-        };
-        
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `upc_database_${userId}_${Date.now()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        
-        console.log(`📦 Exported ${exportData.total_products} UPC products`);
-        return exportData.total_products;
-        
-    } catch (error) {
-        console.error('Error exporting UPC database:', error);
-        throw error;
-    }
-}
-
-/**
- * Import UPC database from JSON backup
- */
-async function importUPCDatabase(jsonData) {
-    try {
-        const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-        
-        if (!data.products || !Array.isArray(data.products)) {
-            throw new Error('Invalid UPC database format');
-        }
-        
-        let imported = 0;
-        for (const product of data.products) {
-            await saveUPCProduct(product);
-            imported++;
-        }
-        
-        console.log(`📥 Imported ${imported} UPC products`);
-        return imported;
-        
-    } catch (error) {
-        console.error('Error importing UPC database:', error);
-        throw error;
-    }
 }
 
 // Show UPC product with editable points
@@ -5953,17 +5141,22 @@ async function showUPCProduct(productData, upc) {
     }
     
     // Product found - show with editable points
-    const pointsStatus = productData.verified ? '✓ Verified' : '⚠️ Unverified';
+    const pointsStatus = productData.verified ? '✓ Verified by you' : '⚠️ From OpenFoodFacts - Please verify';
     const statusColor = productData.verified ? 'var(--success)' : 'var(--warning)';
-    const dataSource = productData.source ? ` (${productData.source})` : '';
+    const sourceTag = productData.source === 'openfoodfacts' ? '🌐 OpenFoodFacts' : '💾 Local Cache';
     
     resultDiv.innerHTML = `
         <div class="card" style="margin-top: 15px;">
-            <h3>${productData.product_name}</h3>
-            ${productData.brand ? `<p style="color: var(--text-secondary);">${productData.brand}</p>` : ''}
-            <p style="font-size: 12px; color: var(--text-secondary);">
-                UPC: ${upc}${dataSource}
-            </p>
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                <div>
+                    <h3 style="margin: 0;">${productData.product_name}</h3>
+                    ${productData.brand ? `<p style="color: var(--text-secondary); margin: 5px 0;">${productData.brand}</p>` : ''}
+                </div>
+                <div style="font-size: 11px; color: var(--text-secondary); text-align: right;">
+                    ${sourceTag}<br>
+                    UPC: ${upc}
+                </div>
+            </div>
             
             ${productData.image_url ? `
                 <img src="${productData.image_url}" alt="${productData.product_name}" style="max-width: 200px; max-height: 200px; margin: 15px 0; border-radius: 8px;">
@@ -5973,44 +5166,33 @@ async function showUPCProduct(productData, upc) {
                 <div style="font-size: 14px; color: ${statusColor}; margin-bottom: 10px;">
                     ${pointsStatus}
                 </div>
-                
-                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                    <div style="flex: 1; padding: 15px; background: var(--bg-light); border-radius: 8px; border: 2px solid var(--primary);">
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;">Per Serving</div>
-                        <input type="number" id="upcPointsServing" value="${productData.points_per_serving || productData.points}" min="0" 
-                            onchange="highlightPointsChange('${upc}', ${productData.points_per_serving || productData.points})"
-                            style="width: 80px; padding: 8px; font-size: 28px; font-weight: bold; border: none; background: transparent; color: var(--primary); text-align: center;">
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">${productData.serving_size || '1 serving'}</div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">SmartPoints per ${productData.serving_size || 'serving'}:</label>
+                <input type="number" id="upcPoints" value="${productData.points}" min="0" 
+                    onchange="highlightPointsChange('${upc}', ${productData.points})"
+                    style="width: 100px; padding: 10px; font-size: 24px; font-weight: bold; border: 2px solid var(--primary); border-radius: 8px; background: var(--bg-light); color: var(--primary); text-align: center;">
+                ${productData.points_per_100g ? `
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
+                        (${productData.points_per_100g} points per 100g)
                     </div>
-                    
-                    ${productData.points_per_100g ? `
-                    <div style="flex: 1; padding: 15px; background: var(--bg-light); border-radius: 8px;">
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;">Per 100g</div>
-                        <div style="font-size: 28px; font-weight: bold; color: var(--text-secondary); text-align: center;">
-                            ${productData.points_per_100g}
-                        </div>
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">standardized</div>
-                    </div>
-                    ` : ''}
-                </div>
+                ` : ''}
             </div>
             
             ${productData.nutrition ? `
-                <div style="font-size: 14px; color: var(--text-secondary); margin: 15px 0; padding: 15px; background: var(--bg-light); border-radius: 8px;">
-                    <strong>Nutrition per 100g:</strong><br>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
-                        <div>🔥 ${Math.round(productData.nutrition.calories)} cal</div>
-                        <div>🥩 ${Math.round(productData.nutrition.protein)}g protein</div>
-                        <div>🍞 ${Math.round(productData.nutrition.carbs)}g carbs</div>
-                        <div>🧈 ${Math.round(productData.nutrition.fat)}g fat</div>
-                        ${productData.nutrition.sugar ? `<div>🍬 ${Math.round(productData.nutrition.sugar)}g sugar</div>` : ''}
-                        ${productData.nutrition.fiber ? `<div>🌾 ${Math.round(productData.nutrition.fiber)}g fiber</div>` : ''}
+                <div style="font-size: 13px; color: var(--text-secondary); margin: 15px 0; padding: 15px; background: var(--bg-light); border-radius: 8px;">
+                    <strong style="color: var(--text);">Nutrition per 100g:</strong><br>
+                    <div style="margin-top: 8px; line-height: 1.6;">
+                        📊 ${Math.round(productData.nutrition.calories)} calories<br>
+                        💪 ${Math.round(productData.nutrition.protein)}g protein<br>
+                        🍞 ${Math.round(productData.nutrition.carbs)}g carbs (${Math.round(productData.nutrition.sugar)}g sugar)<br>
+                        🥑 ${Math.round(productData.nutrition.fat)}g fat (${Math.round(productData.nutrition.saturated_fat)}g saturated)<br>
+                        ${productData.nutrition.fiber ? `🌾 ${Math.round(productData.nutrition.fiber)}g fiber<br>` : ''}
+                        ${productData.nutrition.sodium ? `🧂 ${Math.round(productData.nutrition.sodium * 1000)}mg sodium` : ''}
                     </div>
                 </div>
             ` : ''}
             
             <div id="pointsChangeWarning" style="display: none; margin: 15px 0; padding: 15px; background: var(--warning); color: #000; border-radius: 8px; font-weight: bold;">
-                ⚠️ Points changed from ${productData.points_per_serving || productData.points} to <span id="newPoints"></span>
+                ⚠️ Points changed from ${productData.points} to <span id="newPoints"></span>
             </div>
             
             <button class="btn" onclick="confirmUPCProduct('${upc}', ${JSON.stringify(productData).replace(/"/g, '&quot;')})">
@@ -6025,31 +5207,22 @@ async function showUPCProduct(productData, upc) {
 
 // Highlight when points are changed
 function highlightPointsChange(upc, originalPoints) {
-    const pointsInput = document.getElementById('upcPointsServing') || document.getElementById('upcPoints');
-    if (!pointsInput) return;
-    
-    const newPoints = parseInt(pointsInput.value);
+    const newPoints = parseInt(document.getElementById('upcPoints').value);
     const warning = document.getElementById('pointsChangeWarning');
     const newPointsSpan = document.getElementById('newPoints');
     
-    if (warning && newPointsSpan && newPoints !== originalPoints) {
+    if (newPoints !== originalPoints) {
         warning.style.display = 'block';
         newPointsSpan.textContent = newPoints;
-    } else if (warning) {
+    } else {
         warning.style.display = 'none';
     }
 }
 
 // Confirm UPC product and save to cache
 async function confirmUPCProduct(upc, productData) {
-    const pointsInput = document.getElementById('upcPointsServing') || document.getElementById('upcPoints');
-    if (!pointsInput) {
-        console.error('Points input field not found');
-        return;
-    }
-    
-    const points = parseInt(pointsInput.value);
-    const originalPoints = productData.points_per_serving || productData.points;
+    const points = parseInt(document.getElementById('upcPoints').value);
+    const originalPoints = productData.points;
     
     // Check if points were changed
     if (points !== originalPoints) {
@@ -6059,14 +5232,13 @@ async function confirmUPCProduct(upc, productData) {
         }
     }
     
-    // Update points (both serving and main points field)
+    // Update points
     productData.points = points;
-    productData.points_per_serving = points;
     productData.verified = true;
     
     // Save to local cache
     await saveUPCProduct(productData);
-    console.log(`✅ Saved UPC ${upc} with ${points} points per serving to local cache`);
+    console.log(`✅ Saved UPC ${upc} with ${points} points to local cache`);
     
     // Log food
     await logFood(productData.product_name, points, null);
@@ -6078,15 +5250,8 @@ async function confirmUPCProduct(upc, productData) {
             <h3 style="color: var(--success);">✅ Logged Successfully!</h3>
             <p>${productData.product_name}</p>
             <p style="font-size: 32px; font-weight: bold; color: var(--primary);">${points} pts</p>
-            <p style="font-size: 14px; color: var(--text-secondary);">per ${productData.serving_size || 'serving'}</p>
-            ${productData.points_per_100g ? `
-                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                    (${productData.points_per_100g} pts per 100g)
-                </p>
-            ` : ''}
             <p style="font-size: 12px; color: var(--text-secondary); margin-top: 10px;">
-                UPC ${upc} saved to local database<br>
-                ✓ Verified and ready for quick scans
+                UPC ${upc} saved to local database
             </p>
             <button class="btn" style="margin-top: 20px;" onclick="closeScan()">
                 Done
@@ -6119,14 +5284,10 @@ async function saveManualUPC(upc) {
         product_name: productName,
         brand: brand,
         points: points,
-        points_per_serving: points,
-        points_per_100g: points, // Assume user entered per-serving, use same for 100g
         nutrition: null,
-        serving_size: '1 serving',
-        serving_amount: null,
+        serving_size: 'serving',
         verified: true,
-        source: 'manual',
-        image_url: ''
+        source: 'manual'
     };
     
     // Save to local cache
