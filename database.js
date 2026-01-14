@@ -32,6 +32,10 @@ async function initDB() {
             // Define all required object stores
             const stores = [
                 'users',
+                'login_history',
+                'improvement_log',
+                'sent_emails',
+                'sync_queue',
                 'settings',
                 'foods',
                 'exercise',
@@ -43,9 +47,13 @@ async function initDB() {
                 'weight_logs',
                 'naps',
                 'store_visits',
+                'stores',
                 'pantry',
+                'pantry_items',
                 'photos',
-                'recipes'
+                'recipes',
+                'upc_database',
+                'upc_preferences'
             ];
             
             // Create stores that don't exist
@@ -54,7 +62,7 @@ async function initDB() {
                     const store = db.createObjectStore(storeName, { keyPath: 'id' });
                     
                     // Add indexes for common queries
-                    if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'med_logs', 'weight_logs', 'naps'].includes(storeName)) {
+                    if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'].includes(storeName)) {
                         store.createIndex('userId', 'userId', { unique: false });
                         store.createIndex('date', 'date', { unique: false });
                         store.createIndex('userId_date', ['userId', 'date'], { unique: false });
@@ -62,6 +70,31 @@ async function initDB() {
                     
                     if (storeName === 'users') {
                         store.createIndex('username', 'username', { unique: true });
+                    }
+                    
+                    if (storeName === 'login_history') {
+                        store.createIndex('timestamp', 'timestamp', { unique: false });
+                        store.createIndex('date', 'date', { unique: false });
+                    }
+                    
+                    if (storeName === 'improvement_log') {
+                        store.createIndex('timestamp', 'timestamp', { unique: false });
+                        store.createIndex('date', 'date', { unique: false });
+                        store.createIndex('category', 'category', { unique: false });
+                    }
+                    
+                    if (storeName === 'sent_emails') {
+                        store.createIndex('templateId', 'templateId', { unique: false });
+                        store.createIndex('sentDate', 'sentDate', { unique: false });
+                    }
+                    
+                    if (storeName === 'upc_database') {
+                        store.createIndex('upc', 'upc', { unique: true });
+                        store.createIndex('product_name', 'product_name', { unique: false });
+                    }
+                    
+                    if (storeName === 'upc_preferences') {
+                        store.createIndex('upc', 'upc', { unique: true });
                     }
                     
                     if (storeName === 'medications') {
