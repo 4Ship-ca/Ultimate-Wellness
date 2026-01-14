@@ -421,6 +421,7 @@ function interpolate(str, context) {
  */
 async function storeSentEmail(templateId, email) {
     const record = {
+        id: `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         templateId: templateId,
         subject: email.subject,
         sentDate: email.sentDate,
