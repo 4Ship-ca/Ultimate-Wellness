@@ -1553,12 +1553,7 @@ window.saveSettings = async function(settings) {
 };
 
 // ============ USER & SETTINGS HELPERS ============
-
-function getCurrentUserId() {
-    // For single-user apps, return 'default'
-    // For multi-user apps, this would return the logged-in user's ID
-    return 'default';
-}
+// Note: getCurrentUserId() is provided by auth.js
 
 async function getSettings() {
     try {
