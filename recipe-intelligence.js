@@ -326,6 +326,7 @@ async function learnIngredientPreferences(recipe) {
             upcPref.recipeCount = (upcPref.recipeCount || 1) + 1;
         } else {
             upcPref = {
+                id: ingredient.upc,
                 upc: ingredient.upc,
                 name: ingredient.name,
                 preference: prefValue,
