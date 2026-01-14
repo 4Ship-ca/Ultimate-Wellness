@@ -22,7 +22,52 @@ async function verifyPassword(password, hash) {
     return passwordHash === hash;
 }
 
+// ============ USER ID MANAGEMENT ============
+
+/**
+ * Get current user ID from localStorage
+ */
+function getCurrentUserId() {
+    return localStorage.getItem('currentUserId') || 'default';
+}
+
+/**
+ * Set current user ID in localStorage
+ */
+function setCurrentUserId(userId) {
+    localStorage.setItem('currentUserId', userId);
+}
+
+/**
+ * Clear current user ID from localStorage
+ */
+function clearCurrentUser() {
+    localStorage.removeItem('currentUserId');
+}
+
 // ============ USER AUTHENTICATION ============
+
+/**
+ * Create a new user in the database
+ * Internal function used by registerUser
+ */
+async function createUser(username, passwordHash, profile = {}) {
+    const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const user = {
+        id: userId,
+        username: username,
+        passwordHash: passwordHash,
+        profile: profile,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        lastLogin: null
+    };
+    
+    await dbPut('users', user);
+    
+    return userId;
+}
 
 /**
  * Register a new user
