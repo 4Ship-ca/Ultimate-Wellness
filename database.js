@@ -31,6 +31,7 @@ async function initDB() {
             
             // Define all required object stores
             const stores = [
+                'users',
                 'settings',
                 'foods',
                 'exercise',
@@ -57,6 +58,10 @@ async function initDB() {
                         store.createIndex('userId', 'userId', { unique: false });
                         store.createIndex('date', 'date', { unique: false });
                         store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                    }
+                    
+                    if (storeName === 'users') {
+                        store.createIndex('username', 'username', { unique: true });
                     }
                     
                     if (storeName === 'medications') {
