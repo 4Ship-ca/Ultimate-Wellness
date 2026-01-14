@@ -901,25 +901,29 @@ async function saveSettings() {
     // Get elements with null checks
     const nameEl = document.getElementById('settingsName');
     const emailEl = document.getElementById('settingsEmail');
+    const birthdayEl = document.getElementById('settingsBirthday');
+    const genderEl = document.getElementById('settingsGender');
     const goalWeightEl = document.getElementById('settingsGoalWeight');
     const heightFeetEl = document.getElementById('settingsHeightFeet');
     const heightInchesEl = document.getElementById('settingsHeightInches');
     const activityEl = document.getElementById('settingsActivity');
     
     // Bail out if elements don't exist yet
-    if (!nameEl || !emailEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
+    if (!nameEl || !emailEl || !birthdayEl || !genderEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
         console.warn('Settings form not ready yet');
         return;
     }
     
     const name = nameEl.value.trim();
     const email = emailEl.value.trim();
+    const birthday = birthdayEl.value;
+    const gender = genderEl.value;
     const goalWeight = parseFloat(goalWeightEl.value);
     const heightFeet = parseInt(heightFeetEl.value);
     const heightInches = parseInt(heightInchesEl.value);
     const activity = activityEl.value;
 
-    if (!name || !email || !goalWeight || !heightFeet) {
+    if (!name || !email || !birthday || !gender || !goalWeight || !heightFeet) {
         alert('Please fill in all fields');
         return;
     }
@@ -931,26 +935,38 @@ async function saveSettings() {
     }
 
     const heightInInches = (heightFeet * 12) + heightInches;
+    const age = calculateAge(birthday);
     
     // Check if activity or goal changed (these affect points calculation)
     const activityChanged = userSettings.activity !== activity;
     const goalChanged = Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
+    const birthdayChanged = userSettings.birthday !== birthday;
+    const genderChanged = userSettings.gender !== gender;
     
     userSettings.name = name;
     userSettings.email = email;
+    userSettings.birthday = birthday;
+    userSettings.gender = gender;
     userSettings.goalWeight = goalWeight;
     userSettings.heightInInches = heightInInches;
     userSettings.activity = activity;
     
     // If significant changes, offer to restart 12-week period
-    if ((activityChanged || goalChanged) && userSettings.pointsPeriodStart) {
+    if ((activityChanged || goalChanged || birthdayChanged || genderChanged) && userSettings.pointsPeriodStart) {
+        // Recalculate points with new data
+        const currentWeight = userSettings.currentWeight;
+        const pointsResult = calculateDailyPoints(gender, age, currentWeight, heightInInches, activity);
+        const newPoints = pointsResult.points;
+        
         const confirm = window.confirm(
-            `You changed your ${activityChanged ? 'activity level' : 'goal weight'}.\n\n` +
+            `You changed your ${activityChanged ? 'activity level' : (genderChanged ? 'gender' : (birthdayChanged ? 'birthday' : 'goal weight'))}.\n\n` +
             `Would you like to restart your 12-week points period with new calculations?\n\n` +
-            `Current period: ${userSettings.lockedPoints} pts/day until ${userSettings.pointsPeriodEnd}\n\n` +
+            `Current: ${userSettings.lockedPoints} pts/day\n` +
+            `New calculation: ${newPoints} pts/day\n` +
+            `Period ends: ${userSettings.pointsPeriodEnd}\n\n` +
             `Choose:\n` +
-            `✓ OK = Restart period with new points\n` +
-            `✗ Cancel = Keep current locked points`
+            `✓ OK = Restart period with ${newPoints} pts/day\n` +
+            `✗ Cancel = Keep current ${userSettings.lockedPoints} pts/day`
         );
         
         if (confirm) {
@@ -961,10 +977,10 @@ async function saveSettings() {
         }
     }
 
-    await saveSettings(userSettings);
+    await window.saveSettings(userSettings);
     await updateAllUI();
     
-    if (!activityChanged && !goalChanged) {
+    if (!activityChanged && !goalChanged && !birthdayChanged && !genderChanged) {
         alert('Settings saved!');
     }
 }
@@ -4128,6 +4144,8 @@ function switchTab(tab) {
         const els = {
             name: document.getElementById('settingsName'),
             email: document.getElementById('settingsEmail'),
+            birthday: document.getElementById('settingsBirthday'),
+            gender: document.getElementById('settingsGender'),
             weight: document.getElementById('settingsWeight'),
             goalWeight: document.getElementById('settingsGoalWeight'),
             heightFeet: document.getElementById('settingsHeightFeet'),
@@ -4137,6 +4155,8 @@ function switchTab(tab) {
         
         if (els.name) els.name.value = userSettings.name || '';
         if (els.email) els.email.value = userSettings.email || '';
+        if (els.birthday) els.birthday.value = userSettings.birthday || '';
+        if (els.gender) els.gender.value = userSettings.gender || 'male';
         if (els.weight) els.weight.value = userSettings.currentWeight || '';
         if (els.goalWeight) els.goalWeight.value = userSettings.goalWeight || '';
         
