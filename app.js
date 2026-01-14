@@ -13,9 +13,19 @@ const APP_VERSION = '2.2.2';
 const APP_NAME = 'Ultimate Wellness';
 
 // API Configuration (for AI features)
-const USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
-const PROXY_URL = ''; // Your Cloudflare Worker URL (if USE_PROXY is true)
-const CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
+// These can be overridden by user settings
+let USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
+let PROXY_URL = ''; // Your Cloudflare Worker URL (if USE_PROXY is true)
+let CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
+
+// Initialize API config from userSettings if available
+function initAPIConfig() {
+    if (userSettings && userSettings.proxyUrl) {
+        PROXY_URL = userSettings.proxyUrl;
+        USE_PROXY = userSettings.useProxy || false;
+        console.log('🔌 API Config loaded:', USE_PROXY ? 'Using proxy' : 'Direct API');
+    }
+}
 
 // Exercise types for tracking
 const EXERCISES = [
@@ -286,6 +296,11 @@ async function init() {
 //         // Load user settings
         userSettings = await getSettings();
         
+        // Initialize API configuration from settings
+        if (userSettings) {
+            initAPIConfig();
+        }
+        
         // If no settings found, try to restore from localStorage backup
         if (!userSettings) {
             console.log('🔍 No user settings found, checking for backup...');
@@ -294,6 +309,7 @@ async function init() {
             if (userSettings) {
                 console.log('✅ User settings restored from backup!');
                 alert('👋 Welcome back!\n\nYour settings were automatically restored from backup.');
+                initAPIConfig(); // Initialize API config after restore
             }
         }
         
@@ -1084,6 +1100,12 @@ async function saveSettings() {
 
     const heightInInches = (heightFeet * 12) + heightInches;
     
+    // Get API configuration
+    const proxyUrlEl = document.getElementById('settingsProxyUrl');
+    const useProxyEl = document.getElementById('settingsUseProxy');
+    const proxyUrl = proxyUrlEl ? proxyUrlEl.value.trim() : '';
+    const useProxy = useProxyEl ? useProxyEl.checked : false;
+    
     // Check if activity or goal changed (these affect points calculation)
     const activityChanged = userSettings.activity !== activity;
     const goalChanged = Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
@@ -1097,6 +1119,14 @@ async function saveSettings() {
     userSettings.goalWeight = goalWeight;
     userSettings.heightInInches = heightInInches;
     userSettings.activity = activity;
+    userSettings.proxyUrl = proxyUrl;
+    userSettings.useProxy = useProxy;
+    
+    // Update global constants for API calls
+    if (typeof window !== 'undefined') {
+        window.PROXY_URL = proxyUrl;
+        window.USE_PROXY = useProxy;
+    }
     
     // If significant changes, offer to restart 12-week period
     if ((activityChanged || goalChanged || birthdayChanged || genderChanged) && userSettings.pointsPeriodStart) {
@@ -4297,7 +4327,9 @@ function switchTab(tab) {
             goalWeight: document.getElementById('settingsGoalWeight'),
             heightFeet: document.getElementById('settingsHeightFeet'),
             heightInches: document.getElementById('settingsHeightInches'),
-            activity: document.getElementById('settingsActivity')
+            activity: document.getElementById('settingsActivity'),
+            proxyUrl: document.getElementById('settingsProxyUrl'),
+            useProxy: document.getElementById('settingsUseProxy')
         };
         
         if (els.name) els.name.value = userSettings.name || '';
@@ -4306,6 +4338,8 @@ function switchTab(tab) {
         if (els.gender) els.gender.value = userSettings.gender || 'male';
         if (els.weight) els.weight.value = userSettings.currentWeight || '';
         if (els.goalWeight) els.goalWeight.value = userSettings.goalWeight || '';
+        if (els.proxyUrl) els.proxyUrl.value = userSettings.proxyUrl || '';
+        if (els.useProxy) els.useProxy.checked = userSettings.useProxy || false;
         
         const feet = Math.floor((userSettings.heightInInches || 0) / 12);
         const inches = (userSettings.heightInInches || 0) % 12;
