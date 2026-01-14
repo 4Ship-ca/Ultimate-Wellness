@@ -1490,6 +1490,19 @@
                 </div>
 
                 <div class="input-group">
+                    <label>Birthday</label>
+                    <input type="date" id="settingsBirthday">
+                </div>
+
+                <div class="input-group">
+                    <label>Gender</label>
+                    <select id="settingsGender">
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
                     <label>Current Weight (lbs)</label>
                     <input type="number" id="settingsWeight">
                     <button class="btn btn-secondary" onclick="updateWeight()" style="margin-top: 5px;">Update Weight</button>
@@ -1739,8 +1752,94 @@
     <!-- V2.2.1 CAMERA -->
     <script src="camera.js"></script>
     
+    <!-- V2.2.2 CORS-SAFE UPC LOOKUP -->
+    <script src="upc-lookup-cors-safe.js"></script>
+    
     <!-- V2.2.1 APP -->
     <script src="app.js"></script>
+    
+    <!-- Integration Patch for UPC Lookup -->
+    <script>
+    // Quick integration for barcode scanning
+    document.addEventListener('DOMContentLoaded', function() {
+        // Make scan button functional
+        const scanBtn = document.querySelector('button[onclick*="scan"]') || 
+                        document.querySelector('.scan-button');
+        
+        if (scanBtn) {
+            scanBtn.onclick = function() {
+                const modal = document.getElementById('scanModal');
+                if (modal) {
+                    modal.classList.add('active');
+                    showBarcodeInput();
+                }
+            };
+        }
+    });
+    
+    function showBarcodeInput() {
+        const scanResult = document.getElementById('scanResult');
+        if (!scanResult) return;
+        
+        scanResult.innerHTML = `
+            <div style="padding: 20px; text-align: center;">
+                <h3 style="margin-bottom: 20px;">📱 Enter Barcode</h3>
+                <input 
+                    type="text" 
+                    id="manualBarcodeInput" 
+                    placeholder="Enter UPC/EAN number"
+                    style="
+                        width: 100%;
+                        padding: 15px;
+                        font-size: 18px;
+                        border: 2px solid #667eea;
+                        border-radius: 8px;
+                        text-align: center;
+                        margin-bottom: 15px;
+                    "
+                    autofocus
+                />
+                <button 
+                    onclick="lookupManualBarcode()"
+                    style="
+                        width: 100%;
+                        padding: 15px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        cursor: pointer;
+                    "
+                >
+                    🔍 Look Up Product
+                </button>
+                <p style="color: #6c757d; margin-top: 15px; font-size: 14px;">
+                    💡 Find the number below the barcode bars
+                </p>
+            </div>
+        `;
+        setTimeout(() => document.getElementById('manualBarcodeInput')?.focus(), 100);
+    }
+    
+    async function lookupManualBarcode() {
+        const input = document.getElementById('manualBarcodeInput');
+        if (!input) return;
+        
+        const upc = input.value.trim();
+        if (!upc) {
+            alert('⚠️ Please enter a barcode number');
+            return;
+        }
+        if (!/^\d{8,14}$/.test(upc)) {
+            alert('⚠️ Barcode should be 8-14 digits');
+            return;
+        }
+        
+        await lookupProductCascade(upc);
+    }
+    </script>
 
 </body>
 </html>
