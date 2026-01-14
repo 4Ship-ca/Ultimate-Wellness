@@ -46,6 +46,81 @@ function updateSyncStatus(updates) {
 // ============ SYNC OPERATIONS (PLACEHOLDERS FOR v2.4) ============
 
 /**
+ * Get items from sync queue
+ * @param {string} userId - User ID
+ * @param {number} limit - Max items to return
+ * @returns {Array} Queue items
+ */
+async function getSyncQueue(userId, limit = 100) {
+    try {
+        const allItems = await dbGetAll('sync_queue');
+        const userItems = allItems.filter(item => item.userId === userId);
+        
+        // Sort by timestamp (oldest first)
+        userItems.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        // Return limited items
+        return userItems.slice(0, limit);
+    } catch (error) {
+        console.warn('Error getting sync queue:', error);
+        return [];
+    }
+}
+
+/**
+ * Add item to sync queue
+ * @param {string} userId - User ID
+ * @param {string} tableName - Table to sync
+ * @param {string} recordId - Record ID
+ * @param {string} action - 'create', 'update', or 'delete'
+ */
+async function addToSyncQueue(userId, tableName, recordId, action = 'update') {
+    try {
+        const item = {
+            id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            userId: userId,
+            tableName: tableName,
+            recordId: recordId,
+            action: action,
+            timestamp: new Date().toISOString(),
+            synced: false
+        };
+        
+        await dbPut('sync_queue', item);
+    } catch (error) {
+        console.warn('Error adding to sync queue:', error);
+    }
+}
+
+/**
+ * Mark sync queue items as synced
+ * @param {Array} itemIds - IDs of items to mark as synced
+ */
+async function markAsSynced(itemIds) {
+    try {
+        for (const id of itemIds) {
+            await dbDelete('sync_queue', id);
+        }
+    } catch (error) {
+        console.warn('Error marking items as synced:', error);
+    }
+}
+
+/**
+ * Clear sync queue
+ */
+async function clearSyncQueue(userId) {
+    try {
+        const items = await getSyncQueue(userId);
+        for (const item of items) {
+            await dbDelete('sync_queue', item.id);
+        }
+    } catch (error) {
+        console.warn('Error clearing sync queue:', error);
+    }
+}
+
+/**
  * Initialize sync system
  */
 async function initSync() {
