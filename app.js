@@ -12,6 +12,11 @@
 const APP_VERSION = '2.2.2';
 const APP_NAME = 'Ultimate Wellness';
 
+// API Configuration (for AI features)
+const USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
+const PROXY_URL = ''; // Your Cloudflare Worker URL (if USE_PROXY is true)
+const CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
+
 // Exercise types for tracking
 const EXERCISES = [
     'Walking',
@@ -410,26 +415,111 @@ async function completeSetup() {
         const weight = parseFloat(document.getElementById('setupWeight').value);
         const goalWeight = parseFloat(document.getElementById('setupGoalWeight').value);
         const heightFeet = parseInt(document.getElementById('setupHeightFeet').value);
-        const heightInches = parseInt(document.getElementById('setupHeightInches').value);
+        const heightInches = parseInt(document.getElementById('setupHeightInches').value) || 0;
         const activity = document.getElementById('setupActivity').value;
 
-        if (!name || !email || !birthday || !weight || !goalWeight || !heightFeet) {
+        // STRICT VALIDATION - ALL FIELDS REQUIRED
+        if (!name) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('Please fill in all fields');
+            alert('❌ Name is required');
+            document.getElementById('setupName').focus();
+            return;
+        }
+        
+        if (!email) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Email is required');
+            document.getElementById('setupEmail').focus();
+            return;
+        }
+        
+        if (!birthday) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Birthday is required\n\nYour age is needed to calculate your daily points allowance.');
+            document.getElementById('setupBirthday').focus();
+            return;
+        }
+        
+        if (!gender) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Gender is required\n\nThis is needed to calculate your daily points allowance.');
+            document.getElementById('setupGender').focus();
+            return;
+        }
+        
+        if (!weight || isNaN(weight) || weight <= 0) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Current Weight is required');
+            document.getElementById('setupWeight').focus();
+            return;
+        }
+        
+        if (!goalWeight || isNaN(goalWeight) || goalWeight <= 0) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Goal Weight is required');
+            document.getElementById('setupGoalWeight').focus();
+            return;
+        }
+        
+        if (!heightFeet || isNaN(heightFeet) || heightFeet < 3 || heightFeet > 8) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Height (feet) is required\n\nPlease enter a value between 3 and 8 feet.');
+            document.getElementById('setupHeightFeet').focus();
+            return;
+        }
+        
+        if (!activity) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Activity Level is required');
+            document.getElementById('setupActivity').focus();
             return;
         }
 
-        // Validate email
+        // Validate email format
         if (!email.includes('@') || !email.includes('.')) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('Please enter a valid email address');
+            alert('❌ Please enter a valid email address');
+            document.getElementById('setupEmail').focus();
+            return;
+        }
+        
+        // Validate age range
+        const age = calculateAge(birthday);
+        if (age < 18 || age > 100) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Age must be between 18 and 100 years');
+            document.getElementById('setupBirthday').focus();
+            return;
+        }
+        
+        // Validate weight ranges
+        if (weight < 80 || weight > 600) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Current weight must be between 80 and 600 lbs');
+            document.getElementById('setupWeight').focus();
+            return;
+        }
+        
+        if (goalWeight < 80 || goalWeight > 600) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Goal weight must be between 80 and 600 lbs');
+            document.getElementById('setupGoalWeight').focus();
             return;
         }
 
         const heightInInches = (heightFeet * 12) + heightInches;
-        const age = calculateAge(birthday);
         
         // Calculate initial daily points
         const pointsResult = calculateDailyPoints(gender, age, weight, heightInInches, activity);
@@ -908,34 +998,91 @@ async function saveSettings() {
     const heightInchesEl = document.getElementById('settingsHeightInches');
     const activityEl = document.getElementById('settingsActivity');
     
-    // Bail out if elements don't exist yet
+    // CRITICAL: All elements must exist
     if (!nameEl || !emailEl || !birthdayEl || !genderEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
-        console.warn('Settings form not ready yet');
+        alert('ERROR: Settings form is incomplete. Please refresh the page.\n\nIf this persists, the HTML file may not be updated on the server.');
+        console.error('Missing form elements:', {
+            nameEl: !!nameEl,
+            emailEl: !!emailEl,
+            birthdayEl: !!birthdayEl,
+            genderEl: !!genderEl,
+            goalWeightEl: !!goalWeightEl,
+            heightFeetEl: !!heightFeetEl,
+            heightInchesEl: !!heightInchesEl,
+            activityEl: !!activityEl
+        });
         return;
     }
     
+    // Get values
     const name = nameEl.value.trim();
     const email = emailEl.value.trim();
     const birthday = birthdayEl.value;
     const gender = genderEl.value;
     const goalWeight = parseFloat(goalWeightEl.value);
     const heightFeet = parseInt(heightFeetEl.value);
-    const heightInches = parseInt(heightInchesEl.value);
+    const heightInches = parseInt(heightInchesEl.value) || 0;
     const activity = activityEl.value;
 
-    if (!name || !email || !birthday || !gender || !goalWeight || !heightFeet) {
-        alert('Please fill in all fields');
+    // STRICT VALIDATION - ALL FIELDS REQUIRED
+    if (!name) {
+        alert('❌ Name is required');
+        nameEl.focus();
+        return;
+    }
+    
+    if (!email) {
+        alert('❌ Email is required');
+        emailEl.focus();
+        return;
+    }
+    
+    if (!birthday) {
+        alert('❌ Birthday is required\n\nYour age is needed to calculate your daily points allowance.');
+        birthdayEl.focus();
+        return;
+    }
+    
+    if (!gender) {
+        alert('❌ Gender is required\n\nThis is needed to calculate your daily points allowance.');
+        genderEl.focus();
+        return;
+    }
+    
+    if (!goalWeight || isNaN(goalWeight)) {
+        alert('❌ Goal Weight is required');
+        goalWeightEl.focus();
+        return;
+    }
+    
+    if (!heightFeet || isNaN(heightFeet)) {
+        alert('❌ Height (feet) is required');
+        heightFeetEl.focus();
+        return;
+    }
+    
+    if (!activity) {
+        alert('❌ Activity Level is required');
+        activityEl.focus();
         return;
     }
 
-    // Validate email
+    // Validate email format
     if (!email.includes('@') || !email.includes('.')) {
-        alert('Please enter a valid email address');
+        alert('❌ Please enter a valid email address');
+        emailEl.focus();
+        return;
+    }
+    
+    // Validate age range
+    const age = calculateAge(birthday);
+    if (age < 18 || age > 100) {
+        alert('❌ Age must be between 18 and 100 years');
+        birthdayEl.focus();
         return;
     }
 
     const heightInInches = (heightFeet * 12) + heightInches;
-    const age = calculateAge(birthday);
     
     // Check if activity or goal changed (these affect points calculation)
     const activityChanged = userSettings.activity !== activity;
