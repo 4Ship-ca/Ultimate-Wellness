@@ -623,6 +623,7 @@ const BotDataAPI = {
      */
     async addUPC(product) {
         const entry = {
+            id: product.upc,
             upc: product.upc,
             product_name: product.name,
             brand: product.brand || 'Unknown',
