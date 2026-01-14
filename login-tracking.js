@@ -7,6 +7,7 @@
  */
 async function trackUserLogin() {
     const loginRecord = {
+        id: `login_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         timestamp: new Date().toISOString(),
         date: new Date().toISOString().split('T')[0],
         
@@ -154,6 +155,7 @@ async function getLoginAnalytics(days = 30) {
  */
 async function addImprovementLog(entry, category = 'general') {
     const logEntry = {
+        id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         timestamp: new Date().toISOString(),
         date: new Date().toISOString().split('T')[0],
         entry: entry,
