@@ -1882,6 +1882,29 @@ function calculatePoints(calories, protein, sugar, saturatedFat) {
 }
 
 // ============ WATER TRACKING ============
+async function updateWater(date, drops, foodWater) {
+    try {
+        const userId = getCurrentUserId();
+        if (!userId) {
+            console.warn('No user ID for water update');
+            return;
+        }
+        
+        const waterRecord = {
+            id: `water_${userId}_${date}`,
+            userId: userId,
+            date: date,
+            drops: drops || 0,
+            foodWater: foodWater || 0,
+            timestamp: new Date().toISOString()
+        };
+        
+        await dbPut('water', waterRecord);
+    } catch (error) {
+        console.error('Error updating water:', error);
+    }
+}
+
 async function fillWaterDrop(dropNum) {
     const today = getTodayKey();
     const currentWater = await getWaterByDate(today);
@@ -3279,6 +3302,18 @@ async function updatePointsDisplay() {
     }
 }
 
+// Get bonus points (rollover from previous days)
+async function getBonusPoints() {
+    try {
+        // For now, return 0 - full implementation would track daily rollover
+        // This prevents the ReferenceError
+        return 0;
+    } catch (error) {
+        console.warn('Error getting bonus points:', error);
+        return 0;
+    }
+}
+
 async function updateTodayLog() {
     try {
         const userId = getCurrentUserId();
@@ -3505,7 +3540,9 @@ async function handleImport(event) {
 }
 
 // ============ START APPLICATION ============
-document.addEventListener('DOMContentLoaded', init);
+// OLD INITIALIZATION - DISABLED (Now handled by new auth system at line 293)
+// document.addEventListener('DOMContentLoaded', init);
+
 // setInterval(performDailyMaintenance, 60000); // Check daily maintenance every minute
 setInterval(checkWeeklyReminders, 3600000); // Check weekly reminders every hour
 
