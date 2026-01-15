@@ -12,6 +12,250 @@
 const APP_VERSION = '2.2.2';
 const APP_NAME = 'Ultimate Wellness';
 
+// ============================================================================
+// BULLETPROOF AUTHENTICATION & SESSION SYSTEM
+// ============================================================================
+
+let currentUser = null;
+let sessionState = {
+    lastActiveTab: 'home',
+    lastActiveDate: null,
+    scrollPositions: {},
+    formData: {},
+    initialized: false
+};
+
+// Initialize auth system
+async function initAuthSystem() {
+    console.log('🔐 Initializing authentication system...');
+    
+    try {
+        const allUsers = await dbGetAll('users');
+        console.log(`📊 Found ${allUsers.length} user(s) in database`);
+        
+        const lastUserId = localStorage.getItem('currentUserId');
+        
+        if (allUsers.length === 0) {
+            console.log('👤 No users found - showing setup screen');
+            return { action: 'SETUP', user: null };
+        }
+        
+        if (allUsers.length === 1) {
+            const user = allUsers[0];
+            console.log(`✅ Single user found: ${user.username} - auto login`);
+            await loginUser(user.id);
+            return { action: 'AUTO_LOGIN', user: user };
+        }
+        
+        if (lastUserId) {
+            const lastUser = allUsers.find(u => u.id === lastUserId);
+            if (lastUser) {
+                console.log(`✅ Last user found: ${lastUser.username} - auto login`);
+                await loginUser(lastUser.id);
+                return { action: 'AUTO_LOGIN', user: lastUser };
+            }
+        }
+        
+        console.log('👥 Multiple users - showing selection screen');
+        return { action: 'SELECT_USER', users: allUsers };
+        
+    } catch (error) {
+        console.error('❌ Auth system initialization error:', error);
+        return { action: 'ERROR', error: error.message };
+    }
+}
+
+// Login user
+async function loginUser(userId) {
+    console.log(`🔓 Logging in user: ${userId}`);
+    
+    try {
+        localStorage.setItem('currentUserId', userId);
+        
+        const user = await dbGet('users', userId);
+        if (!user) throw new Error('User not found in database');
+        
+        currentUser = user;
+        
+        const settings = await dbGet('settings', `user_${userId}`);
+        if (settings) {
+            window.userSettings = settings;
+            if (settings.proxyUrl) {
+                PROXY_URL = settings.proxyUrl;
+                USE_PROXY = settings.useProxy || false;
+            }
+            console.log('✅ User settings loaded');
+        }
+        
+        await restoreSession(userId);
+        console.log('✅ User logged in successfully');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Login error:', error);
+        return false;
+    }
+}
+
+// Register new user
+async function registerUser(userData) {
+    console.log('📝 Registering new user...');
+    
+    try {
+        const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const user = {
+            id: userId,
+            username: userData.name,
+            email: userData.email,
+            created: new Date().toISOString(),
+            lastLogin: new Date().toISOString()
+        };
+        
+        await dbPut('users', user);
+        console.log('✅ User record created');
+        
+        const age = calculateAge(userData.birthday);
+        const heightInInches = (userData.heightFeet * 12) + (userData.heightInches || 0);
+        const pointsResult = calculateDailyPoints(userData.gender, age, userData.currentWeight, heightInInches, userData.activity);
+        
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 84);
+        
+        const settings = {
+            id: `user_${userId}`,
+            userId: userId,
+            name: userData.name,
+            email: userData.email,
+            birthday: userData.birthday,
+            gender: userData.gender,
+            currentWeight: userData.currentWeight,
+            goalWeight: userData.goalWeight,
+            heightInInches: heightInInches,
+            heightFeet: userData.heightFeet,
+            heightInches: userData.heightInches || 0,
+            activity: userData.activity,
+            dailyPoints: pointsResult.points,
+            lockedPoints: pointsResult.points,
+            pointsPeriodStart: today,
+            pointsPeriodEnd: endDate.toISOString().split('T')[0],
+            lastPointsUpdate: today,
+            lastWeighIn: today,
+            joinDate: today,
+            resetTime: '04:00',
+            proxyUrl: '',
+            useProxy: false,
+            appVersion: APP_VERSION
+        };
+        
+        await dbPut('settings', settings);
+        console.log('✅ Settings created');
+        
+        await loginUser(userId);
+        
+        console.log('✅ User registered and logged in');
+        return { success: true, userId: userId };
+        
+    } catch (error) {
+        console.error('❌ Registration error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Save session
+async function saveSession() {
+    try {
+        const userId = getCurrentUserId();
+        if (!userId) return;
+        
+        const session = {
+            id: `session_${userId}`,
+            userId: userId,
+            lastActiveTab: sessionState.lastActiveTab || 'home',
+            lastActiveDate: new Date().toISOString().split('T')[0],
+            timestamp: new Date().toISOString(),
+            scrollPositions: sessionState.scrollPositions || {},
+            formData: sessionState.formData || {}
+        };
+        
+        await dbPut('settings', session);
+        console.log('💾 Session saved');
+        
+    } catch (error) {
+        console.error('Session save error:', error);
+    }
+}
+
+// Restore session
+async function restoreSession(userId) {
+    try {
+        const session = await dbGet('settings', `session_${userId}`);
+        
+        if (session) {
+            sessionState = {
+                lastActiveTab: session.lastActiveTab || 'home',
+                lastActiveDate: session.lastActiveDate,
+                scrollPositions: session.scrollPositions || {},
+                formData: session.formData || {},
+                initialized: true
+            };
+            
+            console.log(`✅ Session restored - last active: ${session.lastActiveDate}, tab: ${session.lastActiveTab}`);
+            
+            const today = new Date().toISOString().split('T')[0];
+            if (session.lastActiveDate !== today && userSettings) {
+                console.log('📅 New day detected - checking reset time');
+                await handleDailyReset(userSettings);
+            }
+            
+            return sessionState;
+        }
+        
+        console.log('ℹ️ No previous session found');
+        return null;
+        
+    } catch (error) {
+        console.error('Session restore error:', error);
+        return null;
+    }
+}
+
+// Handle daily reset
+async function handleDailyReset(settings) {
+    try {
+        const now = new Date();
+        const resetTime = settings.resetTime || '04:00';
+        const [resetHour, resetMinute] = resetTime.split(':').map(Number);
+        
+        const today = new Date().toISOString().split('T')[0];
+        const lastReset = localStorage.getItem('lastReset');
+        
+        if (lastReset === today) {
+            console.log('✅ Daily reset already completed today');
+            return;
+        }
+        
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        const resetMinutes = resetHour * 60 + resetMinute;
+        
+        if (currentMinutes >= resetMinutes) {
+            console.log(`🔄 Performing daily reset (${resetTime})`);
+            localStorage.setItem('lastReset', today);
+            console.log('✅ Daily reset completed');
+        }
+        
+    } catch (error) {
+        console.error('Daily reset error:', error);
+    }
+}
+
+// Update session state
+function updateSessionState(updates) {
+    sessionState = { ...sessionState, ...updates };
+    saveSession();
+}
+
 // API Configuration (for AI features)
 // These can be overridden by user settings
 let USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
@@ -50,29 +294,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log(`🚀 ${APP_NAME} v${APP_VERSION} initializing...`);
     
     try {
-        // STEP 1: Database FIRST - wait for it
+        // STEP 1: Initialize Database
         await initDB();
         console.log('✅ Database ready');
         
-        // STEP 2: Authentication
-        const authResult = await initAuth();
-        console.log('✅ Authentication initialized');
+        // STEP 2: Initialize Auth System
+        const authResult = await initAuthSystem();
+        console.log('✅ Auth system initialized');
         
-        // STEP 3: Check login requirement
-        if (authResult.needsLogin) {
-            const loading = document.getElementById('loading');
-            const login = document.getElementById('loginScreen');
+        // STEP 3: Handle auth result
+        const loading = document.getElementById('loading');
+        const setupScreen = document.getElementById('setupScreen');
+        const container = document.querySelector('.container');
+        
+        if (authResult.action === 'SETUP') {
+            // New user - show setup
+            console.log('👋 New user - showing setup screen');
             if (loading) loading.style.display = 'none';
-            if (login) login.style.display = 'flex';
-            return;
+            if (setupScreen) setupScreen.classList.add('active');
+            if (container) container.style.display = 'none';
+            
+        } else if (authResult.action === 'AUTO_LOGIN') {
+            // User logged in - continue initialization
+            console.log(`✅ User logged in: ${authResult.user.username}`);
+            if (loading) loading.style.display = 'none';
+            if (setupScreen) setupScreen.classList.remove('active');
+            if (container) container.style.display = 'block';
+            
+            // Continue initialization
+            await initializeAfterLogin();
+            
+        } else if (authResult.action === 'SELECT_USER') {
+            // Multiple users - show selection (future feature)
+            console.log('👥 Multiple users - showing selection');
+            // TODO: Show user selection UI
+            if (loading) loading.style.display = 'none';
+            alert('Multiple users detected. Please contact support.');
+            
+        } else if (authResult.action === 'ERROR') {
+            console.error('❌ Auth error:', authResult.error);
+            if (loading) loading.style.display = 'none';
+            alert(`❌ Initialization failed: ${authResult.error}\n\nPlease refresh and try again.`);
         }
-        
-        // STEP 4: Continue after auth
-        await initializeAfterLogin();
         
     } catch (error) {
         console.error('💥 Init error:', error);
-        alert('Failed to start. Please refresh.\n\n' + error.message);
+        const loading = document.getElementById('loading');
+        if (loading) loading.style.display = 'none';
+        alert(`❌ App failed to initialize: ${error.message}\n\nPlease refresh and try again.`);
     }
 });
 
@@ -82,39 +351,47 @@ async function initializeAfterLogin() {
         console.log('Continuing app initialization...');
         
         // Track login
-        await trackUserLogin();
-        console.log('✅ Login tracked');
-        
-        // Load external data
-        await loadExternalData();
-        console.log('✅ External data loaded');
-        
-        // Init session (with 1000ms delay for tab restore)
-        await initSession();
-        console.log('✅ Session initialized');
-        
-        // Init sync
-        await initSync();
-        console.log('✅ Sync system ready');
-        
-        // NOW call v1.9.6 init()
-        if (typeof init === 'function') {
-            await init();
+        if (typeof trackUserLogin === 'function') {
+            await trackUserLogin();
+            console.log('✅ Login tracked');
         }
         
-        // Hide loading
-        const loading = document.getElementById('loading');
-        const setup = document.getElementById('setupScreen');
-        if (loading) loading.style.display = 'none';
-        if (setup) setup.style.display = 'none';
+        // Load external data
+        if (typeof loadExternalData === 'function') {
+            await loadExternalData();
+            console.log('✅ External data loaded');
+        }
+        
+        // Init session
+        if (typeof initSession === 'function') {
+            await initSession();
+            console.log('✅ Session initialized');
+        }
+        
+        // Init sync
+        if (typeof initSync === 'function') {
+            await initSync();
+            console.log('✅ Sync system ready');
+        }
+        
+        // Restore session tab
+        if (sessionState.initialized && sessionState.lastActiveTab) {
+            console.log(`📂 Restoring session - tab: ${sessionState.lastActiveTab}`);
+            switchTab(sessionState.lastActiveTab);
+        } else {
+            switchTab('home');
+        }
+        
+        // Initialize UI
+        await updateAllUI();
         
         // Mark ready
         appReady = true;
-        console.log('✅ App ready!');
+        console.log('🎉 App ready!');
         
     } catch (error) {
         console.error('💥 Post-login error:', error);
-        alert('Failed to load data.\n\n' + error.message);
+        alert(`Failed to load data: ${error.message}`);
     }
 }
 
@@ -391,14 +668,12 @@ async function completeSetup() {
     const originalText = setupButton.innerHTML;
     
     try {
-        // Show loading state
         setupButton.disabled = true;
         setupButton.innerHTML = 'Setting up... ⏳';
         
         console.log('🔧 Starting setup...');
-        console.log('📊 Database status:', db ? 'Ready' : 'Not ready');
         
-        // Wait for database to be ready (max 5 seconds)
+        // Wait for database
         let attempts = 0;
         while (!db && attempts < 50) {
             console.log(`⏳ Waiting for database... attempt ${attempts + 1}/50`);
@@ -409,33 +684,25 @@ async function completeSetup() {
         if (!db) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            
-            console.error('❌ Database never initialized after 5 seconds');
-            
-            alert('❌ Database failed to initialize.\n\n' +
-                  'The app cannot start without storage.\n\n' +
-                  'Please:\n' +
-                  '1. Refresh the page (Ctrl+Shift+R)\n' +
-                  '2. Check console (F12) for errors\n' +
-                  '3. Try a different browser\n' +
-                  '4. Clear site data and try again');
+            alert('❌ Database failed to initialize. Please refresh and try again.');
             return;
         }
         
-        console.log('✅ Database ready, proceeding with setup');
+        // Collect form data
+        const formData = {
+            name: document.getElementById('setupName').value.trim(),
+            email: document.getElementById('setupEmail').value.trim(),
+            birthday: document.getElementById('setupBirthday').value,
+            gender: document.getElementById('setupGender').value,
+            currentWeight: parseFloat(document.getElementById('setupWeight').value),
+            goalWeight: parseFloat(document.getElementById('setupGoalWeight').value),
+            heightFeet: parseInt(document.getElementById('setupHeightFeet').value),
+            heightInches: parseInt(document.getElementById('setupHeightInches').value) || 0,
+            activity: document.getElementById('setupActivity').value
+        };
         
-        const name = document.getElementById('setupName').value.trim();
-        const email = document.getElementById('setupEmail').value.trim();
-        const birthday = document.getElementById('setupBirthday').value;
-        const gender = document.getElementById('setupGender').value;
-        const weight = parseFloat(document.getElementById('setupWeight').value);
-        const goalWeight = parseFloat(document.getElementById('setupGoalWeight').value);
-        const heightFeet = parseInt(document.getElementById('setupHeightFeet').value);
-        const heightInches = parseInt(document.getElementById('setupHeightInches').value) || 0;
-        const activity = document.getElementById('setupActivity').value;
-
-        // STRICT VALIDATION - ALL FIELDS REQUIRED
-        if (!name) {
+        // Validate - detailed checks
+        if (!formData.name) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
             alert('❌ Name is required');
@@ -443,152 +710,115 @@ async function completeSetup() {
             return;
         }
         
-        if (!email) {
+        if (!formData.email || !formData.email.includes('@') || !formData.email.includes('.')) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Email is required');
+            alert('❌ Valid email is required');
             document.getElementById('setupEmail').focus();
             return;
         }
         
-        if (!birthday) {
+        if (!formData.birthday) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Birthday is required\n\nYour age is needed to calculate your daily points allowance.');
+            alert('❌ Birthday is required (needed for points calculation)');
             document.getElementById('setupBirthday').focus();
             return;
         }
         
-        if (!gender) {
+        const age = calculateAge(formData.birthday);
+        if (age < 18 || age > 100) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Gender is required\n\nThis is needed to calculate your daily points allowance.');
+            alert('❌ Age must be between 18-100 years');
+            document.getElementById('setupBirthday').focus();
+            return;
+        }
+        
+        if (!formData.gender) {
+            setupButton.disabled = false;
+            setupButton.innerHTML = originalText;
+            alert('❌ Gender is required (needed for points calculation)');
             document.getElementById('setupGender').focus();
             return;
         }
         
-        if (!weight || isNaN(weight) || weight <= 0) {
+        if (!formData.currentWeight || formData.currentWeight < 80 || formData.currentWeight > 600) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Current Weight is required');
+            alert('❌ Current weight must be between 80-600 lbs');
             document.getElementById('setupWeight').focus();
             return;
         }
         
-        if (!goalWeight || isNaN(goalWeight) || goalWeight <= 0) {
+        if (!formData.goalWeight || formData.goalWeight < 80 || formData.goalWeight > 600) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Goal Weight is required');
+            alert('❌ Goal weight must be between 80-600 lbs');
             document.getElementById('setupGoalWeight').focus();
             return;
         }
         
-        if (!heightFeet || isNaN(heightFeet) || heightFeet < 3 || heightFeet > 8) {
+        if (!formData.heightFeet || formData.heightFeet < 3 || formData.heightFeet > 8) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Height (feet) is required\n\nPlease enter a value between 3 and 8 feet.');
+            alert('❌ Height must be between 3-8 feet');
             document.getElementById('setupHeightFeet').focus();
             return;
         }
         
-        if (!activity) {
+        if (!formData.activity) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Activity Level is required');
+            alert('❌ Activity level is required');
             document.getElementById('setupActivity').focus();
             return;
         }
-
-        // Validate email format
-        if (!email.includes('@') || !email.includes('.')) {
+        
+        // Register user
+        const result = await registerUser(formData);
+        
+        if (!result.success) {
             setupButton.disabled = false;
             setupButton.innerHTML = originalText;
-            alert('❌ Please enter a valid email address');
-            document.getElementById('setupEmail').focus();
+            alert(`❌ Setup failed: ${result.error}`);
             return;
         }
         
-        // Validate age range
-        const age = calculateAge(birthday);
-        if (age < 18 || age > 100) {
-            setupButton.disabled = false;
-            setupButton.innerHTML = originalText;
-            alert('❌ Age must be between 18 and 100 years');
-            document.getElementById('setupBirthday').focus();
-            return;
-        }
+        // Success!
+        console.log('✅ Setup complete');
         
-        // Validate weight ranges
-        if (weight < 80 || weight > 600) {
-            setupButton.disabled = false;
-            setupButton.innerHTML = originalText;
-            alert('❌ Current weight must be between 80 and 600 lbs');
-            document.getElementById('setupWeight').focus();
-            return;
-        }
-        
-        if (goalWeight < 80 || goalWeight > 600) {
-            setupButton.disabled = false;
-            setupButton.innerHTML = originalText;
-            alert('❌ Goal weight must be between 80 and 600 lbs');
-            document.getElementById('setupGoalWeight').focus();
-            return;
-        }
-
-        const heightInInches = (heightFeet * 12) + heightInches;
-        
-        // Calculate initial daily points
-        const pointsResult = calculateDailyPoints(gender, age, weight, heightInInches, activity);
-        const dailyPoints = pointsResult.points;
-
-        userSettings = {
-            id: 'user', // REQUIRED for IndexedDB
-            name,
-            email,
-            birthday,
-            gender,
-            currentWeight: weight,
-            goalWeight,
-            heightInInches,
-            activity,
-            dailyPoints,
-            lastPointsUpdate: new Date().toISOString().split('T')[0],
-            lastWeighIn: new Date().toISOString().split('T')[0],
-            joinDate: new Date().toISOString().split('T')[0],
-            appVersion: APP_VERSION // Track version in database
-        };
-
-        console.log('💾 Saving settings...', userSettings);
-        await saveSettings(userSettings);
-        
-        // Start first 12-week points period (LOCKED)
-        startNewPointsPeriod();
-        await saveSettings(userSettings);
-    
         // Log initial weight
         await addWeightLog({
             date: new Date().toISOString().split('T')[0],
-            weight: weight,
+            weight: formData.currentWeight,
             notes: 'Starting weight'
         });
-
-        const setupEl = document.getElementById('setupScreen'); if (setupEl) setupEl.classList.remove('active');
+        
+        // Hide setup screen
+        const setupScreen = document.getElementById('setupScreen');
+        if (setupScreen) setupScreen.classList.remove('active');
+        
+        // Show main app
+        const container = document.querySelector('.container');
+        if (container) container.style.display = 'block';
+        
+        // Initialize UI
         await updateAllUI();
         
         // Send welcome email
-        sendWelcomeEmail();
-        
-    } catch (err) {
-        console.error('Setup error:', err);
-        
-        // Reset button
-        const setupButton = document.getElementById('setupButton');
-        if (setupButton) {
-            setupButton.disabled = false;
-            setupButton.innerHTML = 'Start My Journey! 🔥';
+        if (typeof sendWelcomeEmail === 'function') {
+            sendWelcomeEmail();
         }
         
-        alert('Error saving settings: ' + err.message + '\n\nPlease refresh the page and try again.');
+        // Show welcome message
+        alert(`🎉 Welcome ${formData.name}!\n\nYour daily points: ${userSettings.lockedPoints}\n\nLet's start your wellness journey!`);
+        
+    } catch (error) {
+        console.error('Setup error:', error);
+        setupButton.disabled = false;
+        setupButton.innerHTML = originalText;
+        alert(`❌ Setup failed: ${error.message}`);
     }
 }
 
@@ -1004,161 +1234,184 @@ function enterMaintenanceMode() {
 // ============ END 12-WEEK POINTS PERIOD SYSTEM ============
 
 async function saveSettings() {
-    // Get elements with null checks
-    const nameEl = document.getElementById('settingsName');
-    const emailEl = document.getElementById('settingsEmail');
-    const birthdayEl = document.getElementById('settingsBirthday');
-    const genderEl = document.getElementById('settingsGender');
-    const goalWeightEl = document.getElementById('settingsGoalWeight');
-    const heightFeetEl = document.getElementById('settingsHeightFeet');
-    const heightInchesEl = document.getElementById('settingsHeightInches');
-    const activityEl = document.getElementById('settingsActivity');
+    console.log('💾 Save Settings clicked');
     
-    // CRITICAL: All elements must exist
-    if (!nameEl || !emailEl || !birthdayEl || !genderEl || !goalWeightEl || !heightFeetEl || !heightInchesEl || !activityEl) {
-        alert('ERROR: Settings form is incomplete. Please refresh the page.\n\nIf this persists, the HTML file may not be updated on the server.');
-        console.error('Missing form elements:', {
-            nameEl: !!nameEl,
-            emailEl: !!emailEl,
-            birthdayEl: !!birthdayEl,
-            genderEl: !!genderEl,
-            goalWeightEl: !!goalWeightEl,
-            heightFeetEl: !!heightFeetEl,
-            heightInchesEl: !!heightInchesEl,
-            activityEl: !!activityEl
-        });
-        return;
-    }
-    
-    // Get values
-    const name = nameEl.value.trim();
-    const email = emailEl.value.trim();
-    const birthday = birthdayEl.value;
-    const gender = genderEl.value;
-    const goalWeight = parseFloat(goalWeightEl.value);
-    const heightFeet = parseInt(heightFeetEl.value);
-    const heightInches = parseInt(heightInchesEl.value) || 0;
-    const activity = activityEl.value;
-
-    // STRICT VALIDATION - ALL FIELDS REQUIRED
-    if (!name) {
-        alert('❌ Name is required');
-        nameEl.focus();
-        return;
-    }
-    
-    if (!email) {
-        alert('❌ Email is required');
-        emailEl.focus();
-        return;
-    }
-    
-    if (!birthday) {
-        alert('❌ Birthday is required\n\nYour age is needed to calculate your daily points allowance.');
-        birthdayEl.focus();
-        return;
-    }
-    
-    if (!gender) {
-        alert('❌ Gender is required\n\nThis is needed to calculate your daily points allowance.');
-        genderEl.focus();
-        return;
-    }
-    
-    if (!goalWeight || isNaN(goalWeight)) {
-        alert('❌ Goal Weight is required');
-        goalWeightEl.focus();
-        return;
-    }
-    
-    if (!heightFeet || isNaN(heightFeet)) {
-        alert('❌ Height (feet) is required');
-        heightFeetEl.focus();
-        return;
-    }
-    
-    if (!activity) {
-        alert('❌ Activity Level is required');
-        activityEl.focus();
-        return;
-    }
-
-    // Validate email format
-    if (!email.includes('@') || !email.includes('.')) {
-        alert('❌ Please enter a valid email address');
-        emailEl.focus();
-        return;
-    }
-    
-    // Validate age range
-    const age = calculateAge(birthday);
-    if (age < 18 || age > 100) {
-        alert('❌ Age must be between 18 and 100 years');
-        birthdayEl.focus();
-        return;
-    }
-
-    const heightInInches = (heightFeet * 12) + heightInches;
-    
-    // Get API configuration
-    const proxyUrlEl = document.getElementById('settingsProxyUrl');
-    const useProxyEl = document.getElementById('settingsUseProxy');
-    const proxyUrl = proxyUrlEl ? proxyUrlEl.value.trim() : '';
-    const useProxy = useProxyEl ? useProxyEl.checked : false;
-    
-    // Check if activity or goal changed (these affect points calculation)
-    const activityChanged = userSettings.activity !== activity;
-    const goalChanged = Math.abs(userSettings.goalWeight - goalWeight) > 5; // > 5 lbs change
-    const birthdayChanged = userSettings.birthday !== birthday;
-    const genderChanged = userSettings.gender !== gender;
-    
-    userSettings.name = name;
-    userSettings.email = email;
-    userSettings.birthday = birthday;
-    userSettings.gender = gender;
-    userSettings.goalWeight = goalWeight;
-    userSettings.heightInInches = heightInInches;
-    userSettings.activity = activity;
-    userSettings.proxyUrl = proxyUrl;
-    userSettings.useProxy = useProxy;
-    
-    // Update global constants for API calls
-    if (typeof window !== 'undefined') {
-        window.PROXY_URL = proxyUrl;
-        window.USE_PROXY = useProxy;
-    }
-    
-    // If significant changes, offer to restart 12-week period
-    if ((activityChanged || goalChanged || birthdayChanged || genderChanged) && userSettings.pointsPeriodStart) {
-        // Recalculate points with new data
-        const currentWeight = userSettings.currentWeight;
-        const pointsResult = calculateDailyPoints(gender, age, currentWeight, heightInInches, activity);
-        const newPoints = pointsResult.points;
+    try {
+        // Collect form data
+        const formData = {
+            name: document.getElementById('settingsName').value.trim(),
+            email: document.getElementById('settingsEmail').value.trim(),
+            birthday: document.getElementById('settingsBirthday').value,
+            gender: document.getElementById('settingsGender').value,
+            goalWeight: parseFloat(document.getElementById('settingsGoalWeight').value),
+            heightFeet: parseInt(document.getElementById('settingsHeightFeet').value),
+            heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
+            activity: document.getElementById('settingsActivity').value,
+            resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
+            proxyUrl: document.getElementById('settingsProxyUrl')?.value.trim() || '',
+            useProxy: document.getElementById('settingsUseProxy')?.checked || false
+        };
         
-        const confirm = window.confirm(
-            `You changed your ${activityChanged ? 'activity level' : (genderChanged ? 'gender' : (birthdayChanged ? 'birthday' : 'goal weight'))}.\n\n` +
-            `Would you like to restart your 12-week points period with new calculations?\n\n` +
-            `Current: ${userSettings.lockedPoints} pts/day\n` +
-            `New calculation: ${newPoints} pts/day\n` +
-            `Period ends: ${userSettings.pointsPeriodEnd}\n\n` +
-            `Choose:\n` +
-            `✓ OK = Restart period with ${newPoints} pts/day\n` +
-            `✗ Cancel = Keep current ${userSettings.lockedPoints} pts/day`
-        );
-        
-        if (confirm) {
-            startNewPointsPeriod();
-            alert(`New 12-week period started!\n\nPoints: ${userSettings.lockedPoints}/day`);
-        } else {
-            alert('Settings saved. Points remain locked at ' + userSettings.lockedPoints + '/day');
+        // Validate all fields
+        if (!formData.name) {
+            alert('❌ Name is required');
+            document.getElementById('settingsName').focus();
+            return;
         }
-    }
-
-    await window.saveSettings(userSettings);
-    await updateAllUI();
-    
-    if (!activityChanged && !goalChanged && !birthdayChanged && !genderChanged) {
-        alert('Settings saved!');
+        
+        if (!formData.email || !formData.email.includes('@')) {
+            alert('❌ Valid email is required');
+            document.getElementById('settingsEmail').focus();
+            return;
+        }
+        
+        if (!formData.birthday) {
+            alert('❌ Birthday is required (needed for points calculation)');
+            document.getElementById('settingsBirthday').focus();
+            return;
+        }
+        
+        const age = calculateAge(formData.birthday);
+        if (age < 18 || age > 100) {
+            alert('❌ Age must be between 18-100 years');
+            document.getElementById('settingsBirthday').focus();
+            return;
+        }
+        
+        if (!formData.gender) {
+            alert('❌ Gender is required (needed for points calculation)');
+            document.getElementById('settingsGender').focus();
+            return;
+        }
+        
+        if (!formData.goalWeight || formData.goalWeight < 80 || formData.goalWeight > 600) {
+            alert('❌ Goal weight must be between 80-600 lbs');
+            document.getElementById('settingsGoalWeight').focus();
+            return;
+        }
+        
+        if (!formData.heightFeet || formData.heightFeet < 3 || formData.heightFeet > 8) {
+            alert('❌ Height must be between 3-8 feet');
+            document.getElementById('settingsHeightFeet').focus();
+            return;
+        }
+        
+        if (!formData.activity) {
+            alert('❌ Activity level is required');
+            document.getElementById('settingsActivity').focus();
+            return;
+        }
+        
+        // Get userId
+        const userId = getCurrentUserId();
+        if (!userId) {
+            alert('❌ Error: No user logged in. Please refresh the page.');
+            return;
+        }
+        
+        // Get current settings
+        const currentSettings = await dbGet('settings', `user_${userId}`);
+        if (!currentSettings) {
+            alert('❌ Error: Settings not found. Please refresh the page.');
+            return;
+        }
+        
+        console.log('💾 Saving settings to database...');
+        
+        // Calculate height
+        const heightInInches = (formData.heightFeet * 12) + formData.heightInches;
+        
+        // Check if points-affecting fields changed
+        const activityChanged = currentSettings.activity !== formData.activity;
+        const goalChanged = Math.abs(currentSettings.goalWeight - formData.goalWeight) > 5;
+        const birthdayChanged = currentSettings.birthday !== formData.birthday;
+        const genderChanged = currentSettings.gender !== formData.gender;
+        
+        // Update settings object
+        const updatedSettings = {
+            ...currentSettings,
+            name: formData.name,
+            email: formData.email,
+            birthday: formData.birthday,
+            gender: formData.gender,
+            goalWeight: formData.goalWeight,
+            heightInInches: heightInInches,
+            heightFeet: formData.heightFeet,
+            heightInches: formData.heightInches,
+            activity: formData.activity,
+            resetTime: formData.resetTime,
+            proxyUrl: formData.proxyUrl,
+            useProxy: formData.useProxy,
+            lastModified: new Date().toISOString()
+        };
+        
+        // Handle points recalculation if needed
+        let pointsRecalculated = false;
+        if (activityChanged || goalChanged || birthdayChanged || genderChanged) {
+            const newPoints = calculateDailyPoints(
+                formData.gender,
+                age,
+                currentSettings.currentWeight,
+                heightInInches,
+                formData.activity
+            ).points;
+            
+            const confirm = window.confirm(
+                `You changed settings that affect your daily points.\n\n` +
+                `Current: ${currentSettings.lockedPoints} pts/day\n` +
+                `New calculation: ${newPoints} pts/day\n\n` +
+                `Would you like to restart your 12-week period with ${newPoints} pts/day?\n\n` +
+                `✓ OK = Restart with ${newPoints} pts/day\n` +
+                `✗ Cancel = Keep ${currentSettings.lockedPoints} pts/day`
+            );
+            
+            if (confirm) {
+                // Update points
+                updatedSettings.dailyPoints = newPoints;
+                updatedSettings.lockedPoints = newPoints;
+                
+                // Restart 12-week period
+                const today = new Date().toISOString().split('T')[0];
+                const endDate = new Date();
+                endDate.setDate(endDate.getDate() + 84);
+                updatedSettings.pointsPeriodStart = today;
+                updatedSettings.pointsPeriodEnd = endDate.toISOString().split('T')[0];
+                
+                pointsRecalculated = true;
+            }
+        }
+        
+        // Save to database
+        await dbPut('settings', updatedSettings);
+        console.log('✅ Settings saved to database');
+        
+        // Update global state
+        window.userSettings = updatedSettings;
+        
+        // Update API config
+        if (updatedSettings.proxyUrl) {
+            PROXY_URL = updatedSettings.proxyUrl;
+            USE_PROXY = updatedSettings.useProxy;
+        }
+        
+        // Save session
+        await saveSession();
+        
+        // Update UI
+        await updateAllUI();
+        
+        // Show success message
+        if (pointsRecalculated) {
+            alert(`✅ Settings saved!\n\nNew 12-week period started with ${updatedSettings.lockedPoints} pts/day`);
+        } else {
+            alert('✅ Settings saved successfully!');
+        }
+        
+        console.log('✅ Settings save complete');
+        
+    } catch (error) {
+        console.error('❌ Save settings error:', error);
+        alert(`❌ Save failed: ${error.message}\n\nPlease try again or refresh the page.`);
     }
 }
 
@@ -4279,6 +4532,12 @@ function switchTab(tab) {
     
     currentTab = tab;
     
+    // Update session state
+    updateSessionState({
+        lastActiveTab: tab,
+        lastActiveDate: new Date().toISOString().split('T')[0]
+    });
+    
     // Safely remove active from all
     const btns = document.querySelectorAll('.tab-btn');
     const contents = document.querySelectorAll('.tab-content');
@@ -4328,6 +4587,7 @@ function switchTab(tab) {
             heightFeet: document.getElementById('settingsHeightFeet'),
             heightInches: document.getElementById('settingsHeightInches'),
             activity: document.getElementById('settingsActivity'),
+            resetTime: document.getElementById('settingsResetTime'),
             proxyUrl: document.getElementById('settingsProxyUrl'),
             useProxy: document.getElementById('settingsUseProxy')
         };
@@ -4338,6 +4598,7 @@ function switchTab(tab) {
         if (els.gender) els.gender.value = userSettings.gender || 'male';
         if (els.weight) els.weight.value = userSettings.currentWeight || '';
         if (els.goalWeight) els.goalWeight.value = userSettings.goalWeight || '';
+        if (els.resetTime) els.resetTime.value = userSettings.resetTime || '04:00';
         if (els.proxyUrl) els.proxyUrl.value = userSettings.proxyUrl || '';
         if (els.useProxy) els.useProxy.checked = userSettings.useProxy || false;
         
@@ -6030,3 +6291,39 @@ function closeScan() {
     // Reset file input
     document.getElementById('fileUpload').value = '';
 }
+
+// ============================================================================
+// HELPER FUNCTIONS FOR AUTH SYSTEM
+// ============================================================================
+
+function getCurrentUserId() {
+    return localStorage.getItem('currentUserId');
+}
+
+function getCurrentUser() {
+    return currentUser;
+}
+
+// ============================================================================
+// AUTO-SAVE SESSION HOOKS
+// ============================================================================
+
+// Auto-save session on window close
+window.addEventListener('beforeunload', () => {
+    if (getCurrentUserId()) {
+        saveSession();
+    }
+});
+
+// Periodic session save (every 30 seconds)
+setInterval(() => {
+    if (getCurrentUserId() && sessionState.initialized) {
+        saveSession();
+    }
+}, 30000);
+
+// Export functions for global access
+window.getCurrentUserId = getCurrentUserId;
+window.getCurrentUser = getCurrentUser;
+
+console.log('✅ App.js fully loaded - Auth & Session system ready');
