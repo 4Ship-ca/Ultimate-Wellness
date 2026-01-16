@@ -167,7 +167,10 @@ async function registerUser(userData) {
 async function saveSession() {
     try {
         const userId = getCurrentUserId();
-        if (!userId) return;
+        if (!userId) {
+            console.log('💾 Session save skipped - no user logged in');
+            return;
+        }
         
         const session = {
             id: `session_${userId}`,
@@ -180,11 +183,57 @@ async function saveSession() {
         };
         
         await dbPut('settings', session);
-        console.log('💾 Session saved');
+        
+        const time = new Date().toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+        });
+        console.log(`💾 Session saved at ${time} - Tab: ${session.lastActiveTab}`);
+        
+        // Show visual indicator
+        showAutoSaveIndicator();
         
     } catch (error) {
-        console.error('Session save error:', error);
+        console.error('❌ Session save error:', error);
     }
+}
+
+// Show visual auto-save indicator
+function showAutoSaveIndicator() {
+    // Find or create indicator
+    let indicator = document.getElementById('autoSaveIndicator');
+    
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'autoSaveIndicator';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--success);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        `;
+        indicator.innerHTML = '💾 Saved';
+        document.body.appendChild(indicator);
+    }
+    
+    // Fade in
+    indicator.style.opacity = '1';
+    
+    // Fade out after 2 seconds
+    setTimeout(() => {
+        indicator.style.opacity = '0';
+    }, 2000);
 }
 
 // Restore session
@@ -408,6 +457,18 @@ async function initializeAfterLogin() {
         // Initialize UI AFTER userSettings loaded
         await updateAllUI();
         
+        // Ensure sessionState is initialized (even if no previous session)
+        if (!sessionState.initialized) {
+            sessionState = {
+                lastActiveTab: 'home',
+                lastActiveDate: new Date().toISOString().split('T')[0],
+                scrollPositions: {},
+                formData: {},
+                initialized: true
+            };
+            console.log('✅ Session state initialized (new user)');
+        }
+        
         // Restore session tab
         if (sessionState.initialized && sessionState.lastActiveTab) {
             console.log(`📂 Restoring session - tab: ${sessionState.lastActiveTab}`);
@@ -419,6 +480,7 @@ async function initializeAfterLogin() {
         // Mark ready
         appReady = true;
         console.log('🎉 App ready!');
+        console.log('⏰ Auto-save active: Session saves every 30 seconds');
         
     } catch (error) {
         console.error('💥 Post-login error:', error);
@@ -6518,8 +6580,13 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Periodic session save (every 30 seconds)
+console.log('⏰ Auto-save enabled: Session will save every 30 seconds');
+let autoSaveCount = 0;
+
 setInterval(() => {
     if (getCurrentUserId() && sessionState.initialized) {
+        autoSaveCount++;
+        console.log(`🔄 Auto-save #${autoSaveCount} triggered`);
         saveSession();
     }
 }, 30000);
