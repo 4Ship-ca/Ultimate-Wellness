@@ -1560,6 +1560,47 @@ async function recalculatePoints() {
     alert(`Points recalculated!\n\nNew daily total: ${result.points} pts\nFloor: ${customFloor} pts`);
 }
 
+// ============ WEIGHT LOG FUNCTIONS ============
+
+async function addWeightLog(logData) {
+    try {
+        const userId = getCurrentUserId();
+        if (!userId) {
+            console.warn('No user ID for weight log');
+            return;
+        }
+        
+        const weightLog = {
+            id: `weight_${userId}_${Date.now()}`,
+            userId: userId,
+            date: logData.date,
+            weight: logData.weight,
+            notes: logData.notes || '',
+            timestamp: new Date().toISOString()
+        };
+        
+        await dbPut('weight_logs', weightLog);
+        console.log('✅ Weight log added:', weightLog.weight, 'lbs');
+    } catch (error) {
+        console.error('Error adding weight log:', error);
+    }
+}
+
+async function getAllWeightLogs() {
+    try {
+        const userId = getCurrentUserId();
+        if (!userId) {
+            return [];
+        }
+        
+        const allLogs = await dbGetAll('weight_logs');
+        return allLogs.filter(log => log.userId === userId);
+    } catch (error) {
+        console.warn('Error getting weight logs:', error);
+        return [];
+    }
+}
+
 async function updateWeight() {
     const weight = parseFloat(document.getElementById('settingsWeight').value);
     
