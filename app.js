@@ -350,6 +350,22 @@ async function initializeAfterLogin() {
     try {
         console.log('Continuing app initialization...');
         
+        // CRITICAL FIX: Load userSettings first!
+        const userId = getCurrentUserId();
+        if (!userId) {
+            throw new Error('No user ID found');
+        }
+        
+        // Load settings from database
+        const settings = await dbGet('settings', `user_${userId}`);
+        if (!settings) {
+            throw new Error('User settings not found in database');
+        }
+        
+        // Set global userSettings
+        window.userSettings = settings;
+        console.log('✅ userSettings loaded:', settings.name);
+        
         // Track login
         if (typeof trackUserLogin === 'function') {
             await trackUserLogin();
@@ -374,6 +390,9 @@ async function initializeAfterLogin() {
             console.log('✅ Sync system ready');
         }
         
+        // Initialize UI AFTER userSettings loaded
+        await updateAllUI();
+        
         // Restore session tab
         if (sessionState.initialized && sessionState.lastActiveTab) {
             console.log(`📂 Restoring session - tab: ${sessionState.lastActiveTab}`);
@@ -381,9 +400,6 @@ async function initializeAfterLogin() {
         } else {
             switchTab('home');
         }
-        
-        // Initialize UI
-        await updateAllUI();
         
         // Mark ready
         appReady = true;
@@ -4607,7 +4623,7 @@ function quickAIPrompt(type) {
 }
 
 // Update currentTab when switching tabs
-function switchTab(tab) {
+async function switchTab(tab) {
     // Safety: wait if app not ready
     if (!appReady) {
         console.warn('⏳ App not ready, deferring tab switch');
@@ -4661,8 +4677,23 @@ function switchTab(tab) {
     }
     
     // Load settings if needed
-    if (tab === 'settings' && userSettings) {
-        const els = {
+    if (tab === 'settings') {
+        // Safety check: reload userSettings if missing
+        if (!userSettings) {
+            console.warn('⚠️ userSettings missing, reloading...');
+            const userId = getCurrentUserId();
+            if (userId) {
+                try {
+                    userSettings = await dbGet('settings', `user_${userId}`);
+                    console.log('✅ userSettings reloaded');
+                } catch (error) {
+                    console.error('❌ Failed to reload userSettings:', error);
+                }
+            }
+        }
+        
+        if (userSettings) {
+            const els = {
             name: document.getElementById('settingsName'),
             email: document.getElementById('settingsEmail'),
             birthday: document.getElementById('settingsBirthday'),
@@ -4693,12 +4724,23 @@ function switchTab(tab) {
         if (els.heightInches) els.heightInches.value = inches;
         if (els.activity) els.activity.value = userSettings.activity || 'moderate';
         
+        console.log('✅ Settings form populated:', {
+            name: userSettings.name,
+            email: userSettings.email,
+            birthday: userSettings.birthday,
+            currentWeight: userSettings.currentWeight
+        });
+        
         if (typeof displayPointsBreakdown === 'function') {
             try {
                 displayPointsBreakdown();
             } catch (e) {
                 console.warn('displayPointsBreakdown error:', e);
             }
+        }
+        } else {
+            console.error('❌ userSettings still missing after reload attempt');
+            alert('⚠️ Unable to load your settings. Please refresh the page.');
         }
     }
 }
