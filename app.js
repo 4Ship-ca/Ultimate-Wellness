@@ -267,8 +267,23 @@ function initAPIConfig() {
     if (userSettings && userSettings.proxyUrl) {
         PROXY_URL = userSettings.proxyUrl;
         USE_PROXY = userSettings.useProxy || false;
-        console.log('🔌 API Config loaded:', USE_PROXY ? 'Using proxy' : 'Direct API');
+        console.log('🔌 API Config loaded from userSettings:', {
+            proxyUrl: PROXY_URL,
+            useProxy: USE_PROXY
+        });
+    } else {
+        console.warn('⚠️ No API config in userSettings');
     }
+}
+
+// Update API config (called when settings change)
+function updateAPIConfig(proxyUrl, useProxy) {
+    PROXY_URL = proxyUrl || '';
+    USE_PROXY = useProxy || false;
+    console.log('🔌 API Config updated:', {
+        proxyUrl: PROXY_URL,
+        useProxy: USE_PROXY
+    });
 }
 
 // Exercise types for tracking
@@ -1411,11 +1426,8 @@ async function saveSettings() {
         // Update global state
         window.userSettings = updatedSettings;
         
-        // Update API config
-        if (updatedSettings.proxyUrl) {
-            PROXY_URL = updatedSettings.proxyUrl;
-            USE_PROXY = updatedSettings.useProxy;
-        }
+        // Update API config (global variables used by AI features)
+        updateAPIConfig(updatedSettings.proxyUrl, updatedSettings.useProxy);
         
         // Save session
         await saveSession();
@@ -1701,11 +1713,32 @@ async function testAPIConnection() {
     const btn = document.getElementById('apiTestBtn');
     const result = document.getElementById('apiTestResult');
     
+    // Read current form values
+    const proxyUrlInput = document.getElementById('settingsProxyUrl');
+    const useProxyInput = document.getElementById('settingsUseProxy');
+    
+    const currentProxyUrl = proxyUrlInput ? proxyUrlInput.value.trim() : PROXY_URL;
+    const currentUseProxy = useProxyInput ? useProxyInput.checked : USE_PROXY;
+    
     btn.disabled = true;
     btn.textContent = '🔄 Testing...';
     result.innerHTML = '<div style="color: var(--text-secondary);">⏳ Sending test request...</div>';
     
+    console.log('🧪 Testing API with:', {
+        proxyUrl: currentProxyUrl,
+        useProxy: currentUseProxy
+    });
+    
     try {
+        // Validation
+        if (currentUseProxy && !currentProxyUrl) {
+            throw new Error('Cloudflare Worker URL is required when proxy is enabled');
+        }
+        
+        if (!currentUseProxy && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            throw new Error('API key not configured. Add your API key in app.js (line ~10) or set up Cloudflare Worker proxy.');
+        }
+        
         const testMessage = "Hello! Just testing the API connection.";
         
         const requestBody = {
@@ -1719,8 +1752,9 @@ async function testAPIConnection() {
         let response;
         const startTime = Date.now();
         
-        if (USE_PROXY) {
-            response = await fetch(PROXY_URL, {
+        if (currentUseProxy) {
+            console.log('📡 Testing via Cloudflare Worker:', currentProxyUrl);
+            response = await fetch(currentProxyUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1728,10 +1762,7 @@ async function testAPIConnection() {
                 body: JSON.stringify(requestBody)
             });
         } else {
-            if (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
-                throw new Error('API key not configured');
-            }
-            
+            console.log('📡 Testing direct API connection');
             response = await fetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
@@ -1746,12 +1777,22 @@ async function testAPIConnection() {
         const elapsed = Date.now() - startTime;
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+            const errorText = await response.text();
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch {
+                errorData = { error: { message: errorText } };
+            }
+            
+            console.error('❌ API Error Response:', errorData);
+            throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
         }
         
         const data = await response.json();
         const aiResponse = data.content[0].text;
+        
+        console.log('✅ API Test successful:', aiResponse);
         
         result.innerHTML = `
             <div style="color: var(--success); padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border-left: 3px solid var(--success);">
@@ -1759,22 +1800,25 @@ async function testAPIConnection() {
                 <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
                     • Response time: ${elapsed}ms<br>
                     • Model: claude-sonnet-4-20250514<br>
-                    • Proxy: ${USE_PROXY ? 'Enabled (Cloudflare Worker)' : 'Disabled (Direct API)'}<br>
+                    • Proxy: ${currentUseProxy ? 'Enabled (Cloudflare Worker)' : 'Disabled (Direct API)'}<br>
+                    • URL: ${currentUseProxy ? currentProxyUrl : 'api.anthropic.com'}<br>
                     • Test response: "${aiResponse.substring(0, 50)}${aiResponse.length > 50 ? '...' : ''}"
                 </div>
             </div>
         `;
         
     } catch (error) {
-        console.error('API Test Error:', error);
+        console.error('❌ API Test Error:', error);
         
         let helpText = '';
         if (error.message.includes('CORS') || error.message.includes('blocked')) {
             helpText = 'Fix: Update Cloudflare Worker CORS settings to allow your GitHub Pages domain.';
-        } else if (error.message.includes('API key')) {
+        } else if (error.message.includes('API key not configured')) {
             helpText = 'Fix: Add your Claude API key to the Cloudflare Worker environment variables.';
         } else if (error.message.includes('Failed to fetch')) {
-            helpText = 'Fix: Check your internet connection and Cloudflare Worker URL.';
+            helpText = 'Fix: Check your internet connection and Cloudflare Worker URL (make sure it ends with a /).';
+        } else if (error.message.includes('Worker URL is required')) {
+            helpText = 'Fix: Enter your Cloudflare Worker URL above or uncheck "Enable AI Features".';
         }
         
         result.innerHTML = `
@@ -4716,6 +4760,11 @@ async function switchTab(tab) {
                     console.error('❌ Failed to reload userSettings:', error);
                 }
             }
+        }
+        
+        // Ensure API config is loaded
+        if (userSettings) {
+            initAPIConfig();
         }
         
         if (userSettings) {
