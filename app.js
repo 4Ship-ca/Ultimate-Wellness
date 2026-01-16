@@ -2303,11 +2303,20 @@ function setupExerciseGrid() {
 }
 
 async function updateExerciseGrid() {
+    const userId = getCurrentUserId();
+    if (!userId) {
+        console.warn('⚠️ No user ID for exercise grid');
+        return;
+    }
+    
     const today = getTodayKey();
-    const todayExercise = await getExerciseByDate(today);
+    const todayExercise = await getExerciseByDate(userId, today);
     
     const grid = document.getElementById('exerciseGrid');
-    if (!grid) return;
+    if (!grid) {
+        console.warn('⚠️ Exercise grid element not found');
+        return;
+    }
     
     grid.innerHTML = EXERCISES.map(exercise => {
         const exerciseLogs = todayExercise.filter(e => e.activity === exercise);
@@ -3321,10 +3330,25 @@ function handleFileUpload(event) {}
 
 // ============ UI UPDATES ============
 async function updateWeightDisplay() {
-    if (!userSettings) return;
+    // Safety check: wait for userSettings
+    if (!userSettings) {
+        console.warn('⚠️ updateWeightDisplay: userSettings not loaded yet');
+        const userId = getCurrentUserId();
+        if (userId) {
+            try {
+                userSettings = await dbGet('settings', `user_${userId}`);
+                console.log('✅ userSettings loaded for weight display');
+            } catch (error) {
+                console.error('❌ Failed to load userSettings:', error);
+                return;
+            }
+        } else {
+            return;
+        }
+    }
     
-    safeSetText('currentWeight', `${userSettings.currentWeight} lbs`);
-    safeSetText('goalWeight', `${userSettings.goalWeight} lbs`);
+    safeSetText('currentWeight', `${userSettings.currentWeight || '--'} lbs`);
+    safeSetText('goalWeight', `${userSettings.goalWeight || '--'} lbs`);
     
     const progress = calculateWeightProgress();
     const progressEl = document.getElementById('weightProgress');
@@ -3334,6 +3358,8 @@ async function updateWeightDisplay() {
     safeSetText('weeklyGoal', weeklyGoal.toFixed(1));
     
     safeSetText('nextWeighin', getNextWeighinDate());
+    
+    console.log('✅ Weight display updated:', userSettings.currentWeight, 'lbs');
 }
 
 async function updatePointsDisplay() {
