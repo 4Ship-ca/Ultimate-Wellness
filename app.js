@@ -812,7 +812,14 @@ async function completeSetup() {
         }
         
         // Show welcome message
-        alert(`🎉 Welcome ${formData.name}!\n\nYour daily points: ${userSettings.lockedPoints}\n\nLet's start your wellness journey!`);
+        // Safety check: ensure userSettings is loaded
+        if (!userSettings || !userSettings.lockedPoints) {
+            console.warn('⚠️ userSettings not loaded, fetching...');
+            userSettings = await getSettings();
+        }
+        
+        const dailyPoints = userSettings?.lockedPoints || userSettings?.dailyPoints || 0;
+        alert(`🎉 Welcome ${formData.name}!\n\nYour daily points: ${dailyPoints}\n\nLet's start your wellness journey!`);
         
     } catch (error) {
         console.error('Setup error:', error);
