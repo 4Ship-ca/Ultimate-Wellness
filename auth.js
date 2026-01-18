@@ -581,5 +581,8 @@ window.shouldShowLogin = shouldShowLogin;
 window.isValidUsername = isValidUsername;
 window.getUserDisplayName = getUserDisplayName;
 window.isUsernameAvailable = isUsernameAvailable;
+window.getCurrentUserId = getCurrentUserId;
+window.setCurrentUserId = setCurrentUserId;
+window.clearCurrentUser = clearCurrentUser;
 
 console.log('🔐 Authentication module v2.2.0 loaded');

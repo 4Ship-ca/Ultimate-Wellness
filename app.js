@@ -6651,7 +6651,7 @@ setInterval(() => {
 }, 30000);
 
 // Export functions for global access
-window.getCurrentUserId = getCurrentUserId;
+// Note: getCurrentUserId is exported by auth.js
 window.getCurrentUser = getCurrentUser;
 
 console.log('✅ App.js fully loaded - Auth & Session system ready');
