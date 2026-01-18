@@ -1333,101 +1333,177 @@ function enterMaintenanceMode() {
 
 // ============ END 12-WEEK POINTS PERIOD SYSTEM ============
 
+// Helper: Validate a single field and show error if invalid
+function validateFieldWithFeedback(value, fieldId, validationFn, errorMessage) {
+    if (!validationFn(value)) {
+        alert(errorMessage);
+        document.getElementById(fieldId).focus();
+        return false;
+    }
+    return true;
+}
+
+// Helper: Collect settings form data
+function collectSettingsFormData() {
+    return {
+        name: document.getElementById('settingsName').value.trim(),
+        email: document.getElementById('settingsEmail').value.trim(),
+        birthday: document.getElementById('settingsBirthday').value,
+        gender: document.getElementById('settingsGender').value,
+        goalWeight: parseFloat(document.getElementById('settingsGoalWeight').value),
+        heightFeet: parseInt(document.getElementById('settingsHeightFeet').value),
+        heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
+        activity: document.getElementById('settingsActivity').value,
+        resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
+        proxyUrl: document.getElementById('settingsProxyUrl')?.value.trim() || '',
+        useProxy: document.getElementById('settingsUseProxy')?.checked || false
+    };
+}
+
+// Helper: Validate all settings form fields
+function validateSettingsForm(formData) {
+    // Name validation
+    if (!validateFieldWithFeedback(
+        formData.name,
+        'settingsName',
+        (val) => val.length > 0,
+        '❌ Name is required'
+    )) return false;
+
+    // Email validation
+    if (!validateFieldWithFeedback(
+        formData.email,
+        'settingsEmail',
+        (val) => val.length > 0 && val.includes('@'),
+        '❌ Valid email is required'
+    )) return false;
+
+    // Birthday validation
+    if (!validateFieldWithFeedback(
+        formData.birthday,
+        'settingsBirthday',
+        (val) => val.length > 0,
+        '❌ Birthday is required (needed for points calculation)'
+    )) return false;
+
+    // Age validation
+    const age = calculateAge(formData.birthday);
+    if (!validateFieldWithFeedback(
+        age,
+        'settingsBirthday',
+        (val) => val >= 18 && val <= 100,
+        '❌ Age must be between 18-100 years'
+    )) return false;
+
+    // Gender validation
+    if (!validateFieldWithFeedback(
+        formData.gender,
+        'settingsGender',
+        (val) => val.length > 0,
+        '❌ Gender is required (needed for points calculation)'
+    )) return false;
+
+    // Goal weight validation
+    if (!validateFieldWithFeedback(
+        formData.goalWeight,
+        'settingsGoalWeight',
+        (val) => val >= 80 && val <= 600,
+        '❌ Goal weight must be between 80-600 lbs'
+    )) return false;
+
+    // Height validation
+    if (!validateFieldWithFeedback(
+        formData.heightFeet,
+        'settingsHeightFeet',
+        (val) => val >= 3 && val <= 8,
+        '❌ Height must be between 3-8 feet'
+    )) return false;
+
+    // Activity level validation
+    if (!validateFieldWithFeedback(
+        formData.activity,
+        'settingsActivity',
+        (val) => val.length > 0,
+        '❌ Activity level is required'
+    )) return false;
+
+    return true;
+}
+
+// Helper: Check if points-affecting settings changed
+function didPointsSettingsChange(current, updated) {
+    return current.activity !== updated.activity ||
+           Math.abs(current.goalWeight - updated.goalWeight) > 5 ||
+           current.birthday !== updated.birthday ||
+           current.gender !== updated.gender;
+}
+
+// Helper: Handle points recalculation with user confirmation
+function handlePointsRecalculation(currentSettings, formData, age, heightInInches, updatedSettings) {
+    const newPoints = calculateDailyPoints(
+        formData.gender,
+        age,
+        currentSettings.currentWeight,
+        heightInInches,
+        formData.activity
+    ).points;
+
+    const userConfirmed = window.confirm(
+        `You changed settings that affect your daily points.\n\n` +
+        `Current: ${currentSettings.lockedPoints} pts/day\n` +
+        `New calculation: ${newPoints} pts/day\n\n` +
+        `Would you like to restart your 12-week period with ${newPoints} pts/day?\n\n` +
+        `✓ OK = Restart with ${newPoints} pts/day\n` +
+        `✗ Cancel = Keep ${currentSettings.lockedPoints} pts/day`
+    );
+
+    if (userConfirmed) {
+        updatedSettings.dailyPoints = newPoints;
+        updatedSettings.lockedPoints = newPoints;
+
+        // Restart 12-week period
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 84);
+        updatedSettings.pointsPeriodStart = today;
+        updatedSettings.pointsPeriodEnd = endDate.toISOString().split('T')[0];
+
+        return true;
+    }
+
+    return false;
+}
+
 async function saveSettings() {
     console.log('💾 Save Settings clicked');
-    
+
     try {
-        // Collect form data
-        const formData = {
-            name: document.getElementById('settingsName').value.trim(),
-            email: document.getElementById('settingsEmail').value.trim(),
-            birthday: document.getElementById('settingsBirthday').value,
-            gender: document.getElementById('settingsGender').value,
-            goalWeight: parseFloat(document.getElementById('settingsGoalWeight').value),
-            heightFeet: parseInt(document.getElementById('settingsHeightFeet').value),
-            heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
-            activity: document.getElementById('settingsActivity').value,
-            resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
-            proxyUrl: document.getElementById('settingsProxyUrl')?.value.trim() || '',
-            useProxy: document.getElementById('settingsUseProxy')?.checked || false
-        };
-        
-        // Validate all fields
-        if (!formData.name) {
-            alert('❌ Name is required');
-            document.getElementById('settingsName').focus();
+        // Collect and validate form data
+        const formData = collectSettingsFormData();
+        if (!validateSettingsForm(formData)) {
             return;
         }
-        
-        if (!formData.email || !formData.email.includes('@')) {
-            alert('❌ Valid email is required');
-            document.getElementById('settingsEmail').focus();
-            return;
-        }
-        
-        if (!formData.birthday) {
-            alert('❌ Birthday is required (needed for points calculation)');
-            document.getElementById('settingsBirthday').focus();
-            return;
-        }
-        
-        const age = calculateAge(formData.birthday);
-        if (age < 18 || age > 100) {
-            alert('❌ Age must be between 18-100 years');
-            document.getElementById('settingsBirthday').focus();
-            return;
-        }
-        
-        if (!formData.gender) {
-            alert('❌ Gender is required (needed for points calculation)');
-            document.getElementById('settingsGender').focus();
-            return;
-        }
-        
-        if (!formData.goalWeight || formData.goalWeight < 80 || formData.goalWeight > 600) {
-            alert('❌ Goal weight must be between 80-600 lbs');
-            document.getElementById('settingsGoalWeight').focus();
-            return;
-        }
-        
-        if (!formData.heightFeet || formData.heightFeet < 3 || formData.heightFeet > 8) {
-            alert('❌ Height must be between 3-8 feet');
-            document.getElementById('settingsHeightFeet').focus();
-            return;
-        }
-        
-        if (!formData.activity) {
-            alert('❌ Activity level is required');
-            document.getElementById('settingsActivity').focus();
-            return;
-        }
-        
-        // Get userId
+
+        // Verify user is logged in
         const userId = getCurrentUserId();
         if (!userId) {
             alert('❌ Error: No user logged in. Please refresh the page.');
             return;
         }
-        
-        // Get current settings
+
+        // Get current settings from database
         const currentSettings = await dbGet('settings', `user_${userId}`);
         if (!currentSettings) {
             alert('❌ Error: Settings not found. Please refresh the page.');
             return;
         }
-        
+
         console.log('💾 Saving settings to database...');
-        
-        // Calculate height
+
+        // Prepare updated settings
         const heightInInches = (formData.heightFeet * 12) + formData.heightInches;
-        
-        // Check if points-affecting fields changed
-        const activityChanged = currentSettings.activity !== formData.activity;
-        const goalChanged = Math.abs(currentSettings.goalWeight - formData.goalWeight) > 5;
-        const birthdayChanged = currentSettings.birthday !== formData.birthday;
-        const genderChanged = currentSettings.gender !== formData.gender;
-        
-        // Update settings object
+        const age = calculateAge(formData.birthday);
+
         const updatedSettings = {
             ...currentSettings,
             name: formData.name,
@@ -1444,68 +1520,38 @@ async function saveSettings() {
             useProxy: formData.useProxy,
             lastModified: new Date().toISOString()
         };
-        
+
         // Handle points recalculation if needed
         let pointsRecalculated = false;
-        if (activityChanged || goalChanged || birthdayChanged || genderChanged) {
-            const newPoints = calculateDailyPoints(
-                formData.gender,
+        if (didPointsSettingsChange(currentSettings, formData)) {
+            pointsRecalculated = handlePointsRecalculation(
+                currentSettings,
+                formData,
                 age,
-                currentSettings.currentWeight,
                 heightInInches,
-                formData.activity
-            ).points;
-            
-            const confirm = window.confirm(
-                `You changed settings that affect your daily points.\n\n` +
-                `Current: ${currentSettings.lockedPoints} pts/day\n` +
-                `New calculation: ${newPoints} pts/day\n\n` +
-                `Would you like to restart your 12-week period with ${newPoints} pts/day?\n\n` +
-                `✓ OK = Restart with ${newPoints} pts/day\n` +
-                `✗ Cancel = Keep ${currentSettings.lockedPoints} pts/day`
+                updatedSettings
             );
-            
-            if (confirm) {
-                // Update points
-                updatedSettings.dailyPoints = newPoints;
-                updatedSettings.lockedPoints = newPoints;
-                
-                // Restart 12-week period
-                const today = new Date().toISOString().split('T')[0];
-                const endDate = new Date();
-                endDate.setDate(endDate.getDate() + 84);
-                updatedSettings.pointsPeriodStart = today;
-                updatedSettings.pointsPeriodEnd = endDate.toISOString().split('T')[0];
-                
-                pointsRecalculated = true;
-            }
         }
-        
-        // Save to database
+
+        // Save to database and update global state
         await dbPut('settings', updatedSettings);
         console.log('✅ Settings saved to database');
-        
-        // Update global state
+
         window.userSettings = updatedSettings;
-        
-        // Update API config (global variables used by AI features)
         updateAPIConfig(updatedSettings.proxyUrl, updatedSettings.useProxy);
-        
-        // Save session
+
+        // Save session and update UI
         await saveSession();
-        
-        // Update UI
         await updateAllUI();
-        
+
         // Show success message
-        if (pointsRecalculated) {
-            alert(`✅ Settings saved!\n\nNew 12-week period started with ${updatedSettings.lockedPoints} pts/day`);
-        } else {
-            alert('✅ Settings saved successfully!');
-        }
-        
+        const successMessage = pointsRecalculated
+            ? `✅ Settings saved!\n\nNew 12-week period started with ${updatedSettings.lockedPoints} pts/day`
+            : '✅ Settings saved successfully!';
+        alert(successMessage);
+
         console.log('✅ Settings save complete');
-        
+
     } catch (error) {
         console.error('❌ Save settings error:', error);
         alert(`❌ Save failed: ${error.message}\n\nPlease try again or refresh the page.`);
