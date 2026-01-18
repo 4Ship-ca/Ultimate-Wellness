@@ -1333,101 +1333,177 @@ function enterMaintenanceMode() {
 
 // ============ END 12-WEEK POINTS PERIOD SYSTEM ============
 
+// Helper: Validate a single field and show error if invalid
+function validateFieldWithFeedback(value, fieldId, validationFn, errorMessage) {
+    if (!validationFn(value)) {
+        alert(errorMessage);
+        document.getElementById(fieldId).focus();
+        return false;
+    }
+    return true;
+}
+
+// Helper: Collect settings form data
+function collectSettingsFormData() {
+    return {
+        name: document.getElementById('settingsName').value.trim(),
+        email: document.getElementById('settingsEmail').value.trim(),
+        birthday: document.getElementById('settingsBirthday').value,
+        gender: document.getElementById('settingsGender').value,
+        goalWeight: parseFloat(document.getElementById('settingsGoalWeight').value),
+        heightFeet: parseInt(document.getElementById('settingsHeightFeet').value),
+        heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
+        activity: document.getElementById('settingsActivity').value,
+        resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
+        proxyUrl: document.getElementById('settingsProxyUrl')?.value.trim() || '',
+        useProxy: document.getElementById('settingsUseProxy')?.checked || false
+    };
+}
+
+// Helper: Validate all settings form fields
+function validateSettingsForm(formData) {
+    // Name validation
+    if (!validateFieldWithFeedback(
+        formData.name,
+        'settingsName',
+        (val) => val.length > 0,
+        '❌ Name is required'
+    )) return false;
+
+    // Email validation
+    if (!validateFieldWithFeedback(
+        formData.email,
+        'settingsEmail',
+        (val) => val.length > 0 && val.includes('@'),
+        '❌ Valid email is required'
+    )) return false;
+
+    // Birthday validation
+    if (!validateFieldWithFeedback(
+        formData.birthday,
+        'settingsBirthday',
+        (val) => val.length > 0,
+        '❌ Birthday is required (needed for points calculation)'
+    )) return false;
+
+    // Age validation
+    const age = calculateAge(formData.birthday);
+    if (!validateFieldWithFeedback(
+        age,
+        'settingsBirthday',
+        (val) => val >= 18 && val <= 100,
+        '❌ Age must be between 18-100 years'
+    )) return false;
+
+    // Gender validation
+    if (!validateFieldWithFeedback(
+        formData.gender,
+        'settingsGender',
+        (val) => val.length > 0,
+        '❌ Gender is required (needed for points calculation)'
+    )) return false;
+
+    // Goal weight validation
+    if (!validateFieldWithFeedback(
+        formData.goalWeight,
+        'settingsGoalWeight',
+        (val) => val >= 80 && val <= 600,
+        '❌ Goal weight must be between 80-600 lbs'
+    )) return false;
+
+    // Height validation
+    if (!validateFieldWithFeedback(
+        formData.heightFeet,
+        'settingsHeightFeet',
+        (val) => val >= 3 && val <= 8,
+        '❌ Height must be between 3-8 feet'
+    )) return false;
+
+    // Activity level validation
+    if (!validateFieldWithFeedback(
+        formData.activity,
+        'settingsActivity',
+        (val) => val.length > 0,
+        '❌ Activity level is required'
+    )) return false;
+
+    return true;
+}
+
+// Helper: Check if points-affecting settings changed
+function didPointsSettingsChange(current, updated) {
+    return current.activity !== updated.activity ||
+           Math.abs(current.goalWeight - updated.goalWeight) > 5 ||
+           current.birthday !== updated.birthday ||
+           current.gender !== updated.gender;
+}
+
+// Helper: Handle points recalculation with user confirmation
+function handlePointsRecalculation(currentSettings, formData, age, heightInInches, updatedSettings) {
+    const newPoints = calculateDailyPoints(
+        formData.gender,
+        age,
+        currentSettings.currentWeight,
+        heightInInches,
+        formData.activity
+    ).points;
+
+    const userConfirmed = window.confirm(
+        `You changed settings that affect your daily points.\n\n` +
+        `Current: ${currentSettings.lockedPoints} pts/day\n` +
+        `New calculation: ${newPoints} pts/day\n\n` +
+        `Would you like to restart your 12-week period with ${newPoints} pts/day?\n\n` +
+        `✓ OK = Restart with ${newPoints} pts/day\n` +
+        `✗ Cancel = Keep ${currentSettings.lockedPoints} pts/day`
+    );
+
+    if (userConfirmed) {
+        updatedSettings.dailyPoints = newPoints;
+        updatedSettings.lockedPoints = newPoints;
+
+        // Restart 12-week period
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 84);
+        updatedSettings.pointsPeriodStart = today;
+        updatedSettings.pointsPeriodEnd = endDate.toISOString().split('T')[0];
+
+        return true;
+    }
+
+    return false;
+}
+
 async function saveSettings() {
     console.log('💾 Save Settings clicked');
-    
+
     try {
-        // Collect form data
-        const formData = {
-            name: document.getElementById('settingsName').value.trim(),
-            email: document.getElementById('settingsEmail').value.trim(),
-            birthday: document.getElementById('settingsBirthday').value,
-            gender: document.getElementById('settingsGender').value,
-            goalWeight: parseFloat(document.getElementById('settingsGoalWeight').value),
-            heightFeet: parseInt(document.getElementById('settingsHeightFeet').value),
-            heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
-            activity: document.getElementById('settingsActivity').value,
-            resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
-            proxyUrl: document.getElementById('settingsProxyUrl')?.value.trim() || '',
-            useProxy: document.getElementById('settingsUseProxy')?.checked || false
-        };
-        
-        // Validate all fields
-        if (!formData.name) {
-            alert('❌ Name is required');
-            document.getElementById('settingsName').focus();
+        // Collect and validate form data
+        const formData = collectSettingsFormData();
+        if (!validateSettingsForm(formData)) {
             return;
         }
-        
-        if (!formData.email || !formData.email.includes('@')) {
-            alert('❌ Valid email is required');
-            document.getElementById('settingsEmail').focus();
-            return;
-        }
-        
-        if (!formData.birthday) {
-            alert('❌ Birthday is required (needed for points calculation)');
-            document.getElementById('settingsBirthday').focus();
-            return;
-        }
-        
-        const age = calculateAge(formData.birthday);
-        if (age < 18 || age > 100) {
-            alert('❌ Age must be between 18-100 years');
-            document.getElementById('settingsBirthday').focus();
-            return;
-        }
-        
-        if (!formData.gender) {
-            alert('❌ Gender is required (needed for points calculation)');
-            document.getElementById('settingsGender').focus();
-            return;
-        }
-        
-        if (!formData.goalWeight || formData.goalWeight < 80 || formData.goalWeight > 600) {
-            alert('❌ Goal weight must be between 80-600 lbs');
-            document.getElementById('settingsGoalWeight').focus();
-            return;
-        }
-        
-        if (!formData.heightFeet || formData.heightFeet < 3 || formData.heightFeet > 8) {
-            alert('❌ Height must be between 3-8 feet');
-            document.getElementById('settingsHeightFeet').focus();
-            return;
-        }
-        
-        if (!formData.activity) {
-            alert('❌ Activity level is required');
-            document.getElementById('settingsActivity').focus();
-            return;
-        }
-        
-        // Get userId
+
+        // Verify user is logged in
         const userId = getCurrentUserId();
         if (!userId) {
             alert('❌ Error: No user logged in. Please refresh the page.');
             return;
         }
-        
-        // Get current settings
+
+        // Get current settings from database
         const currentSettings = await dbGet('settings', `user_${userId}`);
         if (!currentSettings) {
             alert('❌ Error: Settings not found. Please refresh the page.');
             return;
         }
-        
+
         console.log('💾 Saving settings to database...');
-        
-        // Calculate height
+
+        // Prepare updated settings
         const heightInInches = (formData.heightFeet * 12) + formData.heightInches;
-        
-        // Check if points-affecting fields changed
-        const activityChanged = currentSettings.activity !== formData.activity;
-        const goalChanged = Math.abs(currentSettings.goalWeight - formData.goalWeight) > 5;
-        const birthdayChanged = currentSettings.birthday !== formData.birthday;
-        const genderChanged = currentSettings.gender !== formData.gender;
-        
-        // Update settings object
+        const age = calculateAge(formData.birthday);
+
         const updatedSettings = {
             ...currentSettings,
             name: formData.name,
@@ -1444,68 +1520,38 @@ async function saveSettings() {
             useProxy: formData.useProxy,
             lastModified: new Date().toISOString()
         };
-        
+
         // Handle points recalculation if needed
         let pointsRecalculated = false;
-        if (activityChanged || goalChanged || birthdayChanged || genderChanged) {
-            const newPoints = calculateDailyPoints(
-                formData.gender,
+        if (didPointsSettingsChange(currentSettings, formData)) {
+            pointsRecalculated = handlePointsRecalculation(
+                currentSettings,
+                formData,
                 age,
-                currentSettings.currentWeight,
                 heightInInches,
-                formData.activity
-            ).points;
-            
-            const confirm = window.confirm(
-                `You changed settings that affect your daily points.\n\n` +
-                `Current: ${currentSettings.lockedPoints} pts/day\n` +
-                `New calculation: ${newPoints} pts/day\n\n` +
-                `Would you like to restart your 12-week period with ${newPoints} pts/day?\n\n` +
-                `✓ OK = Restart with ${newPoints} pts/day\n` +
-                `✗ Cancel = Keep ${currentSettings.lockedPoints} pts/day`
+                updatedSettings
             );
-            
-            if (confirm) {
-                // Update points
-                updatedSettings.dailyPoints = newPoints;
-                updatedSettings.lockedPoints = newPoints;
-                
-                // Restart 12-week period
-                const today = new Date().toISOString().split('T')[0];
-                const endDate = new Date();
-                endDate.setDate(endDate.getDate() + 84);
-                updatedSettings.pointsPeriodStart = today;
-                updatedSettings.pointsPeriodEnd = endDate.toISOString().split('T')[0];
-                
-                pointsRecalculated = true;
-            }
         }
-        
-        // Save to database
+
+        // Save to database and update global state
         await dbPut('settings', updatedSettings);
         console.log('✅ Settings saved to database');
-        
-        // Update global state
+
         window.userSettings = updatedSettings;
-        
-        // Update API config (global variables used by AI features)
         updateAPIConfig(updatedSettings.proxyUrl, updatedSettings.useProxy);
-        
-        // Save session
+
+        // Save session and update UI
         await saveSession();
-        
-        // Update UI
         await updateAllUI();
-        
+
         // Show success message
-        if (pointsRecalculated) {
-            alert(`✅ Settings saved!\n\nNew 12-week period started with ${updatedSettings.lockedPoints} pts/day`);
-        } else {
-            alert('✅ Settings saved successfully!');
-        }
-        
+        const successMessage = pointsRecalculated
+            ? `✅ Settings saved!\n\nNew 12-week period started with ${updatedSettings.lockedPoints} pts/day`
+            : '✅ Settings saved successfully!';
+        alert(successMessage);
+
         console.log('✅ Settings save complete');
-        
+
     } catch (error) {
         console.error('❌ Save settings error:', error);
         alert(`❌ Save failed: ${error.message}\n\nPlease try again or refresh the page.`);
@@ -2632,27 +2678,77 @@ function cancelHoursConfirm() {
     sleepSessionContext.confirmCallback = null;
 }
 
+// Helper: Parse time string (HH:MM) to Date object
+function parseTimeToDate(timeString, baseDate = new Date()) {
+    const [hours, minutes] = timeString.split(':');
+    const date = new Date(baseDate);
+    date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    return date;
+}
+
+// Helper: Calculate sleep duration in hours
+function calculateSleepDuration(startTime, endTime) {
+    return (endTime - startTime) / (1000 * 60 * 60);
+}
+
+// Helper: Unified sleep session end handler with time
+async function handleSleepEndWithTime(session, time, options = {}) {
+    const { startNewSession = false, logPrefix = '⏰', successMessage = 'Sleep logged! Good morning! ☀️' } = options;
+
+    try {
+        const endTime = parseTimeToDate(time);
+        const startTime = new Date(session.start_datetime);
+
+        // If end time is before start, it's the next day
+        if (endTime <= startTime) {
+            endTime.setDate(endTime.getDate() + 1);
+        }
+
+        console.log(`${logPrefix} End time:`, endTime.toISOString());
+
+        // Calculate and validate duration
+        const duration = calculateSleepDuration(startTime, endTime);
+
+        if (duration > 14) {
+            alert('Duration > 14 hours. Please check your times.');
+            return;
+        }
+
+        // Show confirmation dialog
+        showHoursConfirmDialog(duration, async (manualHours) => {
+            await endSleepSession(endTime.toISOString(), manualHours);
+
+            if (startNewSession) {
+                await startSleepSession();
+            }
+
+            alert(successMessage);
+            await updateSleepUI();
+        });
+    } catch (err) {
+        console.error(`${logPrefix} error:`, err);
+        alert('Error: ' + err.message);
+    }
+}
+
 async function handleRetroactiveStart(time) {
     try {
-        // User selected when they fell asleep
         const now = new Date();
-        const [hours, minutes] = time.split(':');
-        const startTime = new Date(now);
-        startTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        
+        const startTime = parseTimeToDate(time, now);
+
         // If time is in the future, assume it was yesterday
         if (startTime > now) {
             startTime.setDate(startTime.getDate() - 1);
         }
-        
+
         console.log('🛏️ Retroactive start:', startTime.toISOString());
-        
+
         // Start session with past time
         await startSleepSession(startTime.toISOString());
-        
+
         // Calculate duration to now
-        const duration = (now - startTime) / (1000 * 60 * 60);
-        
+        const duration = calculateSleepDuration(startTime, now);
+
         // Show confirmation
         showHoursConfirmDialog(duration, async (manualHours) => {
             await endSleepSession(null, manualHours);
@@ -2666,78 +2762,19 @@ async function handleRetroactiveStart(time) {
 }
 
 async function handleRetroactiveEnd(session, time) {
-    try {
-        // User selected when they woke up
-        const [hours, minutes] = time.split(':');
-        const endTime = new Date();
-        endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        
-        const startTime = new Date(session.start_datetime);
-        
-        // If end time is before start, it's the next day
-        if (endTime <= startTime) {
-            endTime.setDate(endTime.getDate() + 1);
-        }
-        
-        console.log('⏰ Retroactive end:', endTime.toISOString());
-        
-        // Calculate duration
-        const duration = (endTime - startTime) / (1000 * 60 * 60);
-        
-        if (duration > 14) {
-            alert('Duration > 14 hours. Please check your times.');
-            return;
-        }
-        
-        // Show confirmation
-        showHoursConfirmDialog(duration, async (manualHours) => {
-            await endSleepSession(endTime.toISOString(), manualHours);
-            
-            // Now start a new session for tonight
-            await startSleepSession();
-            alert('Previous sleep logged! Starting new session. Good night! 😴');
-            await updateSleepUI();
-        });
-    } catch (err) {
-        console.error('Retroactive end error:', err);
-        alert('Error: ' + err.message);
-    }
+    await handleSleepEndWithTime(session, time, {
+        startNewSession: true,
+        logPrefix: '⏰ Retroactive end',
+        successMessage: 'Previous sleep logged! Starting new session. Good night! 😴'
+    });
 }
 
 async function handleEndWithTime(session, time) {
-    try {
-        // User selected when they woke up (for > 14hr session)
-        const [hours, minutes] = time.split(':');
-        const endTime = new Date();
-        endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        
-        const startTime = new Date(session.start_datetime);
-        
-        // If end time is before start, it's the next day
-        if (endTime <= startTime) {
-            endTime.setDate(endTime.getDate() + 1);
-        }
-        
-        console.log('⏰ End with time:', endTime.toISOString());
-        
-        // Calculate duration
-        const duration = (endTime - startTime) / (1000 * 60 * 60);
-        
-        if (duration > 14) {
-            alert('Duration still > 14 hours. Please check your times.');
-            return;
-        }
-        
-        // Show confirmation
-        showHoursConfirmDialog(duration, async (manualHours) => {
-            await endSleepSession(endTime.toISOString(), manualHours);
-            alert('Sleep logged! Good morning! ☀️');
-            await updateSleepUI();
-        });
-    } catch (err) {
-        console.error('End with time error:', err);
-        alert('Error: ' + err.message);
-    }
+    await handleSleepEndWithTime(session, time, {
+        startNewSession: false,
+        logPrefix: '⏰ End with time',
+        successMessage: 'Sleep logged! Good morning! ☀️'
+    });
 }
 
 async function updateSleepUI() {
@@ -3430,9 +3467,6 @@ function closeScan() {
     document.getElementById('scanModal').classList.remove('active');
     document.getElementById('scanResult').innerHTML = '';
 }
-
-function startCamera() {}
-function handleFileUpload(event) {}
 
 // ============ UI UPDATES ============
 async function updateWeightDisplay() {
@@ -4191,11 +4225,6 @@ async function callClaudeAPI(userMessage, context) {
     }
 }
 
-function isRecipeRequest(message) {
-    const recipeKeywords = ['recipe', 'meal', 'cook', 'make', 'prepare', 'dinner', 'lunch', 'breakfast', 'snack', 'food idea'];
-    return recipeKeywords.some(keyword => message.toLowerCase().includes(keyword));
-}
-
 function isMealLoggingRequest(message) {
     const lowerMsg = message.toLowerCase();
     
@@ -4237,9 +4266,8 @@ function isMealLoggingRequest(message) {
            (/\d+\s*(egg|toast|bacon|sausage|pancake|waffle|coffee|banana|apple|chicken|rice|pasta|potato)/i.test(lowerMsg));
 }
 
-async function processMealLogging(userMessage, context) {
-    // Ask Claude to parse the meal and calculate points
-    const systemPrompt = `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
+// Constant: Meal logging AI system prompt
+const MEAL_LOGGING_SYSTEM_PROMPT = `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
 
 ZERO-POINT FOODS (0 pts - DO NOT charge points for these):
 - Vegetables: Most non-starchy vegetables (broccoli, spinach, tomatoes, peppers, etc.)
@@ -4284,7 +4312,7 @@ RECIPE SCALING RULES:
 
 PORTION PATTERNS TO DETECT:
 - "1 cup of rice" → 1 cup
-- "2 cups cooked rice" → 2 cups  
+- "2 cups cooked rice" → 2 cups
 - "handful of nuts" → ~1 oz
 - "small apple" → 1 medium apple (0 pts - zero-point!)
 - "large chicken breast" → 6-8 oz (0 pts if grilled)
@@ -4334,119 +4362,152 @@ If clarification needed:
   "question": "How much rice did you have? (1 cup, 2 cups, etc.)"
 }`;
 
-    try {
-        // Check if API key is configured (if not using proxy)
-        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
-            return "⚠️ API key not configured. I can't parse your meal automatically. Please use the manual food logger.";
-        }
-        
-        const requestBody = {
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            system: systemPrompt,
-            messages: [
-                { role: 'user', content: userMessage }
-            ]
+// Helper: Call Claude API for meal parsing
+async function callMealParsingAPI(userMessage) {
+    if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+        throw new Error('API_NOT_CONFIGURED');
+    }
+
+    const requestBody = {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: MEAL_LOGGING_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }]
+    };
+
+    const response = USE_PROXY
+        ? await fetch(PROXY_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody)
+          })
+        : await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': CLAUDE_API_KEY,
+                  'anthropic-version': '2023-06-01'
+              },
+              body: JSON.stringify(requestBody)
+          });
+
+    if (!response.ok) {
+        throw new Error('API request failed');
+    }
+
+    const data = await response.json();
+    return data.content[0].text;
+}
+
+// Helper: Parse and validate meal data from API response
+function parseMealDataFromResponse(responseText) {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+        // AI is asking for clarification in plain text
+        return { type: 'clarification', text: responseText };
+    }
+
+    const mealData = JSON.parse(jsonMatch[0]);
+
+    if (mealData.needsClarification) {
+        return {
+            type: 'clarification',
+            text: `❓ ${mealData.question}\n\nPlease be specific with quantities for accurate point tracking!`
         };
-        
-        let response;
-        
-        if (USE_PROXY) {
-            response = await fetch(PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } else {
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CLAUDE_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify(requestBody)
-            });
+    }
+
+    return { type: 'success', data: mealData };
+}
+
+// Helper: Check if food is zero-point (with fallback)
+function isFoodZeroPoint(food) {
+    return food.isZeroPoint || isZeroPointFood(food.name);
+}
+
+// Helper: Log parsed meal items to database
+async function logMealItems(mealData) {
+    const today = getTodayKey();
+    const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    for (const food of mealData.foods) {
+        const finalPoints = isFoodZeroPoint(food) ? 0 : food.points;
+
+        await addFood({
+            date: today,
+            name: `${food.name} (${food.quantity})`,
+            points: finalPoints,
+            time: currentTime,
+            source: 'ai_voice_log',
+            calories: food.calories
+        });
+    }
+}
+
+// Helper: Build confirmation message for logged meal
+function buildMealConfirmation(mealData, context) {
+    const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const mealTypeCapitalized = mealData.mealType.charAt(0).toUpperCase() + mealData.mealType.slice(1);
+
+    let confirmation = `✅ **Meal Logged!**\n\n**${mealTypeCapitalized}:**\n`;
+
+    // Add each food item
+    mealData.foods.forEach(food => {
+        const isZeroPoint = isFoodZeroPoint(food);
+        const pointsDisplay = isZeroPoint
+            ? `<span style="color: #28a745; font-weight: bold;">0 pts 🌟</span>`
+            : `${food.points} pts`;
+
+        confirmation += `• ${food.name} (${food.quantity}): ${pointsDisplay}`;
+        if (food.portionNote) {
+            confirmation += ` <em>${food.portionNote}</em>`;
         }
-        
-        if (!response.ok) {
-            throw new Error('API request failed');
+        confirmation += `\n`;
+    });
+
+    // Add summary
+    const remaining = context.dailyPoints - (context.todayStats.foodPoints + mealData.totalPoints);
+    confirmation += `\n**Total:** ${mealData.totalPoints} pts\n`;
+    confirmation += `**Time:** ${currentTime}\n\n`;
+    confirmation += `**Points Remaining Today:** ${remaining} pts`;
+
+    // Add zero-point tip if applicable
+    const hasZeroPoint = mealData.foods.some(isFoodZeroPoint);
+    if (hasZeroPoint) {
+        confirmation += `\n\n💡 <em>Great choice using zero-point foods! They let you eat more while staying in budget.</em>`;
+    }
+
+    return confirmation;
+}
+
+async function processMealLogging(userMessage, context) {
+    try {
+        // Call API to parse meal
+        const responseText = await callMealParsingAPI(userMessage);
+
+        // Parse and validate response
+        const parsedResult = parseMealDataFromResponse(responseText);
+
+        if (parsedResult.type === 'clarification') {
+            return parsedResult.text;
         }
-        
-        const data = await response.json();
-        const responseText = data.content[0].text;
-        
-        // Parse JSON from response
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-            // AI is asking for clarification
-            return responseText;
-        }
-        
-        const mealData = JSON.parse(jsonMatch[0]);
-        
-        // Check if AI needs clarification
-        if (mealData.needsClarification) {
-            return `❓ ${mealData.question}\n\nPlease be specific with quantities for accurate point tracking!`;
-        }
-        
-        // Log each food item to database
-        const today = getTodayKey();
-        const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        
-        for (const food of mealData.foods) {
-            // Double-check with our zero-point detector
-            const foodIsZeroPoint = food.isZeroPoint || isZeroPointFood(food.name);
-            const finalPoints = foodIsZeroPoint ? 0 : food.points;
-            
-            await addFood({
-                date: today,
-                name: `${food.name} (${food.quantity})`,
-                points: finalPoints,
-                time: currentTime,
-                source: 'ai_voice_log',
-                calories: food.calories
-            });
-        }
-        
+
+        // Log meal items to database
+        await logMealItems(parsedResult.data);
+
         // Update UI
         await updateAllUI();
-        
-        // Return confirmation
-        let confirmation = `✅ **Meal Logged!**\n\n`;
-        confirmation += `**${mealData.mealType.charAt(0).toUpperCase() + mealData.mealType.slice(1)}:**\n`;
-        
-        mealData.foods.forEach(food => {
-            const foodIsZeroPoint = food.isZeroPoint || isZeroPointFood(food.name);
-            const pointsDisplay = foodIsZeroPoint ? 
-                `<span style="color: #28a745; font-weight: bold;">0 pts 🌟</span>` : 
-                `${food.points} pts`;
-            
-            confirmation += `• ${food.name} (${food.quantity}): ${pointsDisplay}`;
-            if (food.portionNote) {
-                confirmation += ` <em>${food.portionNote}</em>`;
-            }
-            confirmation += `\n`;
-        });
-        
-        confirmation += `\n**Total:** ${mealData.totalPoints} pts\n`;
-        confirmation += `**Time:** ${currentTime}\n\n`;
-        
-        const remaining = context.dailyPoints - (context.todayStats.foodPoints + mealData.totalPoints);
-        confirmation += `**Points Remaining Today:** ${remaining} pts`;
-        
-        // Add zero-point tip if any zero-point foods were logged
-        const hasZeroPoint = mealData.foods.some(f => f.isZeroPoint || isZeroPointFood(f.name));
-        if (hasZeroPoint) {
-            confirmation += `\n\n💡 <em>Great choice using zero-point foods! They let you eat more while staying in budget.</em>`;
-        }
-        
-        return confirmation;
-        
+
+        // Return confirmation message
+        return buildMealConfirmation(parsedResult.data, context);
+
     } catch (error) {
         console.error('Meal logging error:', error);
+
+        if (error.message === 'API_NOT_CONFIGURED') {
+            return "⚠️ API key not configured. I can't parse your meal automatically. Please use the manual food logger.";
+        }
+
         return `❌ Sorry, I couldn't parse that meal. Try being more specific with quantities:\n\n"I had 3 eggs, 2 slices of toast, and 1 tablespoon of butter for breakfast"\n\n"I ate 1 cup of cooked rice with 4 oz grilled chicken"\n\nOr use the manual food logger.`;
     }
 }
@@ -5224,7 +5285,7 @@ async function emailGroceryList() {
 
     // Get pantry items from last 30 days
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const allPantry = await dbGetAll('pantry');
+    const allPantry = await dbGetAll('pantry_items');
     const recentItems = allPantry.filter(p => p.date >= thirtyDaysAgo);
     
     // Group by category (simplified)
@@ -6560,9 +6621,7 @@ function closeScan() {
 // HELPER FUNCTIONS FOR AUTH SYSTEM
 // ============================================================================
 
-function getCurrentUserId() {
-    return localStorage.getItem('currentUserId');
-}
+// Note: getCurrentUserId() is defined in auth.js
 
 function getCurrentUser() {
     return currentUser;

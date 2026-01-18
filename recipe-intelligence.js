@@ -120,11 +120,96 @@ const RecipeSchema = {
  * @param {Object} context - User context
  * @returns {Number} Score 0-100
  */
-async function calculateRecipeScore(recipe, context = {}) {
-    let score = 0;
-    let breakdown = {};
-    
-    // Get context if not provided
+// Constants: Recipe scoring weights
+const RECIPE_SCORE_WEIGHTS = {
+    MAJOR_INGREDIENTS: 65,
+    USER_RATING: 5,
+    DAILY_ACTIVITY: 5,
+    COOKING_TIME: 5,
+    LAST_COOKED: 5,
+    DAY_OF_WEEK: 10,
+    AVAILABLE_POINTS: 5
+};
+
+// Helper: Score value against descending thresholds (higher value = higher score)
+function scoreByThresholds(value, thresholds, maxScore) {
+    for (let i = 0; i < thresholds.length; i++) {
+        if (value >= thresholds[i]) {
+            return maxScore - i;
+        }
+    }
+    return 0;
+}
+
+// Helper: Score major ingredients in stock
+function scoreMajorIngredients(recipe, pantry) {
+    const majorInStock = recipe.majorIngredients.filter(ing => {
+        const inPantry = pantry.some(p => p.name.toLowerCase().includes(ing.toLowerCase()));
+        const isZeroPoint = isZeroPointFood(ing);
+        return inPantry && isZeroPoint;
+    });
+
+    const percentage = majorInStock.length / recipe.majorIngredients.length;
+    return Math.round(percentage * RECIPE_SCORE_WEIGHTS.MAJOR_INGREDIENTS);
+}
+
+// Helper: Score user rating
+function scoreUserRating(recipe) {
+    if (!recipe.userRating) return 0;
+    return (recipe.userRating / 5) * RECIPE_SCORE_WEIGHTS.USER_RATING;
+}
+
+// Helper: Score daily activity
+function scoreDailyActivity(activityMinutes) {
+    return scoreByThresholds(activityMinutes, [120, 90, 60, 30], RECIPE_SCORE_WEIGHTS.DAILY_ACTIVITY);
+}
+
+// Helper: Score cooking time
+function scoreCookingTime(recipe) {
+    const totalTime = recipe.totalTime || (recipe.prepTime + recipe.cookTime);
+    return scoreByThresholds(totalTime, [10, 15, 20, 25, 30].reverse(), RECIPE_SCORE_WEIGHTS.COOKING_TIME);
+}
+
+// Helper: Score recipe recency
+function scoreLastCooked(recipe) {
+    if (!recipe.lastMade) {
+        return RECIPE_SCORE_WEIGHTS.LAST_COOKED; // Never made = full points
+    }
+
+    const daysAgo = Math.floor((new Date() - new Date(recipe.lastMade)) / (1000 * 60 * 60 * 24));
+    return scoreByThresholds(daysAgo, [14, 10, 7, 3, 1], RECIPE_SCORE_WEIGHTS.LAST_COOKED);
+}
+
+// Helper: Score day of week
+function scoreDayOfWeek(recipe) {
+    const dayOfWeek = new Date().getDay(); // 0=Sun, 6=Sat
+    const servings = recipe.servings;
+
+    // Day base scores with serving bonuses
+    const dayConfig = [
+        { base: 7, servingCap: 3 }, // Sunday
+        { base: 1, servingCap: 1 }, // Monday
+        { base: 2, servingCap: 1 }, // Tuesday
+        { base: 3, servingCap: 2 }, // Wednesday
+        { base: 4, servingCap: 2 }, // Thursday
+        { base: 5, servingCap: 2 }, // Friday
+        { base: 6, servingCap: 3 }  // Saturday
+    ];
+
+    const config = dayConfig[dayOfWeek];
+    const dayScore = config.base + Math.min(servings, config.servingCap);
+
+    return Math.min(dayScore, RECIPE_SCORE_WEIGHTS.DAY_OF_WEEK);
+}
+
+// Helper: Score points per serving
+function scorePointsPerServing(recipe) {
+    const pps = recipe.pointsPerServing || (recipe.totalPoints / recipe.servings);
+    return scoreByThresholds(pps, [0, 1, 2, 3, 4].reverse(), RECIPE_SCORE_WEIGHTS.AVAILABLE_POINTS);
+}
+
+// Helper: Ensure context data is loaded
+async function ensureRecipeContext(context) {
     if (!context.pantry) {
         context.pantry = await BotDataAPI.queryPantry();
     }
@@ -136,110 +221,28 @@ async function calculateRecipeScore(recipe, context = {}) {
         const stats = await BotDataAPI.getUserStats();
         context.availablePoints = stats.pointsRemaining;
     }
-    
-    // 1. MAJOR INGREDIENTS IN STOCK (ZERO-POINT) - 65%
-    const majorInStock = recipe.majorIngredients.filter(ing => {
-        const inPantry = context.pantry.some(p => 
-            p.name.toLowerCase().includes(ing.toLowerCase())
-        );
-        const isZeroPoint = isZeroPointFood(ing);
-        return inPantry && isZeroPoint;
-    });
-    const majorScore = (majorInStock.length / recipe.majorIngredients.length) * 65;
-    breakdown.majorIngredientsInStock = Math.round(majorScore);
-    score += majorScore;
-    
-    // 2. USER RATING - 5%
-    if (recipe.userRating) {
-        const ratingScore = (recipe.userRating / 5) * 5;
-        breakdown.userRating = ratingScore;
-        score += ratingScore;
-    } else {
-        breakdown.userRating = 0;
-    }
-    
-    // 3. DAILY ACTIVITY - 5%
-    // More activity = more points allowed = higher score for higher-point recipes
-    let activityScore;
-    if (context.dailyActivity >= 120) activityScore = 5;
-    else if (context.dailyActivity >= 90) activityScore = 3;
-    else if (context.dailyActivity >= 60) activityScore = 2;
-    else if (context.dailyActivity >= 30) activityScore = 1;
-    else activityScore = 0;
-    breakdown.dailyActivity = activityScore;
-    score += activityScore;
-    
-    // 4. TOTAL COOKING TIME - 5%
-    // Shorter = better (weeknight friendly)
-    const totalTime = recipe.totalTime || (recipe.prepTime + recipe.cookTime);
-    let timeScore;
-    if (totalTime <= 10) timeScore = 5;
-    else if (totalTime <= 15) timeScore = 4;
-    else if (totalTime <= 20) timeScore = 3;
-    else if (totalTime <= 25) timeScore = 2;
-    else if (totalTime <= 30) timeScore = 1;
-    else timeScore = 0;
-    breakdown.cookingTime = timeScore;
-    score += timeScore;
-    
-    // 5. LAST COOKED - 5%
-    // Longer ago = better (variety)
-    if (recipe.lastMade) {
-        const daysAgo = Math.floor((new Date() - new Date(recipe.lastMade)) / (1000 * 60 * 60 * 24));
-        let recencyScore;
-        if (daysAgo >= 14) recencyScore = 5;
-        else if (daysAgo >= 10) recencyScore = 4;
-        else if (daysAgo >= 7) recencyScore = 3;
-        else if (daysAgo >= 3) recencyScore = 2;
-        else if (daysAgo >= 1) recencyScore = 1;
-        else recencyScore = 0;
-        breakdown.lastCooked = recencyScore;
-        score += recencyScore;
-    } else {
-        breakdown.lastCooked = 5; // Never made = full points
-        score += 5;
-    }
-    
-    // 6. DAY OF WEEK - 10%
-    // Weekend = more servings = meal prep
-    const dayOfWeek = new Date().getDay(); // 0=Sun, 6=Sat
-    const servings = recipe.servings;
-    let dayScore;
-    
-    if (dayOfWeek === 0) { // Sunday
-        dayScore = 7 + Math.min(servings, 3);
-    } else if (dayOfWeek === 6) { // Saturday
-        dayScore = 6 + Math.min(servings, 3);
-    } else if (dayOfWeek === 5) { // Friday
-        dayScore = 5 + Math.min(servings, 2);
-    } else if (dayOfWeek === 4) { // Thursday
-        dayScore = 4 + Math.min(servings, 2);
-    } else if (dayOfWeek === 3) { // Wednesday
-        dayScore = 3 + Math.min(servings, 2);
-    } else if (dayOfWeek === 2) { // Tuesday
-        dayScore = 2 + Math.min(servings, 1);
-    } else { // Monday
-        dayScore = 1 + Math.min(servings, 1);
-    }
-    dayScore = Math.min(dayScore, 10); // Cap at 10
-    breakdown.dayOfWeek = dayScore;
-    score += dayScore;
-    
-    // 7. AVAILABLE POINTS - 5%
-    // Lower points per serving = better when low on points
-    const pps = recipe.pointsPerServing || (recipe.totalPoints / recipe.servings);
-    let pointsScore;
-    if (pps === 0) pointsScore = 5;
-    else if (pps <= 1) pointsScore = 4;
-    else if (pps <= 2) pointsScore = 3;
-    else if (pps <= 3) pointsScore = 2;
-    else if (pps <= 4) pointsScore = 1;
-    else pointsScore = 0;
-    breakdown.availablePoints = pointsScore;
-    score += pointsScore;
-    
+}
+
+async function calculateRecipeScore(recipe, context = {}) {
+    // Ensure context data is available
+    await ensureRecipeContext(context);
+
+    // Calculate each scoring component
+    const breakdown = {
+        majorIngredientsInStock: scoreMajorIngredients(recipe, context.pantry),
+        userRating: scoreUserRating(recipe),
+        dailyActivity: scoreDailyActivity(context.dailyActivity),
+        cookingTime: scoreCookingTime(recipe),
+        lastCooked: scoreLastCooked(recipe),
+        dayOfWeek: scoreDayOfWeek(recipe),
+        availablePoints: scorePointsPerServing(recipe)
+    };
+
+    // Sum all scores
+    const totalScore = Object.values(breakdown).reduce((sum, score) => sum + score, 0);
+
     return {
-        score: Math.round(score * 10) / 10, // Round to 1 decimal
+        score: Math.round(totalScore * 10) / 10, // Round to 1 decimal
         breakdown: breakdown,
         maxScore: 100
     };
