@@ -2678,27 +2678,77 @@ function cancelHoursConfirm() {
     sleepSessionContext.confirmCallback = null;
 }
 
+// Helper: Parse time string (HH:MM) to Date object
+function parseTimeToDate(timeString, baseDate = new Date()) {
+    const [hours, minutes] = timeString.split(':');
+    const date = new Date(baseDate);
+    date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    return date;
+}
+
+// Helper: Calculate sleep duration in hours
+function calculateSleepDuration(startTime, endTime) {
+    return (endTime - startTime) / (1000 * 60 * 60);
+}
+
+// Helper: Unified sleep session end handler with time
+async function handleSleepEndWithTime(session, time, options = {}) {
+    const { startNewSession = false, logPrefix = '⏰', successMessage = 'Sleep logged! Good morning! ☀️' } = options;
+
+    try {
+        const endTime = parseTimeToDate(time);
+        const startTime = new Date(session.start_datetime);
+
+        // If end time is before start, it's the next day
+        if (endTime <= startTime) {
+            endTime.setDate(endTime.getDate() + 1);
+        }
+
+        console.log(`${logPrefix} End time:`, endTime.toISOString());
+
+        // Calculate and validate duration
+        const duration = calculateSleepDuration(startTime, endTime);
+
+        if (duration > 14) {
+            alert('Duration > 14 hours. Please check your times.');
+            return;
+        }
+
+        // Show confirmation dialog
+        showHoursConfirmDialog(duration, async (manualHours) => {
+            await endSleepSession(endTime.toISOString(), manualHours);
+
+            if (startNewSession) {
+                await startSleepSession();
+            }
+
+            alert(successMessage);
+            await updateSleepUI();
+        });
+    } catch (err) {
+        console.error(`${logPrefix} error:`, err);
+        alert('Error: ' + err.message);
+    }
+}
+
 async function handleRetroactiveStart(time) {
     try {
-        // User selected when they fell asleep
         const now = new Date();
-        const [hours, minutes] = time.split(':');
-        const startTime = new Date(now);
-        startTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        
+        const startTime = parseTimeToDate(time, now);
+
         // If time is in the future, assume it was yesterday
         if (startTime > now) {
             startTime.setDate(startTime.getDate() - 1);
         }
-        
+
         console.log('🛏️ Retroactive start:', startTime.toISOString());
-        
+
         // Start session with past time
         await startSleepSession(startTime.toISOString());
-        
+
         // Calculate duration to now
-        const duration = (now - startTime) / (1000 * 60 * 60);
-        
+        const duration = calculateSleepDuration(startTime, now);
+
         // Show confirmation
         showHoursConfirmDialog(duration, async (manualHours) => {
             await endSleepSession(null, manualHours);
@@ -2712,78 +2762,19 @@ async function handleRetroactiveStart(time) {
 }
 
 async function handleRetroactiveEnd(session, time) {
-    try {
-        // User selected when they woke up
-        const [hours, minutes] = time.split(':');
-        const endTime = new Date();
-        endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        
-        const startTime = new Date(session.start_datetime);
-        
-        // If end time is before start, it's the next day
-        if (endTime <= startTime) {
-            endTime.setDate(endTime.getDate() + 1);
-        }
-        
-        console.log('⏰ Retroactive end:', endTime.toISOString());
-        
-        // Calculate duration
-        const duration = (endTime - startTime) / (1000 * 60 * 60);
-        
-        if (duration > 14) {
-            alert('Duration > 14 hours. Please check your times.');
-            return;
-        }
-        
-        // Show confirmation
-        showHoursConfirmDialog(duration, async (manualHours) => {
-            await endSleepSession(endTime.toISOString(), manualHours);
-            
-            // Now start a new session for tonight
-            await startSleepSession();
-            alert('Previous sleep logged! Starting new session. Good night! 😴');
-            await updateSleepUI();
-        });
-    } catch (err) {
-        console.error('Retroactive end error:', err);
-        alert('Error: ' + err.message);
-    }
+    await handleSleepEndWithTime(session, time, {
+        startNewSession: true,
+        logPrefix: '⏰ Retroactive end',
+        successMessage: 'Previous sleep logged! Starting new session. Good night! 😴'
+    });
 }
 
 async function handleEndWithTime(session, time) {
-    try {
-        // User selected when they woke up (for > 14hr session)
-        const [hours, minutes] = time.split(':');
-        const endTime = new Date();
-        endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        
-        const startTime = new Date(session.start_datetime);
-        
-        // If end time is before start, it's the next day
-        if (endTime <= startTime) {
-            endTime.setDate(endTime.getDate() + 1);
-        }
-        
-        console.log('⏰ End with time:', endTime.toISOString());
-        
-        // Calculate duration
-        const duration = (endTime - startTime) / (1000 * 60 * 60);
-        
-        if (duration > 14) {
-            alert('Duration still > 14 hours. Please check your times.');
-            return;
-        }
-        
-        // Show confirmation
-        showHoursConfirmDialog(duration, async (manualHours) => {
-            await endSleepSession(endTime.toISOString(), manualHours);
-            alert('Sleep logged! Good morning! ☀️');
-            await updateSleepUI();
-        });
-    } catch (err) {
-        console.error('End with time error:', err);
-        alert('Error: ' + err.message);
-    }
+    await handleSleepEndWithTime(session, time, {
+        startNewSession: false,
+        logPrefix: '⏰ End with time',
+        successMessage: 'Sleep logged! Good morning! ☀️'
+    });
 }
 
 async function updateSleepUI() {
