@@ -316,17 +316,16 @@ async function initAPIConfig() {
     const config = await loadAPIConfigFromStorage();
 
     // Legacy fallback: check userSettings if nothing found in dedicated storage
+    // ONLY migrate if userSettings has actual non-empty values
     if (!config.proxyUrl && !config.useProxy && userSettings) {
         console.log('🔍 Checking legacy userSettings for API config...');
-        if ('proxyUrl' in userSettings || 'useProxy' in userSettings) {
-            const legacyConfig = {
-                proxyUrl: userSettings.proxyUrl || '',
-                useProxy: userSettings.useProxy || false
-            };
-            console.log('📦 Migrating API config from userSettings:', legacyConfig);
-
-            // Migrate to new storage system
-            await saveAPIConfigToStorage(legacyConfig.proxyUrl, legacyConfig.useProxy);
+        if (userSettings.proxyUrl && userSettings.proxyUrl.trim()) {
+            // Only migrate if there's an actual URL to migrate
+            console.log('📦 Migrating API config from userSettings:', {
+                proxyUrl: userSettings.proxyUrl,
+                useProxy: userSettings.useProxy
+            });
+            await saveAPIConfigToStorage(userSettings.proxyUrl, userSettings.useProxy);
             return;
         }
     }
@@ -1530,6 +1529,16 @@ function validateFieldWithFeedback(value, fieldId, validationFn, errorMessage) {
 
 // Helper: Collect settings form data
 function collectSettingsFormData() {
+    const proxyUrlElement = document.getElementById('settingsProxyUrl');
+    const useProxyElement = document.getElementById('settingsUseProxy');
+
+    console.log('🔍 Reading form fields:', {
+        proxyUrlElement: !!proxyUrlElement,
+        proxyUrlValue: proxyUrlElement?.value,
+        useProxyElement: !!useProxyElement,
+        useProxyValue: useProxyElement?.checked
+    });
+
     return {
         name: document.getElementById('settingsName').value.trim(),
         email: document.getElementById('settingsEmail').value.trim(),
@@ -1540,8 +1549,8 @@ function collectSettingsFormData() {
         heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
         activity: document.getElementById('settingsActivity').value,
         resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
-        proxyUrl: document.getElementById('settingsProxyUrl')?.value.trim() || '',
-        useProxy: document.getElementById('settingsUseProxy')?.checked || false
+        proxyUrl: proxyUrlElement?.value.trim() || '',
+        useProxy: useProxyElement?.checked || false
     };
 }
 
