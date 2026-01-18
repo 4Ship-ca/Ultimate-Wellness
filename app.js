@@ -80,8 +80,8 @@ async function loginUser(userId) {
         const settings = await dbGet('settings', `user_${userId}`);
         if (settings) {
             window.userSettings = settings;
-            initAPIConfig();
-            console.log('✅ User settings loaded');
+            await initAPIConfig();
+            console.log('✅ User settings and API config loaded');
         }
         
         await restoreSession(userId);
@@ -308,18 +308,33 @@ let USE_PROXY = false; // Set to true if using Cloudflare Worker proxy
 let PROXY_URL = ''; // Your Cloudflare Worker URL (if USE_PROXY is true)
 let CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
 
-// Initialize API config from userSettings if available
-function initAPIConfig() {
-    if (userSettings && ('proxyUrl' in userSettings || 'useProxy' in userSettings)) {
-        PROXY_URL = userSettings.proxyUrl || '';
-        USE_PROXY = userSettings.useProxy || false;
-        console.log('🔌 API Config loaded from userSettings:', {
-            proxyUrl: PROXY_URL,
-            useProxy: USE_PROXY
-        });
-    } else {
-        console.warn('⚠️ No API config in userSettings');
+// Initialize API config from dedicated storage (new bulletproof system)
+async function initAPIConfig() {
+    console.log('🔍 initAPIConfig called');
+
+    // Load from dedicated storage (uses both IndexedDB and localStorage)
+    const config = await loadAPIConfigFromStorage();
+
+    // Legacy fallback: check userSettings if nothing found in dedicated storage
+    if (!config.proxyUrl && !config.useProxy && userSettings) {
+        console.log('🔍 Checking legacy userSettings for API config...');
+        if ('proxyUrl' in userSettings || 'useProxy' in userSettings) {
+            const legacyConfig = {
+                proxyUrl: userSettings.proxyUrl || '',
+                useProxy: userSettings.useProxy || false
+            };
+            console.log('📦 Migrating API config from userSettings:', legacyConfig);
+
+            // Migrate to new storage system
+            await saveAPIConfigToStorage(legacyConfig.proxyUrl, legacyConfig.useProxy);
+            return;
+        }
     }
+
+    console.log('✅ API config initialized:', {
+        proxyUrl: PROXY_URL,
+        useProxy: USE_PROXY
+    });
 }
 
 // Update API config (called when settings change)
@@ -330,6 +345,122 @@ function updateAPIConfig(proxyUrl, useProxy) {
         proxyUrl: PROXY_URL,
         useProxy: USE_PROXY
     });
+}
+
+// ============ DEDICATED API CONFIGURATION STORAGE ============
+// Bulletproof API config persistence using both localStorage and IndexedDB
+
+const API_CONFIG_KEY = 'ultimate_wellness_api_config';
+const API_CONFIG_DB_KEY = 'api_config_v1';
+
+// Load API configuration from persistent storage
+async function loadAPIConfigFromStorage() {
+    try {
+        console.log('🔍 Loading API config from storage...');
+
+        // Try IndexedDB first (more reliable, larger storage)
+        const userId = getCurrentUserId();
+        if (userId) {
+            try {
+                const dbConfig = await dbGet('settings', API_CONFIG_DB_KEY);
+                if (dbConfig && dbConfig.config) {
+                    console.log('✅ API config loaded from IndexedDB:', dbConfig.config);
+
+                    // Update global variables
+                    PROXY_URL = dbConfig.config.proxyUrl || '';
+                    USE_PROXY = dbConfig.config.useProxy || false;
+
+                    // Sync to localStorage as backup
+                    localStorage.setItem(API_CONFIG_KEY, JSON.stringify(dbConfig.config));
+
+                    return dbConfig.config;
+                }
+            } catch (dbError) {
+                console.warn('⚠️ Failed to load from IndexedDB:', dbError);
+            }
+        }
+
+        // Fallback to localStorage
+        const localConfig = localStorage.getItem(API_CONFIG_KEY);
+        if (localConfig) {
+            try {
+                const config = JSON.parse(localConfig);
+                console.log('✅ API config loaded from localStorage:', config);
+
+                // Update global variables
+                PROXY_URL = config.proxyUrl || '';
+                USE_PROXY = config.useProxy || false;
+
+                // Sync to IndexedDB
+                await saveAPIConfigToStorage(config.proxyUrl, config.useProxy);
+
+                return config;
+            } catch (parseError) {
+                console.warn('⚠️ Failed to parse localStorage config:', parseError);
+            }
+        }
+
+        console.log('ℹ️ No saved API config found, using defaults');
+        return { proxyUrl: '', useProxy: false };
+
+    } catch (error) {
+        console.error('❌ Error loading API config:', error);
+        return { proxyUrl: '', useProxy: false };
+    }
+}
+
+// Save API configuration to persistent storage
+async function saveAPIConfigToStorage(proxyUrl, useProxy) {
+    try {
+        const config = {
+            proxyUrl: proxyUrl || '',
+            useProxy: useProxy || false,
+            lastModified: new Date().toISOString()
+        };
+
+        console.log('💾 Saving API config to storage:', config);
+
+        // Save to localStorage (instant, synchronous backup)
+        localStorage.setItem(API_CONFIG_KEY, JSON.stringify(config));
+        console.log('✅ API config saved to localStorage');
+
+        // Save to IndexedDB (more reliable, persists better)
+        const dbRecord = {
+            id: API_CONFIG_DB_KEY,
+            config: config,
+            timestamp: new Date().toISOString()
+        };
+
+        await dbPut('settings', dbRecord);
+        console.log('✅ API config saved to IndexedDB');
+
+        // Update global variables
+        PROXY_URL = config.proxyUrl;
+        USE_PROXY = config.useProxy;
+
+        // Also update userSettings if it exists (for backward compatibility)
+        if (window.userSettings) {
+            window.userSettings.proxyUrl = config.proxyUrl;
+            window.userSettings.useProxy = config.useProxy;
+
+            // Save userSettings back to DB
+            const userId = getCurrentUserId();
+            if (userId) {
+                try {
+                    await dbPut('settings', window.userSettings);
+                    console.log('✅ API config also synced to userSettings');
+                } catch (syncError) {
+                    console.warn('⚠️ Failed to sync to userSettings:', syncError);
+                }
+            }
+        }
+
+        return true;
+
+    } catch (error) {
+        console.error('❌ Error saving API config:', error);
+        return false;
+    }
 }
 
 // Exercise types for tracking
@@ -427,8 +558,9 @@ async function initializeAfterLogin() {
         window.userSettings = settings;
         console.log('✅ userSettings loaded:', settings.name);
 
-        // Initialize API configuration from settings
-        initAPIConfig();
+        // Initialize API configuration from dedicated storage
+        await initAPIConfig();
+        console.log('✅ API configuration loaded');
 
         // Track login
         if (typeof trackUserLogin === 'function') {
@@ -721,20 +853,20 @@ async function init() {
 //         // Load user settings
         userSettings = await getSettings();
         
-        // Initialize API configuration from settings
+        // Initialize API configuration from dedicated storage
         if (userSettings) {
-            initAPIConfig();
+            await initAPIConfig();
         }
-        
+
         // If no settings found, try to restore from localStorage backup
         if (!userSettings) {
             console.log('🔍 No user settings found, checking for backup...');
             userSettings = await restoreSettingsFromBackup();
-            
+
             if (userSettings) {
                 console.log('✅ User settings restored from backup!');
                 alert('👋 Welcome back!\n\nYour settings were automatically restored from backup.');
-                initAPIConfig(); // Initialize API config after restore
+                await initAPIConfig(); // Initialize API config after restore
             }
         }
         
@@ -1559,6 +1691,18 @@ async function saveSettings() {
         const heightInInches = (formData.heightFeet * 12) + formData.heightInches;
         const age = calculateAge(formData.birthday);
 
+        console.log('🔍 Form data collected:', {
+            proxyUrl: formData.proxyUrl,
+            useProxy: formData.useProxy
+        });
+
+        console.log('🔍 Current settings from DB:', {
+            id: currentSettings.id,
+            userId: currentSettings.userId,
+            proxyUrl: currentSettings.proxyUrl,
+            useProxy: currentSettings.useProxy
+        });
+
         const updatedSettings = {
             ...currentSettings,
             name: formData.name,
@@ -1576,6 +1720,13 @@ async function saveSettings() {
             lastModified: new Date().toISOString()
         };
 
+        console.log('🔍 Updated settings to save:', {
+            id: updatedSettings.id,
+            userId: updatedSettings.userId,
+            proxyUrl: updatedSettings.proxyUrl,
+            useProxy: updatedSettings.useProxy
+        });
+
         // Handle points recalculation if needed
         let pointsRecalculated = false;
         if (didPointsSettingsChange(currentSettings, formData)) {
@@ -1590,10 +1741,13 @@ async function saveSettings() {
 
         // Save to database and update global state
         await dbPut('settings', updatedSettings);
-        console.log('✅ Settings saved to database');
+        console.log('✅ Settings saved to database with key:', updatedSettings.id);
 
         window.userSettings = updatedSettings;
-        updateAPIConfig(updatedSettings.proxyUrl, updatedSettings.useProxy);
+
+        // Save API config to dedicated storage (bulletproof persistence)
+        await saveAPIConfigToStorage(formData.proxyUrl, formData.useProxy);
+        console.log('✅ API config saved to dedicated storage');
 
         // Save session and update UI
         await saveSession();
@@ -4946,6 +5100,14 @@ async function switchTab(tab) {
     
     // Load settings if needed
     if (tab === 'settings') {
+        console.log('🔍 Switching to settings tab, current userSettings:', {
+            exists: !!userSettings,
+            id: userSettings?.id,
+            userId: userSettings?.userId,
+            proxyUrl: userSettings?.proxyUrl,
+            useProxy: userSettings?.useProxy
+        });
+
         // Safety check: reload userSettings if missing
         if (!userSettings) {
             console.warn('⚠️ userSettings missing, reloading...');
@@ -4953,18 +5115,21 @@ async function switchTab(tab) {
             if (userId) {
                 try {
                     userSettings = await dbGet('settings', `user_${userId}`);
-                    console.log('✅ userSettings reloaded');
+                    console.log('✅ userSettings reloaded:', {
+                        id: userSettings?.id,
+                        userId: userSettings?.userId,
+                        proxyUrl: userSettings?.proxyUrl,
+                        useProxy: userSettings?.useProxy
+                    });
                 } catch (error) {
                     console.error('❌ Failed to reload userSettings:', error);
                 }
             }
         }
-        
-        // Ensure API config is loaded
-        if (userSettings) {
-            initAPIConfig();
-        }
-        
+
+        // Ensure API config is loaded from dedicated storage
+        await initAPIConfig();
+
         if (userSettings) {
             const els = {
             name: document.getElementById('settingsName'),
@@ -4980,7 +5145,7 @@ async function switchTab(tab) {
             proxyUrl: document.getElementById('settingsProxyUrl'),
             useProxy: document.getElementById('settingsUseProxy')
         };
-        
+
         if (els.name) els.name.value = userSettings.name || '';
         if (els.email) els.email.value = userSettings.email || '';
         if (els.birthday) els.birthday.value = userSettings.birthday || '';
@@ -4988,8 +5153,17 @@ async function switchTab(tab) {
         if (els.weight) els.weight.value = userSettings.currentWeight || '';
         if (els.goalWeight) els.goalWeight.value = userSettings.goalWeight || '';
         if (els.resetTime) els.resetTime.value = userSettings.resetTime || '04:00';
-        if (els.proxyUrl) els.proxyUrl.value = userSettings.proxyUrl || '';
-        if (els.useProxy) els.useProxy.checked = userSettings.useProxy || false;
+
+        // Populate API config from dedicated storage (not from userSettings!)
+        if (els.proxyUrl) els.proxyUrl.value = PROXY_URL || '';
+        if (els.useProxy) els.useProxy.checked = USE_PROXY || false;
+
+        console.log('🔍 Populated API form fields from dedicated storage:', {
+            proxyUrlValue: els.proxyUrl?.value,
+            useProxyChecked: els.useProxy?.checked,
+            PROXY_URL: PROXY_URL,
+            USE_PROXY: USE_PROXY
+        });
         
         const feet = Math.floor((userSettings.heightInInches || 0) / 12);
         const inches = (userSettings.heightInInches || 0) % 12;
