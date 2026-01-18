@@ -151,18 +151,42 @@ async function dbPut(storeName, data) {
     });
 }
 
+async function dbAdd(storeName, data) {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('Database not initialized'));
+            return;
+        }
+
+        try {
+            // Generate a unique ID for the new record
+            const id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            const dataWithId = { ...data, id };
+
+            const transaction = db.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.add(dataWithId);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
 async function dbDelete(storeName, key) {
     return new Promise((resolve, reject) => {
         if (!db) {
             reject(new Error('Database not initialized'));
             return;
         }
-        
+
         try {
             const transaction = db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.delete(key);
-            
+
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         } catch (error) {
@@ -309,6 +333,7 @@ window.initDB = initDB;
 window.db = db;
 window.dbGet = dbGet;
 window.dbPut = dbPut;
+window.dbAdd = dbAdd;
 window.dbDelete = dbDelete;
 window.dbGetAll = dbGetAll;
 window.dbGetByIndex = dbGetByIndex;

@@ -359,25 +359,23 @@ async function loadAPIConfigFromStorage() {
         console.log('🔍 Loading API config from storage...');
 
         // Try IndexedDB first (more reliable, larger storage)
-        const userId = getCurrentUserId();
-        if (userId) {
-            try {
-                const dbConfig = await dbGet('settings', API_CONFIG_DB_KEY);
-                if (dbConfig && dbConfig.config) {
-                    console.log('✅ API config loaded from IndexedDB:', dbConfig.config);
+        // API config is global, not user-specific, so don't check for userId
+        try {
+            const dbConfig = await dbGet('settings', API_CONFIG_DB_KEY);
+            if (dbConfig && dbConfig.config) {
+                console.log('✅ API config loaded from IndexedDB:', dbConfig.config);
 
-                    // Update global variables
-                    PROXY_URL = dbConfig.config.proxyUrl || '';
-                    USE_PROXY = dbConfig.config.useProxy || false;
+                // Update global variables
+                PROXY_URL = dbConfig.config.proxyUrl || '';
+                USE_PROXY = dbConfig.config.useProxy || false;
 
-                    // Sync to localStorage as backup
-                    localStorage.setItem(API_CONFIG_KEY, JSON.stringify(dbConfig.config));
+                // Sync to localStorage as backup
+                localStorage.setItem(API_CONFIG_KEY, JSON.stringify(dbConfig.config));
 
-                    return dbConfig.config;
-                }
-            } catch (dbError) {
-                console.warn('⚠️ Failed to load from IndexedDB:', dbError);
+                return dbConfig.config;
             }
+        } catch (dbError) {
+            console.warn('⚠️ Failed to load from IndexedDB:', dbError);
         }
 
         // Fallback to localStorage
