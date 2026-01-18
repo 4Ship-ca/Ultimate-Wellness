@@ -3468,9 +3468,6 @@ function closeScan() {
     document.getElementById('scanResult').innerHTML = '';
 }
 
-function startCamera() {}
-function handleFileUpload(event) {}
-
 // ============ UI UPDATES ============
 async function updateWeightDisplay() {
     // Safety check: wait for userSettings
@@ -4226,11 +4223,6 @@ async function callClaudeAPI(userMessage, context) {
         console.error('Claude API error:', error);
         return getFallbackResponse(userMessage, context);
     }
-}
-
-function isRecipeRequest(message) {
-    const recipeKeywords = ['recipe', 'meal', 'cook', 'make', 'prepare', 'dinner', 'lunch', 'breakfast', 'snack', 'food idea'];
-    return recipeKeywords.some(keyword => message.toLowerCase().includes(keyword));
 }
 
 function isMealLoggingRequest(message) {
@@ -5293,7 +5285,7 @@ async function emailGroceryList() {
 
     // Get pantry items from last 30 days
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const allPantry = await dbGetAll('pantry');
+    const allPantry = await dbGetAll('pantry_items');
     const recentItems = allPantry.filter(p => p.date >= thirtyDaysAgo);
     
     // Group by category (simplified)
@@ -6629,9 +6621,7 @@ function closeScan() {
 // HELPER FUNCTIONS FOR AUTH SYSTEM
 // ============================================================================
 
-function getCurrentUserId() {
-    return localStorage.getItem('currentUserId');
-}
+// Note: getCurrentUserId() is defined in auth.js
 
 function getCurrentUser() {
     return currentUser;
