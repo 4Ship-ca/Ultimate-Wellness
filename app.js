@@ -80,10 +80,7 @@ async function loginUser(userId) {
         const settings = await dbGet('settings', `user_${userId}`);
         if (settings) {
             window.userSettings = settings;
-            if (settings.proxyUrl) {
-                PROXY_URL = settings.proxyUrl;
-                USE_PROXY = settings.useProxy || false;
-            }
+            initAPIConfig();
             console.log('✅ User settings loaded');
         }
         
@@ -429,7 +426,10 @@ async function initializeAfterLogin() {
         // Set global userSettings
         window.userSettings = settings;
         console.log('✅ userSettings loaded:', settings.name);
-        
+
+        // Initialize API configuration from settings
+        initAPIConfig();
+
         // Track login
         if (typeof trackUserLogin === 'function') {
             await trackUserLogin();
