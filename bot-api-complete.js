@@ -9,11 +9,12 @@ const BotDataAPI = {
      * Get comprehensive user stats for today
      */
     async getUserStats() {
+        const userId = getCurrentUserId();
         const today = getTodayKey();
-        const foods = await getFoodsByDate(today);
-        const exercise = await getExerciseByDate(today);
-        const water = await getWaterByDate(today);
-        const tasks = await getTasksByDate(today);
+        const foods = await getFoodsByDate(userId, today);
+        const exercise = await getExerciseByDate(userId, today);
+        const water = await getWaterByDate(userId, today);
+        const tasks = await getTasksByDate(userId, today);
         
         return {
             // Points
@@ -237,8 +238,9 @@ const BotDataAPI = {
      * Get today's water
      */
     async getTodayWater() {
+        const userId = getCurrentUserId();
         const today = getTodayKey();
-        return await getWaterByDate(today);
+        return await getWaterByDate(userId, today);
     },
     
     /**
@@ -554,9 +556,10 @@ const BotDataAPI = {
      * Add water
      */
     async addWater(drops = 1) {
+        const userId = getCurrentUserId();
         const today = getTodayKey();
-        const water = await getWaterByDate(today);
-        
+        const water = await getWaterByDate(userId, today);
+
         water.drops = (water.drops || 0) + drops;
         
         await dbPut('water', { date: today, ...water });

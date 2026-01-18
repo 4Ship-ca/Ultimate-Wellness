@@ -2178,8 +2178,9 @@ async function updateWater(date, drops, foodWater) {
 
 async function fillWaterDrop(dropNum) {
     const today = getTodayKey();
-    const currentWater = await getWaterByDate(today);
-    
+    const userId = getCurrentUserId();
+    const currentWater = await getWaterByDate(userId, today);
+
     let newDrops = currentWater.drops || 0;
     
     // Toggle: if clicking already filled, unfill
@@ -2195,7 +2196,8 @@ async function fillWaterDrop(dropNum) {
 
 async function updateWaterDisplay() {
     const today = getTodayKey();
-    const water = await getWaterByDate(today);
+    const userId = getCurrentUserId();
+    const water = await getWaterByDate(userId, today);
     const manualDrops = water.drops || 0; // Manually clicked drops
     const foodWaterMl = water.foodWater || 0;
     
@@ -4174,6 +4176,7 @@ function removeThinkingIndicator(id) {
 
 async function buildAIContext() {
     // Gather user context for better AI responses
+    const userId = getCurrentUserId();
     const context = {
         currentTab: currentTab,
         userName: userSettings?.name || 'there',
@@ -4183,11 +4186,11 @@ async function buildAIContext() {
         today: getTodayKey(),
         preferences: {}
     };
-    
+
     // Get today's stats
-    const foods = await getFoodsByDate(context.today);
-    const exercise = await getExerciseByDate(context.today);
-    const water = await getWaterByDate(context.today);
+    const foods = await getFoodsByDate(userId, context.today);
+    const exercise = await getExerciseByDate(userId, context.today);
+    const water = await getWaterByDate(userId, context.today);
     
     context.todayStats = {
         foodPoints: foods.reduce((sum, f) => sum + f.points, 0),
