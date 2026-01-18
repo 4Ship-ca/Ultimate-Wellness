@@ -4283,9 +4283,8 @@ function isMealLoggingRequest(message) {
            (/\d+\s*(egg|toast|bacon|sausage|pancake|waffle|coffee|banana|apple|chicken|rice|pasta|potato)/i.test(lowerMsg));
 }
 
-async function processMealLogging(userMessage, context) {
-    // Ask Claude to parse the meal and calculate points
-    const systemPrompt = `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
+// Constant: Meal logging AI system prompt
+const MEAL_LOGGING_SYSTEM_PROMPT = `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
 
 ZERO-POINT FOODS (0 pts - DO NOT charge points for these):
 - Vegetables: Most non-starchy vegetables (broccoli, spinach, tomatoes, peppers, etc.)
@@ -4330,7 +4329,7 @@ RECIPE SCALING RULES:
 
 PORTION PATTERNS TO DETECT:
 - "1 cup of rice" → 1 cup
-- "2 cups cooked rice" → 2 cups  
+- "2 cups cooked rice" → 2 cups
 - "handful of nuts" → ~1 oz
 - "small apple" → 1 medium apple (0 pts - zero-point!)
 - "large chicken breast" → 6-8 oz (0 pts if grilled)
@@ -4380,119 +4379,152 @@ If clarification needed:
   "question": "How much rice did you have? (1 cup, 2 cups, etc.)"
 }`;
 
-    try {
-        // Check if API key is configured (if not using proxy)
-        if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
-            return "⚠️ API key not configured. I can't parse your meal automatically. Please use the manual food logger.";
-        }
-        
-        const requestBody = {
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            system: systemPrompt,
-            messages: [
-                { role: 'user', content: userMessage }
-            ]
+// Helper: Call Claude API for meal parsing
+async function callMealParsingAPI(userMessage) {
+    if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+        throw new Error('API_NOT_CONFIGURED');
+    }
+
+    const requestBody = {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: MEAL_LOGGING_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }]
+    };
+
+    const response = USE_PROXY
+        ? await fetch(PROXY_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody)
+          })
+        : await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': CLAUDE_API_KEY,
+                  'anthropic-version': '2023-06-01'
+              },
+              body: JSON.stringify(requestBody)
+          });
+
+    if (!response.ok) {
+        throw new Error('API request failed');
+    }
+
+    const data = await response.json();
+    return data.content[0].text;
+}
+
+// Helper: Parse and validate meal data from API response
+function parseMealDataFromResponse(responseText) {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+        // AI is asking for clarification in plain text
+        return { type: 'clarification', text: responseText };
+    }
+
+    const mealData = JSON.parse(jsonMatch[0]);
+
+    if (mealData.needsClarification) {
+        return {
+            type: 'clarification',
+            text: `❓ ${mealData.question}\n\nPlease be specific with quantities for accurate point tracking!`
         };
-        
-        let response;
-        
-        if (USE_PROXY) {
-            response = await fetch(PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } else {
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CLAUDE_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify(requestBody)
-            });
+    }
+
+    return { type: 'success', data: mealData };
+}
+
+// Helper: Check if food is zero-point (with fallback)
+function isFoodZeroPoint(food) {
+    return food.isZeroPoint || isZeroPointFood(food.name);
+}
+
+// Helper: Log parsed meal items to database
+async function logMealItems(mealData) {
+    const today = getTodayKey();
+    const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    for (const food of mealData.foods) {
+        const finalPoints = isFoodZeroPoint(food) ? 0 : food.points;
+
+        await addFood({
+            date: today,
+            name: `${food.name} (${food.quantity})`,
+            points: finalPoints,
+            time: currentTime,
+            source: 'ai_voice_log',
+            calories: food.calories
+        });
+    }
+}
+
+// Helper: Build confirmation message for logged meal
+function buildMealConfirmation(mealData, context) {
+    const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const mealTypeCapitalized = mealData.mealType.charAt(0).toUpperCase() + mealData.mealType.slice(1);
+
+    let confirmation = `✅ **Meal Logged!**\n\n**${mealTypeCapitalized}:**\n`;
+
+    // Add each food item
+    mealData.foods.forEach(food => {
+        const isZeroPoint = isFoodZeroPoint(food);
+        const pointsDisplay = isZeroPoint
+            ? `<span style="color: #28a745; font-weight: bold;">0 pts 🌟</span>`
+            : `${food.points} pts`;
+
+        confirmation += `• ${food.name} (${food.quantity}): ${pointsDisplay}`;
+        if (food.portionNote) {
+            confirmation += ` <em>${food.portionNote}</em>`;
         }
-        
-        if (!response.ok) {
-            throw new Error('API request failed');
+        confirmation += `\n`;
+    });
+
+    // Add summary
+    const remaining = context.dailyPoints - (context.todayStats.foodPoints + mealData.totalPoints);
+    confirmation += `\n**Total:** ${mealData.totalPoints} pts\n`;
+    confirmation += `**Time:** ${currentTime}\n\n`;
+    confirmation += `**Points Remaining Today:** ${remaining} pts`;
+
+    // Add zero-point tip if applicable
+    const hasZeroPoint = mealData.foods.some(isFoodZeroPoint);
+    if (hasZeroPoint) {
+        confirmation += `\n\n💡 <em>Great choice using zero-point foods! They let you eat more while staying in budget.</em>`;
+    }
+
+    return confirmation;
+}
+
+async function processMealLogging(userMessage, context) {
+    try {
+        // Call API to parse meal
+        const responseText = await callMealParsingAPI(userMessage);
+
+        // Parse and validate response
+        const parsedResult = parseMealDataFromResponse(responseText);
+
+        if (parsedResult.type === 'clarification') {
+            return parsedResult.text;
         }
-        
-        const data = await response.json();
-        const responseText = data.content[0].text;
-        
-        // Parse JSON from response
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-            // AI is asking for clarification
-            return responseText;
-        }
-        
-        const mealData = JSON.parse(jsonMatch[0]);
-        
-        // Check if AI needs clarification
-        if (mealData.needsClarification) {
-            return `❓ ${mealData.question}\n\nPlease be specific with quantities for accurate point tracking!`;
-        }
-        
-        // Log each food item to database
-        const today = getTodayKey();
-        const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        
-        for (const food of mealData.foods) {
-            // Double-check with our zero-point detector
-            const foodIsZeroPoint = food.isZeroPoint || isZeroPointFood(food.name);
-            const finalPoints = foodIsZeroPoint ? 0 : food.points;
-            
-            await addFood({
-                date: today,
-                name: `${food.name} (${food.quantity})`,
-                points: finalPoints,
-                time: currentTime,
-                source: 'ai_voice_log',
-                calories: food.calories
-            });
-        }
-        
+
+        // Log meal items to database
+        await logMealItems(parsedResult.data);
+
         // Update UI
         await updateAllUI();
-        
-        // Return confirmation
-        let confirmation = `✅ **Meal Logged!**\n\n`;
-        confirmation += `**${mealData.mealType.charAt(0).toUpperCase() + mealData.mealType.slice(1)}:**\n`;
-        
-        mealData.foods.forEach(food => {
-            const foodIsZeroPoint = food.isZeroPoint || isZeroPointFood(food.name);
-            const pointsDisplay = foodIsZeroPoint ? 
-                `<span style="color: #28a745; font-weight: bold;">0 pts 🌟</span>` : 
-                `${food.points} pts`;
-            
-            confirmation += `• ${food.name} (${food.quantity}): ${pointsDisplay}`;
-            if (food.portionNote) {
-                confirmation += ` <em>${food.portionNote}</em>`;
-            }
-            confirmation += `\n`;
-        });
-        
-        confirmation += `\n**Total:** ${mealData.totalPoints} pts\n`;
-        confirmation += `**Time:** ${currentTime}\n\n`;
-        
-        const remaining = context.dailyPoints - (context.todayStats.foodPoints + mealData.totalPoints);
-        confirmation += `**Points Remaining Today:** ${remaining} pts`;
-        
-        // Add zero-point tip if any zero-point foods were logged
-        const hasZeroPoint = mealData.foods.some(f => f.isZeroPoint || isZeroPointFood(f.name));
-        if (hasZeroPoint) {
-            confirmation += `\n\n💡 <em>Great choice using zero-point foods! They let you eat more while staying in budget.</em>`;
-        }
-        
-        return confirmation;
-        
+
+        // Return confirmation message
+        return buildMealConfirmation(parsedResult.data, context);
+
     } catch (error) {
         console.error('Meal logging error:', error);
+
+        if (error.message === 'API_NOT_CONFIGURED') {
+            return "⚠️ API key not configured. I can't parse your meal automatically. Please use the manual food logger.";
+        }
+
         return `❌ Sorry, I couldn't parse that meal. Try being more specific with quantities:\n\n"I had 3 eggs, 2 slices of toast, and 1 tablespoon of butter for breakfast"\n\n"I ate 1 cup of cooked rice with 4 oz grilled chicken"\n\nOr use the manual food logger.`;
     }
 }
