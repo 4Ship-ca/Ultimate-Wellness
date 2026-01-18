@@ -310,8 +310,8 @@ let CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
 
 // Initialize API config from userSettings if available
 function initAPIConfig() {
-    if (userSettings && userSettings.proxyUrl) {
-        PROXY_URL = userSettings.proxyUrl;
+    if (userSettings && ('proxyUrl' in userSettings || 'useProxy' in userSettings)) {
+        PROXY_URL = userSettings.proxyUrl || '';
         USE_PROXY = userSettings.useProxy || false;
         console.log('🔌 API Config loaded from userSettings:', {
             proxyUrl: PROXY_URL,
@@ -2305,6 +2305,23 @@ async function getSettings() {
     } catch (error) {
         console.warn('Error getting settings:', error);
         return null;
+    }
+}
+
+async function getPreferences() {
+    try {
+        // Preferences are stored as part of userSettings
+        // Return preference-related fields or defaults
+        return {
+            noGoFoods: userSettings?.noGoFoods || [],
+            ingredientPrefs: userSettings?.ingredientPrefs || {}
+        };
+    } catch (error) {
+        console.warn('Error getting preferences:', error);
+        return {
+            noGoFoods: [],
+            ingredientPrefs: {}
+        };
     }
 }
 
