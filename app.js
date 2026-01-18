@@ -518,7 +518,7 @@ async function getIncompleteSleepSession() {
         const today = new Date().toISOString().split('T')[0];
         const userId = getCurrentUserId();
         const sleepLogs = await dbGetByUserAndDate('sleep', userId, today);
-        return sleepLogs.find(log => log.startTime && !log.endTime) || null;
+        return sleepLogs.find(log => log.start_datetime && !log.end_datetime) || null;
     } catch (error) {
         console.warn('Error getting incomplete sleep session:', error);
         return null;
@@ -547,6 +547,61 @@ async function getRecentSleepSessions(days = 7) {
     } catch (error) {
         console.warn('Error getting recent sleep sessions:', error);
         return [];
+    }
+}
+
+async function startSleepSession(startTime) {
+    try {
+        const userId = getCurrentUserId();
+        const now = startTime ? new Date(startTime) : new Date();
+        const date = getCurrentLogicalDay();
+
+        const sleepSession = {
+            id: `sleep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            userId: userId,
+            date: date,
+            start_datetime: now.toISOString(),
+            timestamp: new Date().toISOString()
+        };
+
+        await dbPut('sleep', sleepSession);
+        console.log('😴 Sleep session started:', sleepSession);
+        return sleepSession;
+    } catch (error) {
+        console.error('Error starting sleep session:', error);
+        throw error;
+    }
+}
+
+async function endSleepSession(endTimeISO, manualHours) {
+    try {
+        const incomplete = await getIncompleteSleepSession();
+
+        if (!incomplete) {
+            throw new Error('No active sleep session to end');
+        }
+
+        const startTime = new Date(incomplete.start_datetime);
+        const endTime = endTimeISO ? new Date(endTimeISO) : new Date();
+
+        // Calculate duration
+        let duration;
+        if (manualHours !== null && manualHours !== undefined) {
+            duration = manualHours;
+        } else {
+            duration = (endTime - startTime) / (1000 * 60 * 60);
+        }
+
+        // Update the session
+        incomplete.end_datetime = endTime.toISOString();
+        incomplete.duration_hours = duration;
+
+        await dbPut('sleep', incomplete);
+        console.log('☀️ Sleep session ended:', incomplete);
+        return incomplete;
+    } catch (error) {
+        console.error('Error ending sleep session:', error);
+        throw error;
     }
 }
 
