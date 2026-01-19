@@ -2448,12 +2448,18 @@ async function getPreferences() {
 // ============ ZERO-POINT FOOD HELPERS ============
 
 function isZeroPointFood(foodName) {
-    // Stub function - can be enhanced later with actual zero-point food list
-    return false;
+    if (!foodName) return false;
+    if (!window.ZERO_POINT_FOODS) return false;
+
+    const normalized = foodName.toLowerCase();
+    const allFoods = Object.values(ZERO_POINT_FOODS).flat();
+    return allFoods.some(f => normalized.includes(f.toLowerCase()));
 }
 
 function getZeroPointBadge(foodName) {
-    // Stub function - returns badge HTML for zero-point foods
+    if (isZeroPointFood(foodName)) {
+        return '<span class="zero-point-badge" style="background: #4caf50; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 5px;">0 pts</span>';
+    }
     return '';
 }
 
