@@ -1,0 +1,11 @@
+# Exclude large temp files
+temp/
+*.gz
+*-raw.jsonl
+*-updates.jsonl
+
+# Include processed database files
+!products-canada.json
+!products-index.json
+!products-stats.json
+!download-metadata.json

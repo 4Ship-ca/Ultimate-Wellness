@@ -20,15 +20,17 @@ const UPC_CONFIG = {
     },
     APIS: {
         OPEN_FOOD_FACTS: 'https://world.openfoodfacts.org/api/v2/product',
+        OPEN_FOOD_FACTS_DATA: 'https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz',
         BARCODE_MONSTER: 'https://barcode.monster/api',
         UPCITEMDB: 'https://api.upcitemdb.com/prod/trial/lookup',
         UPCITEMDB_WEB: 'https://www.upcitemdb.com/upc',
-        CLAUDE_API: 'https://api.anthropic.com/v1/messages'
+        CLOUDFLARE_CLAUDE: 'https://ultimate-wellness.your4ship.workers.dev/api/claude',
+        LOCAL_PRODUCTS: './data/products-canada.json' // Git-based local database
     },
     CLAUDE: {
-        API_KEY: null, // Set via localStorage or settings
-        MODEL: 'claude-3-5-haiku-20241022', // Fast, cheap model for web scraping
-        ENABLED: false // Enable Claude API fallback
+        USE_CLOUDFLARE: true, // Use Cloudflare Workers proxy (has your API key)
+        MODEL: 'claude-3-5-sonnet-20241022', // Web-aware model
+        ENABLED: true // Enable Claude API fallback via Cloudflare
     }
 };
 
@@ -139,22 +141,30 @@ async function lookupUPCEnhanced(upc) {
     try {
         console.log(`🔍 Looking up UPC: ${upc}`);
 
-        // LEVEL 1: Local Cache (instant, user-verified)
+        // LEVEL 1: User Cache (IndexedDB - instant, user-verified products)
         const cached = await getUPCProduct(upc);
         if (cached) {
-            console.log('✅ Found in local cache (verified by user)');
+            console.log('✅ Found in user cache (verified)');
             return cached;
         }
 
-        // LEVEL 2: OpenFoodFacts (2.8M+ products, free, CORS-safe)
-        console.log('🌐 Querying Open Food Facts...');
-        let productData = await lookupOpenFoodFacts(upc);
+        // LEVEL 2: Local Git Database (104K+ Canada products, pre-calculated points)
+        console.log('📦 Checking local git database...');
+        let productData = await lookupLocalProducts(upc);
         if (productData) {
-            console.log('✅ Found in Open Food Facts');
+            console.log('✅ Found in local git database');
             return productData;
         }
 
-        // LEVEL 3: Barcode Monster (CORS issues expected)
+        // LEVEL 3: OpenFoodFacts Live API (2.8M+ products, free, CORS-safe)
+        console.log('🌐 Querying OpenFoodFacts live API...');
+        productData = await lookupOpenFoodFacts(upc);
+        if (productData) {
+            console.log('✅ Found in OpenFoodFacts API');
+            return productData;
+        }
+
+        // LEVEL 4: Barcode Monster (CORS issues expected)
         console.log('🌐 Querying Barcode Monster...');
         productData = await lookupBarcodeMonster(upc);
         if (productData) {
@@ -162,7 +172,7 @@ async function lookupUPCEnhanced(upc) {
             return productData;
         }
 
-        // LEVEL 4: UPCitemdb API (CORS issues expected)
+        // LEVEL 5: UPCitemdb API (CORS issues expected)
         console.log('🌐 Querying UPCitemdb...');
         productData = await lookupUPCitemdb(upc);
         if (productData) {
@@ -170,15 +180,15 @@ async function lookupUPCEnhanced(upc) {
             return productData;
         }
 
-        // LEVEL 5: Claude API Web Scraping (paid tier, scrapes UPCitemdb.com)
-        console.log('🤖 Trying Claude API web scraping...');
-        productData = await lookupUPCitemdbViaClaudeAPI(upc);
+        // LEVEL 6: Claude API via Cloudflare (web-aware, scrapes UPCitemdb.com)
+        console.log('🤖 Trying Claude API via Cloudflare...');
+        productData = await lookupViaClaudeAPI(upc);
         if (productData) {
-            console.log('✅ Found via Claude API scraping');
+            console.log('✅ Found via Claude API');
             return productData;
         }
 
-        // LEVEL 6: Manual Entry (user input)
+        // LEVEL 7: Manual Entry (user input)
         console.log('❌ Product not found in any database');
         return null;
 
@@ -310,32 +320,78 @@ async function lookupUPCitemdb(upc) {
     }
 }
 
-async function lookupUPCitemdbViaClaudeAPI(upc) {
+// Global products cache loaded from git
+let PRODUCTS_CACHE = null;
+let PRODUCTS_INDEX = null;
+
+async function loadLocalProductDatabase() {
+    if (PRODUCTS_CACHE) return PRODUCTS_CACHE;
+
     try {
-        // Check if Claude API is enabled and configured
-        const apiKey = localStorage.getItem('claude_api_key') || UPC_CONFIG.CLAUDE.API_KEY;
-        if (!UPC_CONFIG.CLAUDE.ENABLED || !apiKey) {
-            console.log('ℹ️ Claude API not enabled or configured');
+        console.log('📦 Loading local product database from git...');
+        const response = await fetch(UPC_CONFIG.APIS.LOCAL_PRODUCTS);
+        if (!response.ok) {
+            console.log('⚠️ Local product database not found');
+            return null;
+        }
+        PRODUCTS_CACHE = await response.json();
+        console.log(`✅ Loaded ${Object.keys(PRODUCTS_CACHE).length} products from local database`);
+        return PRODUCTS_CACHE;
+    } catch (error) {
+        console.error('Error loading local product database:', error);
+        return null;
+    }
+}
+
+async function lookupLocalProducts(upc) {
+    try {
+        // Load database if not already loaded
+        if (!PRODUCTS_CACHE) {
+            await loadLocalProductDatabase();
+        }
+
+        if (!PRODUCTS_CACHE) return null;
+
+        // Direct UPC lookup
+        const product = PRODUCTS_CACHE[upc];
+        if (product) {
+            console.log(`✅ Found in local git database: ${product.product_name}`);
+            return product;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Local product lookup error:', error);
+        return null;
+    }
+}
+
+async function lookupViaClaudeAPI(upc) {
+    try {
+        if (!UPC_CONFIG.CLAUDE.ENABLED) {
+            console.log('ℹ️ Claude API not enabled');
             return null;
         }
 
-        console.log('🤖 Using Claude API to scrape UPCitemdb.com...');
+        console.log('🤖 Using Claude API (Cloudflare) to lookup product...');
 
         const url = `${UPC_CONFIG.APIS.UPCITEMDB_WEB}/${upc}`;
 
-        const response = await fetch(UPC_CONFIG.APIS.CLAUDE_API, {
+        // Use Cloudflare Workers proxy (has your API key configured)
+        const apiEndpoint = UPC_CONFIG.CLAUDE.USE_CLOUDFLARE
+            ? UPC_CONFIG.APIS.CLOUDFLARE_CLAUDE
+            : 'https://api.anthropic.com/v1/messages';
+
+        const response = await fetch(apiEndpoint, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 model: UPC_CONFIG.CLAUDE.MODEL,
-                max_tokens: 1024,
-                messages: [{
-                    role: 'user',
-                    content: `Fetch and analyze this UPC product page: ${url}
+                upc: upc,
+                url: url,
+                prompt: `Fetch and analyze this UPC product page: ${url}
 
 Extract the following information in JSON format:
 {

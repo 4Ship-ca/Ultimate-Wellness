@@ -1,0 +1,9 @@
+# Data Directory
+
+This directory will contain:
+- products-canada.json - Main product database (104K+ products)
+- products-index.json - Fast lookup index
+- products-stats.json - Database statistics
+- download-metadata.json - Download tracking
+
+Run scripts/download-openfoodfacts.sh to populate this directory.
