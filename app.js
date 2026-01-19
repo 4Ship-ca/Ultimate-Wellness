@@ -6239,12 +6239,15 @@ function handleFileUpload(event) {
 async function analyzeImage(imageDataUrl) {
     const useCase = document.getElementById('useCaseSelect').value;
     currentScanType = useCase;
-    
+
     const resultDiv = document.getElementById('scanResult');
     resultDiv.innerHTML = '<div class="spinner"></div><p>Analyzing image with AI...</p>';
-    
-    // Convert data URL to base64 (remove data:image/jpeg;base64, prefix)
-    const base64Data = imageDataUrl.split(',')[1];
+
+    // Extract media type and base64 data from data URL
+    // Example: "data:image/png;base64,iVBORw..." -> media_type: "image/png", base64Data: "iVBORw..."
+    const [header, base64Data] = imageDataUrl.split(',');
+    const mediaTypeMatch = header.match(/data:(image\/[^;]+)/);
+    const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/jpeg';
     
     try {
         // For barcode scanning, use UPC lookup instead of just AI
@@ -6252,11 +6255,11 @@ async function analyzeImage(imageDataUrl) {
             resultDiv.innerHTML = '<div class="spinner"></div><p>Reading barcode...</p>';
             
             // First, use AI to extract the UPC code
-            const upcPrompt = `Look at this image and extract any UPC, EAN, or barcode number you see. 
-            
+            const upcPrompt = `Look at this image and extract any UPC, EAN, or barcode number you see.
+
 Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, return the longest one. If no barcode is visible, respond with "NONE".`;
-            
-            const upcResponse = await callClaudeVision(base64Data, upcPrompt);
+
+            const upcResponse = await callClaudeVision(base64Data, upcPrompt, mediaType);
             const upcText = upcResponse.rawText || upcResponse.toString();
             const upcMatch = upcText.match(/\d{8,14}/); // Match 8-14 digit codes (UPC/EAN)
             
@@ -6264,7 +6267,7 @@ Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, 
                 // No UPC found, fall back to regular AI analysis
                 resultDiv.innerHTML = '<div class="spinner"></div><p>No barcode detected, analyzing product visually...</p>';
                 const prompt = getAnalysisPrompt(useCase);
-                const response = await callClaudeVision(base64Data, prompt);
+                const response = await callClaudeVision(base64Data, prompt, mediaType);
                 displayScanResult(response, useCase);
                 return;
             }
@@ -6283,7 +6286,7 @@ Respond with ONLY the numeric code, nothing else. If you see multiple barcodes, 
         
         // For other scan types, use regular AI analysis
         const prompt = getAnalysisPrompt(useCase);
-        const response = await callClaudeVision(base64Data, prompt);
+        const response = await callClaudeVision(base64Data, prompt, mediaType);
         
         displayScanResult(response, useCase);
         
@@ -6387,12 +6390,14 @@ Respond in JSON format:
 }
 
 // Call Claude Vision API
-async function callClaudeVision(base64Image, prompt) {
+// Supports multiple image formats: JPEG, PNG, WebP, GIF
+// mediaType should be in format 'image/jpeg', 'image/png', 'image/webp', etc.
+async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
     // Check if API key is configured (if not using proxy)
     if (!USE_PROXY && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
         throw new Error('Claude API key not configured. Add your API key in app.js or set up Cloudflare Worker proxy.');
     }
-    
+
     const requestBody = {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
@@ -6404,7 +6409,7 @@ async function callClaudeVision(base64Image, prompt) {
                         type: 'image',
                         source: {
                             type: 'base64',
-                            media_type: 'image/jpeg',
+                            media_type: mediaType,
                             data: base64Image
                         }
                     },
