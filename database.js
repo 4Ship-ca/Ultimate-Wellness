@@ -131,34 +131,6 @@ async function initDB() {
                             store.createIndex('userId_date', ['userId', 'date'], { unique: false });
                             console.log(`✅ Added userId_date index to ${storeName}`);
                         }
-
-                        // Migrate existing records to add missing userId and date fields
-                        const getAllRequest = store.getAll();
-                        getAllRequest.onsuccess = () => {
-                            const records = getAllRequest.result;
-                            const today = new Date().toISOString().split('T')[0];
-
-                            records.forEach(record => {
-                                let needsUpdate = false;
-
-                                // Add userId if missing (use first user or a default)
-                                if (!record.userId) {
-                                    record.userId = 'user_1'; // Will be reassigned when user logs in
-                                    needsUpdate = true;
-                                }
-
-                                // Add date if missing
-                                if (!record.date) {
-                                    record.date = record.timestamp ? record.timestamp.split('T')[0] : today;
-                                    needsUpdate = true;
-                                }
-
-                                if (needsUpdate) {
-                                    store.put(record);
-                                    console.log(`✅ Migrated ${storeName} record:`, record.id);
-                                }
-                            });
-                        };
                     }
                 });
             }

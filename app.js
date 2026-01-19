@@ -624,8 +624,7 @@ async function getAllMedications() {
     try {
         const userId = getCurrentUserId();
         const allMeds = await dbGetAll('medications');
-        // Filter by userId, or include medications without userId (legacy data)
-        return allMeds.filter(m => !m.userId || m.userId === userId);
+        return allMeds.filter(m => m.userId === userId);
     } catch (error) {
         console.warn('Error getting medications:', error);
         return [];
@@ -2517,8 +2516,7 @@ async function getAllTasks() {
     try {
         const userId = getCurrentUserId();
         const allTasks = await dbGetAll('tasks');
-        // Filter by userId, or include tasks without userId (legacy data)
-        return allTasks.filter(t => !t.userId || t.userId === userId);
+        return allTasks.filter(t => t.userId === userId);
     } catch (error) {
         console.warn('Error getting all tasks:', error);
         return [];
