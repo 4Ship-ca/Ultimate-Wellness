@@ -1596,27 +1596,18 @@
                 <div class="card" style="margin-top: 20px; background: var(--bg-light);">
                     <h4 style="margin-bottom: 10px;">🔌 API Configuration</h4>
                     <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 15px;">
-                        Configure your Cloudflare Worker proxy for AI features (optional).
+                        AI features are permanently enabled using the hardcoded Cloudflare Worker URL.
                     </p>
-                    
+
                     <div class="input-group">
-                        <label>Cloudflare Worker URL</label>
-                        <input type="url" 
-                               id="settingsProxyUrl" 
-                               placeholder="https://ultimate-wellness.your4ship.workers.dev/"
-                               style="font-family: monospace; font-size: 13px;">
+                        <label>Cloudflare Worker URL (Hardcoded)</label>
+                        <input type="url"
+                               id="settingsProxyUrl"
+                               value="https://ultimate-wellness.your4ship.workers.dev/"
+                               readonly
+                               style="font-family: monospace; font-size: 13px; background: var(--bg-dark); cursor: not-allowed; opacity: 0.7;">
                         <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
-                            Leave blank to disable AI features. Enter your Cloudflare Worker URL to enable AI-powered recipe analysis, meal planning, and smart suggestions.
-                        </small>
-                    </div>
-                    
-                    <div class="input-group" style="margin-top: 15px;">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="settingsUseProxy" style="width: auto; height: auto;">
-                            <span>Enable AI Features (Use Cloudflare Worker)</span>
-                        </label>
-                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
-                            When enabled, the app will use your Cloudflare Worker for AI features. Disable to turn off AI functionality.
+                            This URL is hardcoded and cannot be changed. AI-powered recipe analysis, meal planning, and smart suggestions are always enabled.
                         </small>
                     </div>
                 </div>
