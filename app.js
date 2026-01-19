@@ -3429,7 +3429,8 @@ async function addTask(type) {
             date: getTodayKey(),
             type: type,
             text: text,
-            status: 'active'
+            status: 'active',
+            timestamp: new Date().toISOString()
         });
 
         input.value = '';
@@ -3580,10 +3581,10 @@ async function updateDeferredTasks() {
                     </div>
                 </div>
                 <div style="display: flex; gap: 8px;">
-                    <button class="btn" onclick="reactivateTask(${task.id})" style="flex: 1; font-size: 13px; padding: 8px;">
+                    <button class="btn" onclick="reactivateTask('${task.id}')" style="flex: 1; font-size: 13px; padding: 8px;">
                         ▶️ Reactivate
                     </button>
-                    <button class="btn btn-secondary" onclick="deleteDeferredTask(${task.id})" style="flex: 1; font-size: 13px; padding: 8px;">
+                    <button class="btn btn-secondary" onclick="deleteDeferredTask('${task.id}')" style="flex: 1; font-size: 13px; padding: 8px;">
                         🗑️ Delete
                     </button>
                 </div>
@@ -3615,7 +3616,8 @@ async function addMedication() {
         await dbAdd('medications', {
             userId: userId,
             name: name,
-            dosage: dosage
+            dosage: dosage,
+            status: 'active'
         });
 
         document.getElementById('medName').value = '';
@@ -3630,7 +3632,8 @@ async function addScannedMed(name, dosage) {
         await dbAdd('medications', {
             userId: userId,
             name: name,
-            dosage: dosage
+            dosage: dosage,
+            status: 'active'
         });
         await updateAllUI();
     }
@@ -3656,6 +3659,27 @@ async function resetMedication(id) {
     if (confirm('Reset today\'s medication tracking for this med?')) {
         const today = getTodayKey();
         await deleteMedLogsByMedAndDate(id, today);
+        await updateAllUI();
+    }
+}
+
+async function deactivateMedication(id) {
+    if (confirm('Pause/deactivate this medication? All tracking history will be preserved.')) {
+        // Mark medication as inactive - keeps all med_logs intact
+        const med = await dbGet('medications', id);
+        if (med) {
+            med.status = 'inactive';
+            await dbPut('medications', med);
+            await updateAllUI();
+        }
+    }
+}
+
+async function reactivateMedication(id) {
+    const med = await dbGet('medications', id);
+    if (med) {
+        med.status = 'active';
+        await dbPut('medications', med);
         await updateAllUI();
     }
 }
@@ -3927,21 +3951,22 @@ async function updateSleepLog() {
 
 async function updateTasksDisplay() {
     const today = getTodayKey();
-    const allTasks = await getTasksByDate(today);
-    
+    const userId = getCurrentUserId();
+    const allTasks = await getTasksByDate(userId, today);
+
     ['want', 'need', 'grateful'].forEach(type => {
         const list = document.getElementById(type + 'List');
         if (!list) return;
-        
+
         const tasks = allTasks.filter(t => t.type === type && t.status === 'active');
-        list.innerHTML = tasks.length === 0 
+        list.innerHTML = tasks.length === 0
             ? '<p style="color: var(--text-secondary); font-size: 14px;">Nothing added yet</p>'
             : tasks.map(task => `
                 <div class="task-item">
                     <div>${task.text}</div>
                     <div class="task-buttons">
-                        <button class="task-btn done" onclick="updateTaskStatus('${type}', ${task.id}, 'complete')">✓ Done</button>
-                        <button class="task-btn defer" onclick="deferTask(${task.id})">⏸️ Defer</button>
+                        <button class="task-btn done" onclick="updateTaskStatus('${type}', '${task.id}', 'complete')">✓ Done</button>
+                        <button class="task-btn defer" onclick="deferTask('${task.id}')">⏸️ Defer</button>
                     </div>
                 </div>
             `).join('');
@@ -3950,12 +3975,14 @@ async function updateTasksDisplay() {
 
 async function updateMedsDisplay() {
     const today = getTodayKey();
-    const meds = await getAllMedications();
+    const allMeds = await getAllMedications();
+    // Only show active medications
+    const meds = allMeds.filter(med => !med.status || med.status === 'active');
     const logs = await getMedLogsByDate(today);
-    
+
     const medsContainer = document.getElementById('todayMeds');
     if (!medsContainer) return;
-    
+
     medsContainer.innerHTML = meds.length === 0
         ? '<p style="color: var(--text-secondary);">No medications added</p>'
         : meds.map(med => {
@@ -3968,17 +3995,20 @@ async function updateMedsDisplay() {
                 <div class="card" style="margin-bottom: 10px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                         <div style="font-weight: 600;">${med.name}</div>
-                        ${anyTaken ? `<button class="reset-btn" onclick="resetMedication(${med.id})">↺ Reset</button>` : ''}
+                        <div style="display: flex; gap: 5px;">
+                            ${anyTaken ? `<button class="reset-btn" onclick="resetMedication('${med.id}')">↺ Reset</button>` : ''}
+                            <button class="reset-btn" onclick="deactivateMedication('${med.id}')" style="background: var(--warning); color: white;">⏸️ Pause</button>
+                        </div>
                     </div>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">${med.dosage}</div>
                     <div class="med-time-group">
-                        <button class="med-time-btn ${takenMorning ? 'taken' : ''}" onclick="markMedTaken(${med.id}, 'morning')">
+                        <button class="med-time-btn ${takenMorning ? 'taken' : ''}" onclick="markMedTaken('${med.id}', 'morning')">
                             Morning
                         </button>
-                        <button class="med-time-btn ${takenAfternoon ? 'taken' : ''}" onclick="markMedTaken(${med.id}, 'afternoon')">
+                        <button class="med-time-btn ${takenAfternoon ? 'taken' : ''}" onclick="markMedTaken('${med.id}', 'afternoon')">
                             Afternoon
                         </button>
-                        <button class="med-time-btn ${takenEvening ? 'taken' : ''}" onclick="markMedTaken(${med.id}, 'evening')">
+                        <button class="med-time-btn ${takenEvening ? 'taken' : ''}" onclick="markMedTaken('${med.id}', 'evening')">
                             Evening
                         </button>
                     </div>
