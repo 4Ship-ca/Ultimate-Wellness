@@ -2448,12 +2448,65 @@ async function getPreferences() {
 // ============ ZERO-POINT FOOD HELPERS ============
 
 function isZeroPointFood(foodName) {
-    // Stub function - can be enhanced later with actual zero-point food list
-    return false;
+    if (!foodName) return false;
+    if (!window.ZERO_POINT_FOODS) return false;
+
+    const normalized = foodName.toLowerCase().trim();
+    const allFoods = Object.values(ZERO_POINT_FOODS).flat();
+
+    // Helper to remove common plural endings for better matching
+    const singularize = (word) => {
+        if (word.endsWith('ies')) return word.slice(0, -3) + 'y';  // berries -> berry
+        if (word.endsWith('es')) return word.slice(0, -2);         // tomatoes -> tomato
+        if (word.endsWith('s')) return word.slice(0, -1);          // eggs -> egg
+        return word;
+    };
+
+    return allFoods.some(zeroFood => {
+        const zeroLower = zeroFood.toLowerCase();
+
+        // Direct substring match (either direction)
+        if (zeroLower.includes(normalized) || normalized.includes(zeroLower)) {
+            return true;
+        }
+
+        // Word-by-word matching with pluralization handling
+        const userWords = normalized.split(/\s+/);
+        const zeroWords = zeroLower.split(/\s+/);
+
+        // Check if any significant user word matches any zero-point food word
+        for (let userWord of userWords) {
+            // Skip very short words (like "a", "of", etc.)
+            if (userWord.length < 3) continue;
+
+            for (let zeroWord of zeroWords) {
+                // Remove parenthetical info like "(whole)" or "(skinless)"
+                zeroWord = zeroWord.replace(/[()]/g, '');
+                if (zeroWord.length < 3) continue;
+
+                // Direct match
+                if (userWord === zeroWord) return true;
+
+                // Singular/plural match
+                if (singularize(userWord) === singularize(zeroWord)) return true;
+
+                // Partial match for compound words (e.g., "chicken" in "chicken breast")
+                if (zeroWord.includes(userWord) || userWord.includes(zeroWord)) {
+                    // Ensure at least 4 characters match to avoid false positives
+                    const minLength = Math.min(userWord.length, zeroWord.length);
+                    if (minLength >= 4) return true;
+                }
+            }
+        }
+
+        return false;
+    });
 }
 
 function getZeroPointBadge(foodName) {
-    // Stub function - returns badge HTML for zero-point foods
+    if (isZeroPointFood(foodName)) {
+        return '<span class="zero-point-badge" style="background: #4caf50; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 5px;">0 pts</span>';
+    }
     return '';
 }
 
@@ -4309,6 +4362,30 @@ function removeThinkingIndicator(id) {
     if (element) {
         element.remove();
     }
+}
+
+function getRandomZeroPointFoods(category = null, count = 10) {
+    if (!window.ZERO_POINT_FOODS) {
+        return ['chicken breast', 'eggs', 'spinach', 'broccoli', 'apples'];
+    }
+
+    let allFoods = [];
+
+    if (category) {
+        // Get foods from specific category
+        if (ZERO_POINT_FOODS[category]) {
+            allFoods = ZERO_POINT_FOODS[category];
+        }
+    } else {
+        // Get foods from all categories
+        for (const cat in ZERO_POINT_FOODS) {
+            allFoods = allFoods.concat(ZERO_POINT_FOODS[cat]);
+        }
+    }
+
+    // Shuffle and return random selection
+    const shuffled = allFoods.sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
 }
 
 async function buildAIContext() {
