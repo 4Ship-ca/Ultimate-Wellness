@@ -3,7 +3,7 @@
 
 let db = null;
 const DB_NAME = 'UltimateWellnessDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 // Initialize database with all required stores
 async function initDB() {
@@ -60,9 +60,9 @@ async function initDB() {
             stores.forEach(storeName => {
                 if (!db.objectStoreNames.contains(storeName)) {
                     const store = db.createObjectStore(storeName, { keyPath: 'id' });
-                    
+
                     // Add indexes for common queries
-                    if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'].includes(storeName)) {
+                    if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'].includes(storeName)) {
                         store.createIndex('userId', 'userId', { unique: false });
                         store.createIndex('date', 'date', { unique: false });
                         store.createIndex('userId_date', ['userId', 'date'], { unique: false });
@@ -106,6 +106,34 @@ async function initDB() {
                     console.log('ℹ️ Object store already exists:', storeName);
                 }
             });
+
+            // For v3->v4 upgrade: Add missing indexes to existing stores
+            if (event.oldVersion < 4) {
+                console.log('🔄 Upgrading to v4: Adding missing indexes...');
+                const transaction = event.target.transaction;
+
+                // Add userId_date index to stores that need it
+                const storesNeedingIndexes = ['exercise', 'tasks', 'medications'];
+                storesNeedingIndexes.forEach(storeName => {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store = transaction.objectStore(storeName);
+
+                        // Check if indexes exist, if not add them
+                        if (!store.indexNames.contains('userId')) {
+                            store.createIndex('userId', 'userId', { unique: false });
+                            console.log(`✅ Added userId index to ${storeName}`);
+                        }
+                        if (!store.indexNames.contains('date')) {
+                            store.createIndex('date', 'date', { unique: false });
+                            console.log(`✅ Added date index to ${storeName}`);
+                        }
+                        if (!store.indexNames.contains('userId_date')) {
+                            store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                            console.log(`✅ Added userId_date index to ${storeName}`);
+                        }
+                    }
+                });
+            }
         };
     });
 }

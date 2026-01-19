@@ -2555,13 +2555,19 @@ async function deleteTask(id) {
 
 async function addFood(foodData) {
     try {
+        // Validate that food has a name
+        if (!foodData.name || foodData.name.trim() === '') {
+            console.warn('Cannot add food: missing name');
+            return null;
+        }
+
         const userId = getCurrentUserId();
         const food = {
             id: `food_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             userId: userId,
             date: foodData.date,
-            name: foodData.name,
-            points: foodData.points,
+            name: foodData.name.trim(),
+            points: foodData.points || 0,
             time: foodData.time,
             timestamp: new Date().toISOString()
         };
@@ -2569,6 +2575,7 @@ async function addFood(foodData) {
         return food;
     } catch (error) {
         console.error('Error adding food:', error);
+        return null;
     }
 }
 
@@ -2589,6 +2596,49 @@ async function getExerciseByDate(userId, date) {
     } catch (error) {
         console.warn('Error getting exercise by date:', error);
         return [];
+    }
+}
+
+async function addExercise(exerciseData) {
+    try {
+        // Validate that required fields are not empty
+        if (!exerciseData.activity || !exerciseData.minutes || exerciseData.minutes <= 0) {
+            console.warn('Cannot add exercise: missing or invalid data');
+            return null;
+        }
+
+        const userId = getCurrentUserId();
+        const exercise = {
+            id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            userId: userId,
+            date: exerciseData.date,
+            activity: exerciseData.activity,
+            minutes: exerciseData.minutes,
+            points: exerciseData.points,
+            time: exerciseData.time,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('exercise', exercise);
+        return exercise;
+    } catch (error) {
+        console.error('Error adding exercise:', error);
+        return null;
+    }
+}
+
+async function deleteExerciseByActivity(date, activity) {
+    try {
+        const userId = getCurrentUserId();
+        const exercises = await getExerciseByDate(userId, date);
+        const toDelete = exercises.filter(e => e.activity === activity);
+
+        for (const exercise of toDelete) {
+            await dbDelete('exercise', exercise.id);
+        }
+
+        console.log(`Deleted ${toDelete.length} ${activity} entries for ${date}`);
+    } catch (error) {
+        console.error('Error deleting exercise by activity:', error);
     }
 }
 
@@ -3371,15 +3421,17 @@ async function updateNapLog() {
 async function addTask(type) {
     const input = document.getElementById(type + 'Input');
     const text = input.value.trim();
-    
+
     if (text) {
+        const userId = getCurrentUserId();
         await dbAdd('tasks', {
+            userId: userId,
             date: getTodayKey(),
             type: type,
             text: text,
             status: 'active'
         });
-        
+
         input.value = '';
         await updateAllUI();
     }
@@ -3559,7 +3611,9 @@ async function addMedication() {
     const dosage = document.getElementById('medDosage').value.trim();
 
     if (name && dosage) {
+        const userId = getCurrentUserId();
         await dbAdd('medications', {
+            userId: userId,
             name: name,
             dosage: dosage
         });
@@ -3571,8 +3625,15 @@ async function addMedication() {
 }
 
 async function addScannedMed(name, dosage) {
-    await dbAdd('medications', { name, dosage });
-    await updateAllUI();
+    if (name && dosage) {
+        const userId = getCurrentUserId();
+        await dbAdd('medications', {
+            userId: userId,
+            name: name,
+            dosage: dosage
+        });
+        await updateAllUI();
+    }
 }
 
 async function markMedTaken(id, time) {
