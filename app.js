@@ -310,29 +310,18 @@ let CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
 
 // Initialize API config from dedicated storage (new bulletproof system)
 async function initAPIConfig() {
-    console.log('🔍 initAPIConfig called');
+    console.log('🔍 [API CONFIG] initAPIConfig called - MIGRATION CODE REMOVED');
 
     // Load from dedicated storage (uses both IndexedDB and localStorage)
     const config = await loadAPIConfigFromStorage();
 
-    // Legacy fallback: check userSettings if nothing found in dedicated storage
-    // ONLY migrate if userSettings has actual non-empty values
-    if (!config.proxyUrl && !config.useProxy && userSettings) {
-        console.log('🔍 Checking legacy userSettings for API config...');
-        if (userSettings.proxyUrl && userSettings.proxyUrl.trim()) {
-            // Only migrate if there's an actual URL to migrate
-            console.log('📦 Migrating API config from userSettings:', {
-                proxyUrl: userSettings.proxyUrl,
-                useProxy: userSettings.useProxy
-            });
-            await saveAPIConfigToStorage(userSettings.proxyUrl, userSettings.useProxy);
-            return;
-        }
-    }
+    // REMOVED: Legacy migration code that was overwriting settings with empty values
+    // Settings are now ONLY loaded, never auto-migrated from userSettings
 
-    console.log('✅ API config initialized:', {
+    console.log('✅ [API CONFIG] Initialization complete:', {
         proxyUrl: PROXY_URL,
-        useProxy: USE_PROXY
+        useProxy: USE_PROXY,
+        source: config.proxyUrl ? 'loaded from storage' : 'default empty'
     });
 }
 
