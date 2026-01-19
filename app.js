@@ -623,8 +623,9 @@ async function getIncompleteSleepSession() {
 async function getAllMedications() {
     try {
         const userId = getCurrentUserId();
-        const meds = await dbGetAll('medications', userId);
-        return meds || [];
+        const allMeds = await dbGetAll('medications');
+        // Filter by userId, or include medications without userId (legacy data)
+        return allMeds.filter(m => !m.userId || m.userId === userId);
     } catch (error) {
         console.warn('Error getting medications:', error);
         return [];
@@ -2516,7 +2517,8 @@ async function getAllTasks() {
     try {
         const userId = getCurrentUserId();
         const allTasks = await dbGetAll('tasks');
-        return allTasks.filter(t => t.userId === userId);
+        // Filter by userId, or include tasks without userId (legacy data)
+        return allTasks.filter(t => !t.userId || t.userId === userId);
     } catch (error) {
         console.warn('Error getting all tasks:', error);
         return [];
@@ -3614,6 +3616,7 @@ async function addMedication() {
         const userId = getCurrentUserId();
         await dbAdd('medications', {
             userId: userId,
+            date: getTodayKey(),
             name: name,
             dosage: dosage
         });
@@ -3629,6 +3632,7 @@ async function addScannedMed(name, dosage) {
         const userId = getCurrentUserId();
         await dbAdd('medications', {
             userId: userId,
+            date: getTodayKey(),
             name: name,
             dosage: dosage
         });
