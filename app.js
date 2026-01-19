@@ -3616,7 +3616,8 @@ async function addMedication() {
         await dbAdd('medications', {
             userId: userId,
             name: name,
-            dosage: dosage
+            dosage: dosage,
+            status: 'active'
         });
 
         document.getElementById('medName').value = '';
@@ -3631,7 +3632,8 @@ async function addScannedMed(name, dosage) {
         await dbAdd('medications', {
             userId: userId,
             name: name,
-            dosage: dosage
+            dosage: dosage,
+            status: 'active'
         });
         await updateAllUI();
     }
@@ -3661,17 +3663,23 @@ async function resetMedication(id) {
     }
 }
 
-async function deleteMedication(id) {
-    if (confirm('Permanently delete this medication? This will also remove all tracking history for it.')) {
-        // Delete all med logs for this medication
-        const allLogs = await dbGetAll('med_logs');
-        const medLogs = allLogs.filter(log => log.medId === id);
-        for (const log of medLogs) {
-            await dbDelete('med_logs', log.id);
+async function deactivateMedication(id) {
+    if (confirm('Pause/deactivate this medication? All tracking history will be preserved.')) {
+        // Mark medication as inactive - keeps all med_logs intact
+        const med = await dbGet('medications', id);
+        if (med) {
+            med.status = 'inactive';
+            await dbPut('medications', med);
+            await updateAllUI();
         }
+    }
+}
 
-        // Delete the medication itself
-        await dbDelete('medications', id);
+async function reactivateMedication(id) {
+    const med = await dbGet('medications', id);
+    if (med) {
+        med.status = 'active';
+        await dbPut('medications', med);
         await updateAllUI();
     }
 }
@@ -3967,12 +3975,14 @@ async function updateTasksDisplay() {
 
 async function updateMedsDisplay() {
     const today = getTodayKey();
-    const meds = await getAllMedications();
+    const allMeds = await getAllMedications();
+    // Only show active medications
+    const meds = allMeds.filter(med => !med.status || med.status === 'active');
     const logs = await getMedLogsByDate(today);
-    
+
     const medsContainer = document.getElementById('todayMeds');
     if (!medsContainer) return;
-    
+
     medsContainer.innerHTML = meds.length === 0
         ? '<p style="color: var(--text-secondary);">No medications added</p>'
         : meds.map(med => {
@@ -3987,7 +3997,7 @@ async function updateMedsDisplay() {
                         <div style="font-weight: 600;">${med.name}</div>
                         <div style="display: flex; gap: 5px;">
                             ${anyTaken ? `<button class="reset-btn" onclick="resetMedication('${med.id}')">↺ Reset</button>` : ''}
-                            <button class="reset-btn" onclick="deleteMedication('${med.id}')" style="background: var(--error); color: white;">🗑️ Delete</button>
+                            <button class="reset-btn" onclick="deactivateMedication('${med.id}')" style="background: var(--warning); color: white;">⏸️ Pause</button>
                         </div>
                     </div>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">${med.dosage}</div>
