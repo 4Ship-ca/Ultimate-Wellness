@@ -310,26 +310,28 @@ let CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
 
 // Initialize API config from dedicated storage (new bulletproof system)
 async function initAPIConfig() {
-    console.log('🔍 [API CONFIG] initAPIConfig called - MIGRATION CODE REMOVED');
+    console.log('🔍 [API CONFIG] initAPIConfig called - HARDCODED URL ENABLED');
 
-    // Load from dedicated storage (uses both IndexedDB and localStorage)
-    const config = await loadAPIConfigFromStorage();
+    // Hardcode the Cloudflare Worker URL and always enable AI features
+    PROXY_URL = 'https://ultimate-wellness.your4ship.workers.dev/';
+    USE_PROXY = true;
 
-    // REMOVED: Legacy migration code that was overwriting settings with empty values
-    // Settings are now ONLY loaded, never auto-migrated from userSettings
+    // Save hardcoded values to storage for consistency
+    await saveAPIConfigToStorage(PROXY_URL, USE_PROXY);
 
-    console.log('✅ [API CONFIG] Initialization complete:', {
+    console.log('✅ [API CONFIG] Initialization complete with hardcoded values:', {
         proxyUrl: PROXY_URL,
         useProxy: USE_PROXY,
-        source: config.proxyUrl ? 'loaded from storage' : 'default empty'
+        source: 'hardcoded'
     });
 }
 
 // Update API config (called when settings change)
 function updateAPIConfig(proxyUrl, useProxy) {
-    PROXY_URL = proxyUrl || '';
-    USE_PROXY = useProxy || false;
-    console.log('🔌 API Config updated:', {
+    // Always use hardcoded values, ignore parameters
+    PROXY_URL = 'https://ultimate-wellness.your4ship.workers.dev/';
+    USE_PROXY = true;
+    console.log('🔌 API Config updated with hardcoded values:', {
         proxyUrl: PROXY_URL,
         useProxy: USE_PROXY
     });
@@ -344,71 +346,46 @@ const API_CONFIG_DB_KEY = 'api_config_v1';
 // Load API configuration from persistent storage
 async function loadAPIConfigFromStorage() {
     try {
-        console.log('🔍 Loading API config from storage...');
+        console.log('🔍 Loading API config (hardcoded)...');
 
-        // Try IndexedDB first (more reliable, larger storage)
-        // API config is global, not user-specific, so don't check for userId
-        try {
-            const dbConfig = await dbGet('settings', API_CONFIG_DB_KEY);
-            if (dbConfig && dbConfig.config) {
-                console.log('✅ API config loaded from IndexedDB:', dbConfig.config);
+        // Always use hardcoded values
+        const hardcodedConfig = {
+            proxyUrl: 'https://ultimate-wellness.your4ship.workers.dev/',
+            useProxy: true
+        };
 
-                // Update global variables
-                PROXY_URL = dbConfig.config.proxyUrl || '';
-                USE_PROXY = dbConfig.config.useProxy || false;
+        // Update global variables
+        PROXY_URL = hardcodedConfig.proxyUrl;
+        USE_PROXY = hardcodedConfig.useProxy;
 
-                // Sync to localStorage as backup
-                localStorage.setItem(API_CONFIG_KEY, JSON.stringify(dbConfig.config));
-
-                return dbConfig.config;
-            }
-        } catch (dbError) {
-            console.warn('⚠️ Failed to load from IndexedDB:', dbError);
-        }
-
-        // Fallback to localStorage
-        const localConfig = localStorage.getItem(API_CONFIG_KEY);
-        if (localConfig) {
-            try {
-                const config = JSON.parse(localConfig);
-                console.log('✅ API config loaded from localStorage:', config);
-
-                // Update global variables
-                PROXY_URL = config.proxyUrl || '';
-                USE_PROXY = config.useProxy || false;
-
-                // Sync to IndexedDB
-                await saveAPIConfigToStorage(config.proxyUrl, config.useProxy);
-
-                return config;
-            } catch (parseError) {
-                console.warn('⚠️ Failed to parse localStorage config:', parseError);
-            }
-        }
-
-        console.log('ℹ️ No saved API config found, using defaults');
-        return { proxyUrl: '', useProxy: false };
+        console.log('✅ API config loaded with hardcoded values:', hardcodedConfig);
+        return hardcodedConfig;
 
     } catch (error) {
         console.error('❌ Error loading API config:', error);
-        return { proxyUrl: '', useProxy: false };
+        // Even on error, return hardcoded values
+        return {
+            proxyUrl: 'https://ultimate-wellness.your4ship.workers.dev/',
+            useProxy: true
+        };
     }
 }
 
 // Save API configuration to persistent storage
 async function saveAPIConfigToStorage(proxyUrl, useProxy) {
     try {
+        // Always use hardcoded values, ignore parameters
         const config = {
-            proxyUrl: proxyUrl || '',
-            useProxy: useProxy || false,
+            proxyUrl: 'https://ultimate-wellness.your4ship.workers.dev/',
+            useProxy: true,
             lastModified: new Date().toISOString()
         };
 
-        console.log('💾 Saving API config to storage:', config);
+        console.log('💾 Saving hardcoded API config to storage:', config);
 
         // Save to localStorage (instant, synchronous backup)
         localStorage.setItem(API_CONFIG_KEY, JSON.stringify(config));
-        console.log('✅ API config saved to localStorage');
+        console.log('✅ Hardcoded API config saved to localStorage');
 
         // Save to IndexedDB (more reliable, persists better)
         const dbRecord = {
@@ -418,9 +395,9 @@ async function saveAPIConfigToStorage(proxyUrl, useProxy) {
         };
 
         await dbPut('settings', dbRecord);
-        console.log('✅ API config saved to IndexedDB');
+        console.log('✅ Hardcoded API config saved to IndexedDB');
 
-        // Update global variables
+        // Update global variables with hardcoded values
         PROXY_URL = config.proxyUrl;
         USE_PROXY = config.useProxy;
 
@@ -434,7 +411,7 @@ async function saveAPIConfigToStorage(proxyUrl, useProxy) {
             if (userId) {
                 try {
                     await dbPut('settings', window.userSettings);
-                    console.log('✅ API config also synced to userSettings');
+                    console.log('✅ Hardcoded API config also synced to userSettings');
                 } catch (syncError) {
                     console.warn('⚠️ Failed to sync to userSettings:', syncError);
                 }
@@ -1518,15 +1495,7 @@ function validateFieldWithFeedback(value, fieldId, validationFn, errorMessage) {
 
 // Helper: Collect settings form data
 function collectSettingsFormData() {
-    const proxyUrlElement = document.getElementById('settingsProxyUrl');
-    const useProxyElement = document.getElementById('settingsUseProxy');
-
-    console.log('🔍 Reading form fields:', {
-        proxyUrlElement: !!proxyUrlElement,
-        proxyUrlValue: proxyUrlElement?.value,
-        useProxyElement: !!useProxyElement,
-        useProxyValue: useProxyElement?.checked
-    });
+    console.log('🔍 Reading form fields (API config hardcoded)');
 
     return {
         name: document.getElementById('settingsName').value.trim(),
@@ -1538,8 +1507,9 @@ function collectSettingsFormData() {
         heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
         activity: document.getElementById('settingsActivity').value,
         resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
-        proxyUrl: proxyUrlElement?.value.trim() || '',
-        useProxy: useProxyElement?.checked || false
+        // Always use hardcoded API config
+        proxyUrl: 'https://ultimate-wellness.your4ship.workers.dev/',
+        useProxy: true
     };
 }
 
@@ -5138,8 +5108,8 @@ async function switchTab(tab) {
             heightInches: document.getElementById('settingsHeightInches'),
             activity: document.getElementById('settingsActivity'),
             resetTime: document.getElementById('settingsResetTime'),
-            proxyUrl: document.getElementById('settingsProxyUrl'),
-            useProxy: document.getElementById('settingsUseProxy')
+            proxyUrl: document.getElementById('settingsProxyUrl')
+            // useProxy checkbox removed - AI features are always enabled with hardcoded URL
         };
 
         if (els.name) els.name.value = userSettings.name || '';
@@ -5150,15 +5120,16 @@ async function switchTab(tab) {
         if (els.goalWeight) els.goalWeight.value = userSettings.goalWeight || '';
         if (els.resetTime) els.resetTime.value = userSettings.resetTime || '04:00';
 
-        // Populate API config from dedicated storage (not from userSettings!)
-        if (els.proxyUrl) els.proxyUrl.value = PROXY_URL || '';
-        if (els.useProxy) els.useProxy.checked = USE_PROXY || false;
+        // Populate API config with hardcoded values
+        if (els.proxyUrl) {
+            els.proxyUrl.value = 'https://ultimate-wellness.your4ship.workers.dev/';
+            els.proxyUrl.readOnly = true; // Make it read-only
+        }
+        // No checkbox to populate anymore since it was removed
 
-        console.log('🔍 Populated API form fields from dedicated storage:', {
+        console.log('🔍 Populated API form fields with hardcoded values:', {
             proxyUrlValue: els.proxyUrl?.value,
-            useProxyChecked: els.useProxy?.checked,
-            PROXY_URL: PROXY_URL,
-            USE_PROXY: USE_PROXY
+            hardcoded: true
         });
         
         const feet = Math.floor((userSettings.heightInInches || 0) / 12);
