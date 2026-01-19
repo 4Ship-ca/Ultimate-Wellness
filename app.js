@@ -6156,16 +6156,50 @@ async function extractVideoFrames(videoBlob, numFrames = 3) {
 }
 
 // Handle file upload
-function handleFileUpload(event) {
-    const file = event.target.files[0];
+// Supports: JPEG, PNG, WebP, GIF, HEIC/HEIF (iOS), and video formats (MP4, MOV, WebM, etc.)
+async function handleFileUpload(event) {
+    let file = event.target.files[0];
     if (!file) return;
-    
+
     const resultDiv = document.getElementById('scanResult');
     const useCaseSelector = document.getElementById('useCaseSelector');
     const container = document.getElementById('cameraContainer');
     const image = document.getElementById('scanImage');
     const video = document.getElementById('scanVideo');
-    
+
+    // Check if file is HEIC/HEIF and convert to JPEG
+    const isHEIC = file.type === 'image/heic' || file.type === 'image/heif' ||
+                   file.name.toLowerCase().endsWith('.heic') ||
+                   file.name.toLowerCase().endsWith('.heif');
+
+    if (isHEIC) {
+        try {
+            resultDiv.innerHTML = '<div class="spinner"></div><p>Converting iOS photo format...</p>';
+
+            // Convert HEIC to JPEG using heic2any library
+            const convertedBlob = await heic2any({
+                blob: file,
+                toType: 'image/jpeg',
+                quality: 0.9
+            });
+
+            // Create a new File object from the converted blob
+            file = new File([convertedBlob], file.name.replace(/\.heic$/i, '.jpg'), {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+            });
+        } catch (error) {
+            console.error('HEIC conversion error:', error);
+            resultDiv.innerHTML = `
+                <div style="color: var(--warning); padding: 20px; text-align: center;">
+                    <p>⚠️ Could not convert iOS photo format</p>
+                    <p style="font-size: 14px; margin-top: 10px;">Try using the camera feature instead.</p>
+                </div>
+            `;
+            return;
+        }
+    }
+
     // Check if file is video or image
     if (file.type.startsWith('video/')) {
         // Handle video file
