@@ -329,11 +329,21 @@ async function loadLocalProductDatabase() {
 
     try {
         console.log('📦 Loading local product database from git...');
-        const response = await fetch(UPC_CONFIG.APIS.LOCAL_PRODUCTS);
+
+        // Try full database first
+        let response = await fetch(UPC_CONFIG.APIS.LOCAL_PRODUCTS);
+
+        // Fall back to sample database
         if (!response.ok) {
-            console.log('⚠️ Local product database not found');
+            console.log('⚠️ Full database not found, loading sample database...');
+            response = await fetch('./data/products-canada-sample.json');
+        }
+
+        if (!response.ok) {
+            console.log('⚠️ No local product database found');
             return null;
         }
+
         PRODUCTS_CACHE = await response.json();
         console.log(`✅ Loaded ${Object.keys(PRODUCTS_CACHE).length} products from local database`);
         return PRODUCTS_CACHE;
