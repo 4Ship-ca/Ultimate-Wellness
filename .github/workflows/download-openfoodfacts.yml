@@ -1,0 +1,64 @@
+name: Download OpenFoodFacts Database
+
+on:
+  workflow_dispatch: # Manual trigger - click "Run workflow" button
+  schedule:
+    - cron: '0 2 1,15 * *' # Auto-run 1st and 15th of month at 2am UTC
+
+jobs:
+  download-and-process:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq
+
+    - name: Download OpenFoodFacts database
+      run: |
+        chmod +x scripts/download-openfoodfacts.sh
+        ./scripts/download-openfoodfacts.sh
+
+    - name: Process products
+      run: |
+        node scripts/process-products.js
+
+    - name: Commit and push results
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+        git add data/products-canada.json data/products-index.json data/products-stats.json data/download-metadata.json
+        git diff --staged --quiet || git commit -m "Update OpenFoodFacts Canada database - $(date +%Y-%m-%d)
+
+        Downloaded and processed Canadian products:
+        - Pre-calculated SmartPoints per 100g/100ml
+        - Includes nutrition, hydration, ingredients
+        - Total products: $(jq 'length' data/products-canada.json || echo 'N/A')
+
+        Automated by GitHub Actions"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: openfoodfacts-database
+        path: |
+          data/products-canada.json
+          data/products-index.json
+          data/products-stats.json
+          data/download-metadata.json
+        retention-days: 30
