@@ -3,7 +3,7 @@
 
 let db = null;
 const DB_NAME = 'UltimateWellnessDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 // Initialize database with all required stores
 async function initDB() {
@@ -127,6 +127,36 @@ async function initDB() {
                             store.createIndex('date', 'date', { unique: false });
                             console.log(`✅ Added date index to ${storeName}`);
                         }
+                        if (!store.indexNames.contains('userId_date')) {
+                            store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                            console.log(`✅ Added userId_date index to ${storeName}`);
+                        }
+                    }
+                });
+            }
+
+            // For v4->v5 upgrade: Ensure all critical indexes exist
+            if (event.oldVersion < 5) {
+                console.log('🔄 Upgrading to v5: Verifying all critical indexes...');
+                const transaction = event.target.transaction;
+
+                // Ensure all data stores have the necessary indexes
+                const storesNeedingIndexes = ['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'];
+                storesNeedingIndexes.forEach(storeName => {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store = transaction.objectStore(storeName);
+
+                        // Ensure userId index exists
+                        if (!store.indexNames.contains('userId')) {
+                            store.createIndex('userId', 'userId', { unique: false });
+                            console.log(`✅ Added userId index to ${storeName}`);
+                        }
+                        // Ensure date index exists
+                        if (!store.indexNames.contains('date')) {
+                            store.createIndex('date', 'date', { unique: false });
+                            console.log(`✅ Added date index to ${storeName}`);
+                        }
+                        // Ensure userId_date compound index exists
                         if (!store.indexNames.contains('userId_date')) {
                             store.createIndex('userId_date', ['userId', 'date'], { unique: false });
                             console.log(`✅ Added userId_date index to ${storeName}`);
