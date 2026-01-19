@@ -19,9 +19,18 @@ const UPC_CONFIG = {
         VERIFIED: false
     },
     APIS: {
-        OPEN_FOOD_FACTS: 'https://world.openfoodfacts.org/api/v0/product',
+        OPEN_FOOD_FACTS: 'https://world.openfoodfacts.org/api/v2/product',
+        OPEN_FOOD_FACTS_DATA: 'https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz',
         BARCODE_MONSTER: 'https://barcode.monster/api',
-        UPCITEMDB: 'https://api.upcitemdb.com/prod/trial/lookup'
+        UPCITEMDB: 'https://api.upcitemdb.com/prod/trial/lookup',
+        UPCITEMDB_WEB: 'https://www.upcitemdb.com/upc',
+        CLOUDFLARE_CLAUDE: 'https://ultimate-wellness.your4ship.workers.dev/api/claude',
+        LOCAL_PRODUCTS: './data/products-canada.json' // Git-based local database
+    },
+    CLAUDE: {
+        USE_CLOUDFLARE: true, // Use Cloudflare Workers proxy (has your API key)
+        MODEL: 'claude-3-5-sonnet-20241022', // Web-aware model
+        ENABLED: true // Enable Claude API fallback via Cloudflare
     }
 };
 
@@ -131,37 +140,58 @@ async function lookupUPC(upc) {
 async function lookupUPCEnhanced(upc) {
     try {
         console.log(`🔍 Looking up UPC: ${upc}`);
-        
+
+        // LEVEL 1: User Cache (IndexedDB - instant, user-verified products)
         const cached = await getUPCProduct(upc);
         if (cached) {
-            console.log('✅ Found in local cache (verified by user)');
+            console.log('✅ Found in user cache (verified)');
             return cached;
         }
-        
-        console.log('🌐 Querying Open Food Facts...');
-        let productData = await lookupOpenFoodFacts(upc);
+
+        // LEVEL 2: Local Git Database (104K+ Canada products, pre-calculated points)
+        console.log('📦 Checking local git database...');
+        let productData = await lookupLocalProducts(upc);
         if (productData) {
-            console.log('✅ Found in Open Food Facts');
+            console.log('✅ Found in local git database');
             return productData;
         }
-        
+
+        // LEVEL 3: OpenFoodFacts Live API (2.8M+ products, free, CORS-safe)
+        console.log('🌐 Querying OpenFoodFacts live API...');
+        productData = await lookupOpenFoodFacts(upc);
+        if (productData) {
+            console.log('✅ Found in OpenFoodFacts API');
+            return productData;
+        }
+
+        // LEVEL 4: Barcode Monster (CORS issues expected)
         console.log('🌐 Querying Barcode Monster...');
         productData = await lookupBarcodeMonster(upc);
         if (productData) {
             console.log('✅ Found in Barcode Monster');
             return productData;
         }
-        
+
+        // LEVEL 5: UPCitemdb API (CORS issues expected)
         console.log('🌐 Querying UPCitemdb...');
         productData = await lookupUPCitemdb(upc);
         if (productData) {
             console.log('✅ Found in UPCitemdb');
             return productData;
         }
-        
+
+        // LEVEL 6: Claude API via Cloudflare (web-aware, scrapes UPCitemdb.com)
+        console.log('🤖 Trying Claude API via Cloudflare...');
+        productData = await lookupViaClaudeAPI(upc);
+        if (productData) {
+            console.log('✅ Found via Claude API');
+            return productData;
+        }
+
+        // LEVEL 7: Manual Entry (user input)
         console.log('❌ Product not found in any database');
         return null;
-        
+
     } catch (error) {
         console.error('UPC lookup error:', error);
         return null;
@@ -259,15 +289,15 @@ async function lookupBarcodeMonster(upc) {
 async function lookupUPCitemdb(upc) {
     try {
         const response = await fetch(`${UPC_CONFIG.APIS.UPCITEMDB}?upc=${upc}`);
-        
+
         if (!response.ok) return null;
-        
+
         const data = await response.json();
-        
+
         if (!data || !data.items || data.items.length === 0) return null;
-        
+
         const item = data.items[0];
-        
+
         return {
             upc: upc,
             product_name: item.title || 'Unknown Product',
@@ -283,9 +313,162 @@ async function lookupUPCitemdb(upc) {
             source: 'upcitemdb',
             categories: item.category || ''
         };
-        
+
     } catch (error) {
         console.error('UPCitemdb lookup error:', error);
+        return null;
+    }
+}
+
+// Global products cache loaded from git
+let PRODUCTS_CACHE = null;
+let PRODUCTS_INDEX = null;
+
+async function loadLocalProductDatabase() {
+    if (PRODUCTS_CACHE) return PRODUCTS_CACHE;
+
+    try {
+        console.log('📦 Loading local product database from git...');
+
+        // Try full database first
+        let response = await fetch(UPC_CONFIG.APIS.LOCAL_PRODUCTS);
+
+        // Fall back to sample database
+        if (!response.ok) {
+            console.log('⚠️ Full database not found, loading sample database...');
+            response = await fetch('./data/products-canada-sample.json');
+        }
+
+        if (!response.ok) {
+            console.log('⚠️ No local product database found');
+            return null;
+        }
+
+        PRODUCTS_CACHE = await response.json();
+        console.log(`✅ Loaded ${Object.keys(PRODUCTS_CACHE).length} products from local database`);
+        return PRODUCTS_CACHE;
+    } catch (error) {
+        console.error('Error loading local product database:', error);
+        return null;
+    }
+}
+
+async function lookupLocalProducts(upc) {
+    try {
+        // Load database if not already loaded
+        if (!PRODUCTS_CACHE) {
+            await loadLocalProductDatabase();
+        }
+
+        if (!PRODUCTS_CACHE) return null;
+
+        // Direct UPC lookup
+        const product = PRODUCTS_CACHE[upc];
+        if (product) {
+            console.log(`✅ Found in local git database: ${product.product_name}`);
+            return product;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Local product lookup error:', error);
+        return null;
+    }
+}
+
+async function lookupViaClaudeAPI(upc) {
+    try {
+        if (!UPC_CONFIG.CLAUDE.ENABLED) {
+            console.log('ℹ️ Claude API not enabled');
+            return null;
+        }
+
+        console.log('🤖 Using Claude API (Cloudflare) to lookup product...');
+
+        const url = `${UPC_CONFIG.APIS.UPCITEMDB_WEB}/${upc}`;
+
+        // Use Cloudflare Workers proxy (has your API key configured)
+        const apiEndpoint = UPC_CONFIG.CLAUDE.USE_CLOUDFLARE
+            ? UPC_CONFIG.APIS.CLOUDFLARE_CLAUDE
+            : 'https://api.anthropic.com/v1/messages';
+
+        const response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: UPC_CONFIG.CLAUDE.MODEL,
+                upc: upc,
+                url: url,
+                prompt: `Fetch and analyze this UPC product page: ${url}
+
+Extract the following information in JSON format:
+{
+  "product_name": "exact product name",
+  "brand": "brand name",
+  "nutrition_per_100g": {
+    "calories": number,
+    "protein": number,
+    "carbs": number,
+    "sugar": number,
+    "fat": number,
+    "saturated_fat": number,
+    "fiber": number,
+    "sodium": number
+  },
+  "serving_size": "serving size string",
+  "categories": "product categories"
+}
+
+If nutrition data is per serving, convert it to per 100g/100ml.
+Return only the JSON, no explanation.`
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            console.error(`Claude API error: ${response.status}`);
+            return null;
+        }
+
+        const data = await response.json();
+        const content = data.content[0].text;
+        const productInfo = JSON.parse(content);
+
+        if (!productInfo || !productInfo.product_name) return null;
+
+        // Calculate points if nutrition data available
+        let pointsPer100g = UPC_CONFIG.DEFAULTS.POINTS;
+        if (productInfo.nutrition_per_100g) {
+            pointsPer100g = calculateSmartPoints(productInfo.nutrition_per_100g);
+        }
+
+        // Parse serving size
+        const servingAmount = parseServingSize(productInfo.serving_size);
+        let pointsPerServing = pointsPer100g;
+        if (servingAmount && servingAmount !== 100) {
+            pointsPerServing = Math.round((pointsPer100g * servingAmount) / 100);
+        }
+
+        return {
+            upc: upc,
+            product_name: productInfo.product_name,
+            brand: productInfo.brand || '',
+            points: pointsPerServing,
+            points_per_serving: pointsPerServing,
+            points_per_100g: pointsPer100g,
+            nutrition: productInfo.nutrition_per_100g || null,
+            serving_size: productInfo.serving_size || UPC_CONFIG.DEFAULTS.SERVING_SIZE,
+            serving_amount: servingAmount,
+            image_url: '',
+            verified: false,
+            source: 'claude_api',
+            categories: productInfo.categories || ''
+        };
+
+    } catch (error) {
+        console.error('Claude API UPC lookup error:', error);
         return null;
     }
 }

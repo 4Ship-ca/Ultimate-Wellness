@@ -6629,15 +6629,29 @@ async function showUPCProduct(productData, upc) {
                 <div style="font-size: 14px; color: ${statusColor}; margin-bottom: 10px;">
                     ${pointsStatus}
                 </div>
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">SmartPoints per ${productData.serving_size || 'serving'}:</label>
-                <input type="number" id="upcPoints" value="${productData.points}" min="0" 
-                    onchange="highlightPointsChange('${upc}', ${productData.points})"
-                    style="width: 100px; padding: 10px; font-size: 24px; font-weight: bold; border: 2px solid var(--primary); border-radius: 8px; background: var(--bg-light); color: var(--primary); text-align: center;">
+
+                <!-- Standardized Points per 100g/100ml (Base Calculation) -->
                 ${productData.points_per_100g ? `
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                        (${productData.points_per_100g} points per 100g)
+                    <div style="background: var(--bg-light); padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--primary);">
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;">
+                            📊 Standardized (per 100g/100ml):
+                        </div>
+                        <div style="font-size: 28px; font-weight: bold; color: var(--primary);">
+                            ${productData.points_per_100g} points
+                        </div>
                     </div>
                 ` : ''}
+
+                <!-- Serving Size Points (For Logging) -->
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+                    SmartPoints per serving (${productData.serving_size || 'serving'}):
+                </label>
+                <input type="number" id="upcPoints" value="${productData.points}" min="0"
+                    onchange="highlightPointsChange('${upc}', ${productData.points})"
+                    style="width: 100px; padding: 10px; font-size: 24px; font-weight: bold; border: 2px solid var(--success); border-radius: 8px; background: var(--bg-light); color: var(--success); text-align: center;">
+                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">
+                    This is what will be logged to your food diary
+                </div>
             </div>
             
             ${productData.nutrition ? `
