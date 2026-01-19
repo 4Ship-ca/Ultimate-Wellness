@@ -4311,6 +4311,30 @@ function removeThinkingIndicator(id) {
     }
 }
 
+function getRandomZeroPointFoods(category = null, count = 10) {
+    if (!window.ZERO_POINT_FOODS) {
+        return ['chicken breast', 'eggs', 'spinach', 'broccoli', 'apples'];
+    }
+
+    let allFoods = [];
+
+    if (category) {
+        // Get foods from specific category
+        if (ZERO_POINT_FOODS[category]) {
+            allFoods = ZERO_POINT_FOODS[category];
+        }
+    } else {
+        // Get foods from all categories
+        for (const cat in ZERO_POINT_FOODS) {
+            allFoods = allFoods.concat(ZERO_POINT_FOODS[cat]);
+        }
+    }
+
+    // Shuffle and return random selection
+    const shuffled = allFoods.sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+}
+
 async function buildAIContext() {
     // Gather user context for better AI responses
     const userId = getCurrentUserId();
