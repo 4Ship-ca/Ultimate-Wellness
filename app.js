@@ -6508,80 +6508,17 @@ async function callClaudeVision(base64Image, prompt, mediaType = 'image/jpeg') {
 async function lookupUPC(upc) {
     try {
         console.log(`🔍 Looking up UPC: ${upc}`);
-        
-        // LEVEL 1: Check local cache first (instant, 100% reliable)
-        const cached = await getUPCProduct(upc);
-        if (cached) {
-            console.log('✅ Found in local cache (verified by user)');
-            return cached;
-        }
-        
-        // LEVEL 2: Query OpenFoodFacts v2 API (CORS-friendly, 2.8M+ products)
-        console.log('🌐 Querying OpenFoodFacts v2 API...');
-        const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${upc}.json`);
-        
-        if (!response.ok) {
-            console.log('⚠️ API request failed, will offer manual entry');
+
+        // Use the comprehensive UPCDatabase module for multi-source lookup
+        // This provides: local cache check, OpenFoodFacts, Barcode Monster, UPCitemdb APIs
+        if (window.UPCDatabase) {
+            const result = await window.UPCDatabase.lookupEnhanced(upc);
+            return result;
+        } else {
+            console.error('❌ UPCDatabase module not loaded');
             return null;
         }
-        
-        const data = await response.json();
-        
-        if (data.status === 0 || !data.product) {
-            console.log('❌ Product not found in database');
-            return null; // LEVEL 3: Manual entry will be offered in UI
-        }
-        
-        const product = data.product;
-        
-        // Extract nutrition per 100g (standardized)
-        const nutrition = {
-            calories: product.nutriments?.['energy-kcal_100g'] || 0,
-            protein: product.nutriments?.proteins_100g || 0,
-            carbs: product.nutriments?.carbohydrates_100g || 0,
-            sugar: product.nutriments?.sugars_100g || 0,
-            fat: product.nutriments?.fat_100g || 0,
-            saturated_fat: product.nutriments?.['saturated-fat_100g'] || 0,
-            fiber: product.nutriments?.fiber_100g || 0,
-            sodium: product.nutriments?.sodium_100g || 0
-        };
-        
-        // Calculate points per 100g
-        const pointsPer100g = calculateSmartPoints(nutrition);
-        
-        // Parse serving size to get amount in grams
-        const servingSize = product.serving_size || '100g';
-        const servingAmount = parseServingSize(servingSize);
-        
-        // Calculate points per serving (more accurate for user)
-        let pointsPerServing = pointsPer100g;
-        if (servingAmount && servingAmount !== 100) {
-            pointsPerServing = Math.round((pointsPer100g * servingAmount) / 100);
-        }
-        
-        // Build comprehensive product data
-        const productData = {
-            upc: upc,
-            product_name: product.product_name || product.product_name_en || 'Unknown Product',
-            brand: product.brands || '',
-            points: pointsPerServing,
-            points_per_serving: pointsPerServing,
-            points_per_100g: pointsPer100g,
-            nutrition: nutrition,
-            serving_size: servingSize,
-            serving_amount: servingAmount,
-            image_url: product.image_url || product.image_front_url || '',
-            verified: false,
-            source: 'openfoodfacts',
-            categories: product.categories || '',
-            ingredients: product.ingredients_text || ''
-        };
-        
-        console.log('✅ Product found:', productData.product_name, `(${pointsPerServing} pts/serving, ${pointsPer100g} pts/100g)`);
-        
-        // Don't auto-save to cache yet - wait for user verification with confirmUPCProduct()
-        return productData;
-        
+
     } catch (error) {
         console.error('UPC lookup error:', error);
         return null; // Will trigger manual entry UI
@@ -6761,10 +6698,14 @@ async function confirmUPCProduct(upc, productData) {
     // Update points
     productData.points = points;
     productData.verified = true;
-    
-    // Save to local cache
-    await saveUPCProduct(productData);
-    console.log(`✅ Saved UPC ${upc} with ${points} points to local cache`);
+
+    // Save to local cache using UPCDatabase module
+    if (window.UPCDatabase) {
+        await window.UPCDatabase.saveProduct(productData);
+        console.log(`✅ Saved UPC ${upc} with ${points} points to local cache`);
+    } else {
+        console.error('❌ UPCDatabase module not loaded');
+    }
     
     // Log food
     await logFood(productData.product_name, points, null);
@@ -6815,10 +6756,14 @@ async function saveManualUPC(upc) {
         verified: true,
         source: 'manual'
     };
-    
-    // Save to local cache
-    await saveUPCProduct(productData);
-    console.log(`✅ Saved manual UPC ${upc} to local cache`);
+
+    // Save to local cache using UPCDatabase module
+    if (window.UPCDatabase) {
+        await window.UPCDatabase.saveProduct(productData);
+        console.log(`✅ Saved manual UPC ${upc} to local cache`);
+    } else {
+        console.error('❌ UPCDatabase module not loaded');
+    }
     
     // Log food
     await logFood(productName, points, null);

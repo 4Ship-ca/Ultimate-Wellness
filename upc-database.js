@@ -32,13 +32,13 @@ const UPC_CONFIG = {
 async function getUPCProduct(upc) {
     try {
         const userId = getCurrentUserId();
-        const allProducts = await dbGetAll('upc_products', userId);
-        
+        const allProducts = await dbGetAll('upc_database', userId);
+
         if (!allProducts) return null;
-        
+
         const product = allProducts.find(p => p.upc === upc);
         return product || null;
-        
+
     } catch (error) {
         console.error('Error getting UPC product from cache:', error);
         return null;
@@ -63,8 +63,8 @@ async function saveUPCProduct(productData) {
         if (productData.nutrition && !productData.points_per_100g) {
             productData.points_per_100g = calculateSmartPoints(productData.nutrition);
         }
-        
-        await dbPut('upc_products', productData);
+
+        await dbPut('upc_database', productData);
         console.log(`💾 Saved UPC ${productData.upc} to local database`);
         
     } catch (error) {
@@ -77,7 +77,7 @@ async function deleteUPCProduct(upc) {
     try {
         const userId = getCurrentUserId();
         const id = `upc_${upc}_${userId}`;
-        await dbDelete('upc_products', id);
+        await dbDelete('upc_database', id);
         console.log(`🗑️ Deleted UPC ${upc}`);
     } catch (error) {
         console.error('Error deleting UPC product:', error);
@@ -88,7 +88,7 @@ async function deleteUPCProduct(upc) {
 async function getAllUPCProducts() {
     try {
         const userId = getCurrentUserId();
-        return await dbGetAll('upc_products', userId) || [];
+        return await dbGetAll('upc_database', userId) || [];
     } catch (error) {
         console.error('Error getting all UPC products:', error);
         return [];
@@ -337,8 +337,8 @@ function calculatePointsForAmount(pointsPer100g, amountInGrams) {
 async function exportUPCDatabase() {
     try {
         const userId = getCurrentUserId();
-        const allProducts = await dbGetAll('upc_products', userId);
-        
+        const allProducts = await dbGetAll('upc_database', userId);
+
         const exportData = {
             export_date: new Date().toISOString(),
             user_id: userId,
