@@ -310,30 +310,18 @@ let CLAUDE_API_KEY = ''; // Your Claude API key (if USE_PROXY is false)
 
 // Initialize API config from dedicated storage (new bulletproof system)
 async function initAPIConfig() {
-    console.log('🔍 initAPIConfig called');
+    console.log('🔍 [API CONFIG] initAPIConfig called - MIGRATION CODE REMOVED');
 
     // Load from dedicated storage (uses both IndexedDB and localStorage)
     const config = await loadAPIConfigFromStorage();
 
-    // Legacy fallback: check userSettings if nothing found in dedicated storage
-    if (!config.proxyUrl && !config.useProxy && userSettings) {
-        console.log('🔍 Checking legacy userSettings for API config...');
-        if ('proxyUrl' in userSettings || 'useProxy' in userSettings) {
-            const legacyConfig = {
-                proxyUrl: userSettings.proxyUrl || '',
-                useProxy: userSettings.useProxy || false
-            };
-            console.log('📦 Migrating API config from userSettings:', legacyConfig);
+    // REMOVED: Legacy migration code that was overwriting settings with empty values
+    // Settings are now ONLY loaded, never auto-migrated from userSettings
 
-            // Migrate to new storage system
-            await saveAPIConfigToStorage(legacyConfig.proxyUrl, legacyConfig.useProxy);
-            return;
-        }
-    }
-
-    console.log('✅ API config initialized:', {
+    console.log('✅ [API CONFIG] Initialization complete:', {
         proxyUrl: PROXY_URL,
-        useProxy: USE_PROXY
+        useProxy: USE_PROXY,
+        source: config.proxyUrl ? 'loaded from storage' : 'default empty'
     });
 }
 
@@ -1530,6 +1518,16 @@ function validateFieldWithFeedback(value, fieldId, validationFn, errorMessage) {
 
 // Helper: Collect settings form data
 function collectSettingsFormData() {
+    const proxyUrlElement = document.getElementById('settingsProxyUrl');
+    const useProxyElement = document.getElementById('settingsUseProxy');
+
+    console.log('🔍 Reading form fields:', {
+        proxyUrlElement: !!proxyUrlElement,
+        proxyUrlValue: proxyUrlElement?.value,
+        useProxyElement: !!useProxyElement,
+        useProxyValue: useProxyElement?.checked
+    });
+
     return {
         name: document.getElementById('settingsName').value.trim(),
         email: document.getElementById('settingsEmail').value.trim(),
@@ -1540,8 +1538,8 @@ function collectSettingsFormData() {
         heightInches: parseInt(document.getElementById('settingsHeightInches').value) || 0,
         activity: document.getElementById('settingsActivity').value,
         resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
-        proxyUrl: document.getElementById('settingsProxyUrl')?.value.trim() || '',
-        useProxy: document.getElementById('settingsUseProxy')?.checked || false
+        proxyUrl: proxyUrlElement?.value.trim() || '',
+        useProxy: useProxyElement?.checked || false
     };
 }
 
