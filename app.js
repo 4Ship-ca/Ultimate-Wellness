@@ -2451,9 +2451,56 @@ function isZeroPointFood(foodName) {
     if (!foodName) return false;
     if (!window.ZERO_POINT_FOODS) return false;
 
-    const normalized = foodName.toLowerCase();
+    const normalized = foodName.toLowerCase().trim();
     const allFoods = Object.values(ZERO_POINT_FOODS).flat();
-    return allFoods.some(f => normalized.includes(f.toLowerCase()));
+
+    // Helper to remove common plural endings for better matching
+    const singularize = (word) => {
+        if (word.endsWith('ies')) return word.slice(0, -3) + 'y';  // berries -> berry
+        if (word.endsWith('es')) return word.slice(0, -2);         // tomatoes -> tomato
+        if (word.endsWith('s')) return word.slice(0, -1);          // eggs -> egg
+        return word;
+    };
+
+    return allFoods.some(zeroFood => {
+        const zeroLower = zeroFood.toLowerCase();
+
+        // Direct substring match (either direction)
+        if (zeroLower.includes(normalized) || normalized.includes(zeroLower)) {
+            return true;
+        }
+
+        // Word-by-word matching with pluralization handling
+        const userWords = normalized.split(/\s+/);
+        const zeroWords = zeroLower.split(/\s+/);
+
+        // Check if any significant user word matches any zero-point food word
+        for (let userWord of userWords) {
+            // Skip very short words (like "a", "of", etc.)
+            if (userWord.length < 3) continue;
+
+            for (let zeroWord of zeroWords) {
+                // Remove parenthetical info like "(whole)" or "(skinless)"
+                zeroWord = zeroWord.replace(/[()]/g, '');
+                if (zeroWord.length < 3) continue;
+
+                // Direct match
+                if (userWord === zeroWord) return true;
+
+                // Singular/plural match
+                if (singularize(userWord) === singularize(zeroWord)) return true;
+
+                // Partial match for compound words (e.g., "chicken" in "chicken breast")
+                if (zeroWord.includes(userWord) || userWord.includes(zeroWord)) {
+                    // Ensure at least 4 characters match to avoid false positives
+                    const minLength = Math.min(userWord.length, zeroWord.length);
+                    if (minLength >= 4) return true;
+                }
+            }
+        }
+
+        return false;
+    });
 }
 
 function getZeroPointBadge(foodName) {
