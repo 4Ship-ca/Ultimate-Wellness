@@ -3,7 +3,7 @@
 
 let db = null;
 const DB_NAME = 'UltimateWellnessDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 // Initialize database with all required stores
 async function initDB() {
@@ -96,20 +96,16 @@ async function initDB() {
                     if (storeName === 'upc_preferences') {
                         store.createIndex('upc', 'upc', { unique: true });
                     }
-                    
-                    if (storeName === 'medications') {
-                        store.createIndex('userId', 'userId', { unique: false });
-                    }
-                    
+
                     console.log('✅ Created object store:', storeName);
                 } else {
                     console.log('ℹ️ Object store already exists:', storeName);
                 }
             });
 
-            // For v3->v4 upgrade: Add missing indexes to existing stores
-            if (event.oldVersion < 4) {
-                console.log('🔄 Upgrading to v4: Adding missing indexes...');
+            // Add missing indexes to existing stores (v5 upgrade)
+            if (event.oldVersion < 5) {
+                console.log('🔄 Upgrading to v5: Adding missing indexes...');
                 const transaction = event.target.transaction;
 
                 // Add userId_date index to stores that need it
