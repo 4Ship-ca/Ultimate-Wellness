@@ -630,10 +630,41 @@ function safeSetValue(elementId, value) {
 
 async function getIncompleteSleepSession() {
     try {
-        const today = new Date().toISOString().split('T')[0];
         const userId = getCurrentUserId();
-        const sleepLogs = await dbGetByUserAndDate('sleep', userId, today);
-        return sleepLogs.find(log => log.start_datetime && !log.end_datetime) || null;
+
+        // First, try to get from localStorage (fast check)
+        if (typeof getPersistedOpenSleepSession === 'function') {
+            const persisted = getPersistedOpenSleepSession();
+            if (persisted) {
+                // Verify it still exists in DB
+                const dbSession = await dbGet('sleep', persisted.id);
+                if (dbSession && !dbSession.end_datetime) {
+                    return dbSession;
+                }
+            }
+        }
+
+        // Check recent days (sleep sessions can span multiple days)
+        // Look back up to 3 days to catch any lingering open sessions
+        const today = new Date();
+        for (let i = 0; i < 3; i++) {
+            const checkDate = new Date(today);
+            checkDate.setDate(checkDate.getDate() - i);
+            const dateKey = checkDate.toISOString().split('T')[0];
+
+            const sleepLogs = await dbGetByUserAndDate('sleep', userId, dateKey);
+            const incomplete = sleepLogs.find(log => log.start_datetime && !log.end_datetime);
+
+            if (incomplete) {
+                // Found an incomplete session - persist it to localStorage
+                if (typeof persistOpenSleepSession === 'function') {
+                    persistOpenSleepSession(incomplete);
+                }
+                return incomplete;
+            }
+        }
+
+        return null;
     } catch (error) {
         console.warn('Error getting incomplete sleep session:', error);
         return null;
@@ -680,6 +711,12 @@ async function startSleepSession(startTime) {
         };
 
         await dbPut('sleep', sleepSession);
+
+        // Persist to localStorage for robust recovery (survives device sleep, tab close, etc.)
+        if (typeof persistOpenSleepSession === 'function') {
+            persistOpenSleepSession(sleepSession);
+        }
+
         console.log('😴 Sleep session started:', sleepSession);
         return sleepSession;
     } catch (error) {
@@ -712,6 +749,12 @@ async function endSleepSession(endTimeISO, manualHours) {
         incomplete.duration_hours = duration;
 
         await dbPut('sleep', incomplete);
+
+        // Clear localStorage persistence (session is now complete)
+        if (typeof clearOpenSleepSession === 'function') {
+            clearOpenSleepSession();
+        }
+
         console.log('☀️ Sleep session ended:', incomplete);
         return incomplete;
     } catch (error) {
@@ -3155,31 +3198,42 @@ async function updateSleepUI() {
     try {
         const incomplete = await getIncompleteSleepSession();
         const recent = await getRecentSleepSessions(7);
-        
+
         const statusDiv = document.getElementById('sleepStatus');
-        
+
         if (!statusDiv) return; // Element not on page
-        
+
+        // Helper to format duration safely
+        const formatDuration = (hours) => {
+            if (hours === undefined || hours === null || isNaN(hours)) {
+                return 'N/A';
+            }
+            return Math.round(hours * 10) / 10;
+        };
+
         if (incomplete) {
             const start = new Date(incomplete.start_datetime);
             const now = new Date();
             const duration = (now - start) / (1000 * 60 * 60);
-            
+
             statusDiv.innerHTML = `
                 <div style="padding: 15px; background: var(--primary); border-radius: 8px; margin: 10px 0;">
                     <p style="font-weight: bold; margin: 0 0 5px 0;">😴 Currently Sleeping</p>
                     <p style="margin: 0;">Started: ${start.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}</p>
-                    <p style="margin: 5px 0 0 0;">Duration: ${Math.round(duration * 10) / 10} hours</p>
+                    <p style="margin: 5px 0 0 0;">Duration: ${formatDuration(duration)} hours</p>
                 </div>
             `;
         } else {
-            if (recent.length > 0) {
-                const last = recent[0];
+            // Filter out incomplete sessions from display (they have no duration)
+            const completedSessions = recent.filter(s => s.end_datetime && s.duration_hours !== undefined);
+
+            if (completedSessions.length > 0) {
+                const last = completedSessions[0];
                 const lastStart = new Date(last.start_datetime);
                 statusDiv.innerHTML = `
                     <div style="padding: 15px; background: var(--bg-light); border-radius: 8px; margin: 10px 0;">
                         <p style="font-weight: bold; margin: 0 0 5px 0;">Last Sleep</p>
-                        <p style="margin: 0;">${last.duration_hours} hours</p>
+                        <p style="margin: 0;">${formatDuration(last.duration_hours)} hours</p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.7;">
                             ${lastStart.toLocaleDateString()} ${lastStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}
                         </p>
@@ -3193,21 +3247,26 @@ async function updateSleepUI() {
                 `;
             }
         }
-        
-        // Show history
+
+        // Show history - only completed sessions
         const historyDiv = document.getElementById('sleepHistory');
-        if (historyDiv && recent.length > 0) {
-            const avgHours = recent.reduce((sum, s) => sum + s.duration_hours, 0) / recent.length;
-            
+        const completedForHistory = recent.filter(s => s.end_datetime && s.duration_hours !== undefined);
+
+        if (historyDiv && completedForHistory.length > 0) {
+            const validDurations = completedForHistory.filter(s => typeof s.duration_hours === 'number' && !isNaN(s.duration_hours));
+            const avgHours = validDurations.length > 0
+                ? validDurations.reduce((sum, s) => sum + s.duration_hours, 0) / validDurations.length
+                : 0;
+
             historyDiv.innerHTML = `
                 <h3 style="margin: 20px 0 10px 0;">Recent Sleep (7 days)</h3>
                 <div style="padding: 15px; background: var(--bg-light); border-radius: 8px;">
-                    ${recent.map(s => {
+                    ${completedForHistory.map(s => {
                         const start = new Date(s.start_datetime);
                         return `
                             <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
                                 <span style="font-weight: 500;">${start.toLocaleDateString()}</span>
-                                <span style="float: right; color: var(--primary); font-weight: bold;">${s.duration_hours} hrs</span>
+                                <span style="float: right; color: var(--primary); font-weight: bold;">${formatDuration(s.duration_hours)} hrs</span>
                             </div>
                         `;
                     }).join('')}

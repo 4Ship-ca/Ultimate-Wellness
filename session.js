@@ -1,5 +1,457 @@
-// ============ SESSION MANAGEMENT MODULE v2.2.0 ============
-// Session persistence, state restoration, and daily reset logic
+// ============ SESSION MANAGEMENT MODULE v2.3.0 ============
+// Session persistence, state restoration, daily reset logic, and robust heartbeat system
+// Now with browser-independent sleep recovery and user interaction detection
+
+// ============ APP HEARTBEAT / PULSE SYSTEM ============
+// Robust system for detecting app wake/reanimation and handling time-sensitive state
+
+/**
+ * Heartbeat state - tracks app pulse and user interactions
+ */
+const HeartbeatState = {
+    lastPulse: Date.now(),
+    userHasInteracted: false,
+    interactionCount: 0,
+    lastInteraction: null,
+    sleepRecoveryShown: false,
+    heartbeatInterval: null,
+    initialized: false
+};
+
+/**
+ * Key constants for localStorage
+ */
+const HEARTBEAT_KEYS = {
+    OPEN_SLEEP_SESSION: 'openSleepSession',
+    LAST_HEARTBEAT: 'lastHeartbeat',
+    LAST_INTERACTION: 'lastUserInteraction',
+    PENDING_SLEEP_RECOVERY: 'pendingSleepRecovery'
+};
+
+/**
+ * Mark that user has genuinely interacted with the app
+ * This distinguishes from automatic browser refreshes
+ */
+function markUserInteraction(eventType = 'unknown') {
+    HeartbeatState.userHasInteracted = true;
+    HeartbeatState.interactionCount++;
+    HeartbeatState.lastInteraction = {
+        type: eventType,
+        timestamp: Date.now()
+    };
+
+    // Persist interaction marker
+    localStorage.setItem(HEARTBEAT_KEYS.LAST_INTERACTION, JSON.stringify({
+        timestamp: Date.now(),
+        type: eventType
+    }));
+
+    // After user interaction, check if we need to show sleep recovery
+    if (!HeartbeatState.sleepRecoveryShown) {
+        checkPendingSleepRecovery();
+    }
+}
+
+/**
+ * Initialize user interaction tracking
+ * Tracks meaningful interactions: touch, click, scroll, keypress, tab switch
+ */
+function initInteractionTracking() {
+    // Touch events (mobile)
+    document.addEventListener('touchstart', () => markUserInteraction('touch'), { once: false, passive: true });
+
+    // Click events (desktop/mobile)
+    document.addEventListener('click', () => markUserInteraction('click'), { once: false });
+
+    // Scroll events (debounced)
+    let scrollTimeout;
+    document.addEventListener('scroll', () => {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => markUserInteraction('scroll'), 100);
+    }, { passive: true });
+
+    // Keyboard events
+    document.addEventListener('keydown', () => markUserInteraction('keypress'), { once: false });
+
+    // Tab becomes visible AND user interacts
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            // Tab became visible - but DON'T mark interaction yet
+            // Wait for actual user action
+            console.log('👁️ App visible - awaiting user interaction');
+        }
+    });
+
+    console.log('🖐️ User interaction tracking initialized');
+}
+
+/**
+ * Store open sleep session in localStorage for quick recovery
+ * Called when user starts a sleep session
+ */
+function persistOpenSleepSession(session) {
+    if (!session) return;
+
+    const data = {
+        id: session.id,
+        userId: session.userId,
+        start_datetime: session.start_datetime,
+        date: session.date,
+        persistedAt: Date.now()
+    };
+
+    localStorage.setItem(HEARTBEAT_KEYS.OPEN_SLEEP_SESSION, JSON.stringify(data));
+    console.log('💾 Open sleep session persisted to localStorage');
+}
+
+/**
+ * Clear open sleep session from localStorage
+ * Called when user ends a sleep session
+ */
+function clearOpenSleepSession() {
+    localStorage.removeItem(HEARTBEAT_KEYS.OPEN_SLEEP_SESSION);
+    localStorage.removeItem(HEARTBEAT_KEYS.PENDING_SLEEP_RECOVERY);
+    HeartbeatState.sleepRecoveryShown = false;
+    console.log('🧹 Open sleep session cleared from localStorage');
+}
+
+/**
+ * Get persisted open sleep session from localStorage (fast access)
+ */
+function getPersistedOpenSleepSession() {
+    try {
+        const data = localStorage.getItem(HEARTBEAT_KEYS.OPEN_SLEEP_SESSION);
+        if (!data) return null;
+
+        const session = JSON.parse(data);
+        const userId = getCurrentUserId();
+
+        // Validate it's for current user
+        if (session.userId !== userId) {
+            console.log('⚠️ Persisted sleep session is for different user');
+            return null;
+        }
+
+        return session;
+    } catch (error) {
+        console.warn('Error reading persisted sleep session:', error);
+        return null;
+    }
+}
+
+/**
+ * Check if there's a pending sleep recovery that needs user attention
+ * Only prompt after user has interacted (not on auto-refresh)
+ */
+async function checkPendingSleepRecovery() {
+    if (HeartbeatState.sleepRecoveryShown) return;
+
+    // First check localStorage for fast access
+    const persistedSession = getPersistedOpenSleepSession();
+
+    if (!persistedSession) {
+        // Double-check IndexedDB (in case localStorage was cleared)
+        try {
+            if (typeof getIncompleteSleepSession === 'function') {
+                const dbSession = await getIncompleteSleepSession();
+                if (dbSession) {
+                    // Re-persist it
+                    persistOpenSleepSession(dbSession);
+                    showSleepRecoveryPrompt(dbSession);
+                }
+            }
+        } catch (error) {
+            console.warn('Error checking DB for incomplete sleep:', error);
+        }
+        return;
+    }
+
+    // We have an open sleep session - show recovery prompt
+    showSleepRecoveryPrompt(persistedSession);
+}
+
+/**
+ * Get time-of-day aware greeting
+ */
+function getTimeOfDayGreeting() {
+    const hour = new Date().getHours();
+
+    if (hour >= 5 && hour < 12) {
+        return { greeting: 'Good Morning', emoji: '☀️', period: 'morning' };
+    } else if (hour >= 12 && hour < 17) {
+        return { greeting: 'Good Afternoon', emoji: '🌤️', period: 'afternoon' };
+    } else if (hour >= 17 && hour < 21) {
+        return { greeting: 'Good Evening', emoji: '🌅', period: 'evening' };
+    } else {
+        return { greeting: 'Hello', emoji: '🌙', period: 'night' };
+    }
+}
+
+/**
+ * Format duration for display
+ */
+function formatSleepDuration(startDateTime) {
+    const start = new Date(startDateTime);
+    const now = new Date();
+    const durationMs = now - start;
+    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+}
+
+/**
+ * Show sleep recovery prompt to user
+ * AM/PM aware greeting with option to end session
+ */
+function showSleepRecoveryPrompt(session) {
+    if (HeartbeatState.sleepRecoveryShown) return;
+    HeartbeatState.sleepRecoveryShown = true;
+
+    const { greeting, emoji, period } = getTimeOfDayGreeting();
+    const duration = formatSleepDuration(session.start_datetime);
+    const startTime = new Date(session.start_datetime).toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+
+    console.log(`🛏️ Sleep recovery prompt - Session started: ${startTime}, Duration: ${duration}`);
+
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'sleepRecoveryOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        padding: 20px;
+    `;
+
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        background: var(--bg-card, #1a1a2e);
+        border-radius: 16px;
+        padding: 24px;
+        max-width: 360px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    `;
+
+    modal.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 16px;">${emoji}</div>
+        <h2 style="margin: 0 0 8px 0; color: var(--text-primary, #fff);">${greeting}!</h2>
+        <p style="color: var(--text-secondary, #aaa); margin: 0 0 16px 0;">
+            You have an open sleep session
+        </p>
+        <div style="background: var(--bg-light, #252540); padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+            <p style="margin: 0 0 4px 0; font-size: 14px; color: var(--text-secondary, #aaa);">Started at ${startTime}</p>
+            <p style="margin: 0; font-size: 24px; font-weight: bold; color: var(--primary, #4CAF50);">${duration}</p>
+        </div>
+        <p style="color: var(--text-secondary, #aaa); margin: 0 0 20px 0; font-size: 14px;">
+            Would you like to end your sleep session?
+        </p>
+        <div style="display: flex; gap: 12px;">
+            <button id="sleepRecoveryDismiss" style="
+                flex: 1;
+                padding: 12px;
+                border: 1px solid var(--border, #333);
+                background: transparent;
+                color: var(--text-primary, #fff);
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+            ">Keep Sleeping</button>
+            <button id="sleepRecoveryEnd" style="
+                flex: 1;
+                padding: 12px;
+                border: none;
+                background: var(--primary, #4CAF50);
+                color: white;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+            ">End Session ${emoji}</button>
+        </div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // Handle dismiss - keep session open
+    document.getElementById('sleepRecoveryDismiss').addEventListener('click', () => {
+        overlay.remove();
+        console.log('😴 User chose to keep sleeping');
+    });
+
+    // Handle end session
+    document.getElementById('sleepRecoveryEnd').addEventListener('click', async () => {
+        overlay.remove();
+
+        try {
+            // End the sleep session
+            if (typeof endSleepSession === 'function') {
+                await endSleepSession();
+                clearOpenSleepSession();
+
+                // Update UI
+                if (typeof updateSleepUI === 'function') {
+                    await updateSleepUI();
+                }
+
+                // Show success
+                if (typeof showToast === 'function') {
+                    showToast(`${greeting}! Sleep logged. ${emoji}`);
+                } else {
+                    alert(`${greeting}! Sleep session ended.`);
+                }
+            }
+        } catch (error) {
+            console.error('Error ending sleep session:', error);
+            alert('Error ending sleep session: ' + error.message);
+        }
+    });
+}
+
+/**
+ * Main heartbeat pulse - runs periodically to check app state
+ */
+async function heartbeatPulse() {
+    const now = Date.now();
+    const lastPulse = HeartbeatState.lastPulse;
+    const elapsed = now - lastPulse;
+
+    HeartbeatState.lastPulse = now;
+    localStorage.setItem(HEARTBEAT_KEYS.LAST_HEARTBEAT, now.toString());
+
+    // Detect if significant time has passed (device was asleep/tab was closed)
+    const SIGNIFICANT_GAP = 60000; // 1 minute
+    const wasHibernating = elapsed > SIGNIFICANT_GAP;
+
+    if (wasHibernating) {
+        console.log(`💓 Heartbeat: App was dormant for ${Math.round(elapsed / 1000)}s`);
+
+        // App "woke up" - perform checks
+        await onAppWake();
+    }
+
+    // Regular heartbeat tasks
+    // Check daily reset (even if not hibernating)
+    await checkDailyReset();
+}
+
+/**
+ * Called when app "wakes up" after being dormant
+ * Handles: device sleep, tab close/reopen, browser restart
+ */
+async function onAppWake() {
+    console.log('🔄 App wake detected - running checks...');
+
+    // 1. Check for day rollover (4am reset or user-defined)
+    await checkDailyReset();
+
+    // 2. Check for open sleep session (but wait for user interaction)
+    const hasOpenSleep = getPersistedOpenSleepSession();
+    if (hasOpenSleep) {
+        console.log('🛏️ Open sleep session detected - awaiting user interaction');
+        // Mark that we have pending sleep recovery
+        localStorage.setItem(HEARTBEAT_KEYS.PENDING_SLEEP_RECOVERY, 'true');
+
+        // If user has already interacted, show prompt now
+        if (HeartbeatState.userHasInteracted && !HeartbeatState.sleepRecoveryShown) {
+            checkPendingSleepRecovery();
+        }
+    }
+
+    // 3. Refresh UI if needed
+    if (typeof updateAllUI === 'function') {
+        await updateAllUI();
+    }
+
+    console.log('✅ App wake checks complete');
+}
+
+/**
+ * Initialize heartbeat on visibility change (tab becomes visible)
+ */
+function initVisibilityHeartbeat() {
+    document.addEventListener('visibilitychange', async () => {
+        if (!document.hidden) {
+            console.log('👁️ Tab became visible - running heartbeat');
+            await heartbeatPulse();
+        }
+    });
+
+    // Also trigger on window focus (covers more cases)
+    window.addEventListener('focus', async () => {
+        console.log('🎯 Window focused - running heartbeat');
+        await heartbeatPulse();
+    });
+}
+
+/**
+ * Initialize the heartbeat system
+ */
+function initHeartbeat() {
+    if (HeartbeatState.initialized) {
+        console.log('💓 Heartbeat already initialized');
+        return;
+    }
+
+    console.log('💓 Initializing heartbeat system...');
+
+    // Initialize interaction tracking
+    initInteractionTracking();
+
+    // Initialize visibility-based heartbeat
+    initVisibilityHeartbeat();
+
+    // Start periodic heartbeat (every 30 seconds when active)
+    HeartbeatState.heartbeatInterval = setInterval(heartbeatPulse, 30000);
+
+    // Run initial pulse
+    heartbeatPulse();
+
+    // Check for pending sleep recovery on load
+    const pendingRecovery = localStorage.getItem(HEARTBEAT_KEYS.PENDING_SLEEP_RECOVERY);
+    if (pendingRecovery) {
+        console.log('📋 Pending sleep recovery flagged - awaiting user interaction');
+    }
+
+    HeartbeatState.initialized = true;
+    console.log('✅ Heartbeat system initialized');
+}
+
+/**
+ * Sync open sleep session with localStorage
+ * Call this when starting a sleep session
+ */
+async function syncOpenSleepToLocalStorage() {
+    try {
+        if (typeof getIncompleteSleepSession === 'function') {
+            const session = await getIncompleteSleepSession();
+            if (session) {
+                persistOpenSleepSession(session);
+            } else {
+                clearOpenSleepSession();
+            }
+        }
+    } catch (error) {
+        console.warn('Error syncing sleep to localStorage:', error);
+    }
+}
 
 // ============ SESSION STATE MANAGEMENT ============
 
@@ -424,19 +876,25 @@ function getSessionStats(userId = null) {
  */
 async function initSession() {
     console.log('📋 Initializing session management...');
-    
+
+    // Initialize heartbeat system FIRST (handles wake detection, sleep recovery)
+    initHeartbeat();
+
     // Check daily reset
     await checkDailyReset();
-    
+
     // Restore previous session
     await restoreSession();
-    
+
+    // Sync any open sleep session to localStorage
+    await syncOpenSleepToLocalStorage();
+
     // Set up auto-save
     initAutoSave();
-    
+
     // Track session duration
     trackSession();
-    
+
     console.log('✅ Session management initialized');
 }
 
@@ -470,4 +928,23 @@ window.initSession = initSession;
 // Analytics
 window.getSessionStats = getSessionStats;
 
-console.log('📋 Session management v2.2.0 loaded');
+// Heartbeat / Pulse System (robust app wake detection)
+window.initHeartbeat = initHeartbeat;
+window.heartbeatPulse = heartbeatPulse;
+window.onAppWake = onAppWake;
+
+// Sleep Session Persistence (for robust recovery)
+window.persistOpenSleepSession = persistOpenSleepSession;
+window.clearOpenSleepSession = clearOpenSleepSession;
+window.getPersistedOpenSleepSession = getPersistedOpenSleepSession;
+window.checkPendingSleepRecovery = checkPendingSleepRecovery;
+window.syncOpenSleepToLocalStorage = syncOpenSleepToLocalStorage;
+
+// User Interaction Tracking
+window.markUserInteraction = markUserInteraction;
+window.HeartbeatState = HeartbeatState;
+
+// Time-of-day helpers
+window.getTimeOfDayGreeting = getTimeOfDayGreeting;
+
+console.log('📋 Session management v2.3.0 loaded (with robust heartbeat system)');
