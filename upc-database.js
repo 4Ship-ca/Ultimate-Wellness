@@ -423,7 +423,6 @@ Extract the following information in JSON format:
 
 If nutrition data is per serving, convert it to per 100g/100ml.
 Return only the JSON, no explanation.`
-                }]
             })
         });
 
