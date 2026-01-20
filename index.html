@@ -1893,8 +1893,9 @@
             alert('⚠️ Barcode should be 8-14 digits');
             return;
         }
-        
-        await lookupProductCascade(upc);
+
+        // Use the app.js lookupUPC function which delegates to UPCDatabase module
+        await lookupUPC(upc);
     }
     </script>
 
