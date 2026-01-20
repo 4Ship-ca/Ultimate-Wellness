@@ -1,25 +1,70 @@
-// ============ ULTIMATE WELLNESS DATABASE v2.2.2 ============
+// ============ ULTIMATE WELLNESS DATABASE v2.2.3 ============
 // IndexedDB wrapper with all required stores
 
 let db = null;
+let dbReady = false;
+let dbInitPromise = null;
 const DB_NAME = 'UltimateWellnessDB';
 const DB_VERSION = 5;
 
 // Initialize database with all required stores
 async function initDB() {
-    return new Promise((resolve, reject) => {
+    // Prevent multiple simultaneous initializations
+    if (dbInitPromise) {
+        console.log('⏳ Database initialization already in progress, waiting...');
+        return dbInitPromise;
+    }
+
+    if (db && dbReady) {
+        console.log('✅ Database already initialized');
+        return Promise.resolve(db);
+    }
+
+    dbInitPromise = new Promise((resolve, reject) => {
         console.log('📦 Initializing database...');
-        
+
         const request = indexedDB.open(DB_NAME, DB_VERSION);
-        
+
         request.onerror = () => {
             console.error('❌ Database failed to open:', request.error);
+            dbInitPromise = null;
+            dbReady = false;
             reject(request.error);
         };
-        
+
+        request.onblocked = () => {
+            console.warn('⚠️ Database opening blocked - please close other tabs');
+        };
+
         request.onsuccess = () => {
             db = request.result;
+            dbReady = true;
             window.db = db; // Export globally
+
+            // Add connection lifecycle handlers
+            db.onversionchange = () => {
+                console.warn('⚠️ Database version change detected - closing connection');
+                db.close();
+                db = null;
+                dbReady = false;
+                dbInitPromise = null;
+                alert('Database upgrade required. Please refresh the page.');
+            };
+
+            db.onerror = (event) => {
+                console.error('❌ Database error:', event.target.error);
+            };
+
+            // Modern browsers support onclose
+            if (db.onclose !== undefined) {
+                db.onclose = () => {
+                    console.warn('⚠️ Database connection closed unexpectedly');
+                    db = null;
+                    dbReady = false;
+                    dbInitPromise = null;
+                };
+            }
+
             console.log('✅ Database opened successfully');
             console.log('📊 Object stores:', Array.from(db.objectStoreNames));
             resolve(db);
@@ -166,53 +211,85 @@ async function initDB() {
             }
         };
     });
+
+    return dbInitPromise;
+}
+
+// Helper: Ensure database is initialized before operations
+async function ensureDBReady() {
+    if (db && dbReady) {
+        return true;
+    }
+
+    if (dbInitPromise) {
+        console.log('⏳ Waiting for database to be ready...');
+        await dbInitPromise;
+        return true;
+    }
+
+    console.warn('⚠️ Database not initialized, initializing now...');
+    await initDB();
+    return true;
 }
 
 // Generic database operations
 async function dbGet(storeName, key) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
-        
+
         try {
             const transaction = db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
             const request = store.get(key);
-            
+
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         } catch (error) {
+            console.error(`Error in dbGet(${storeName}, ${key}):`, error);
             reject(error);
         }
     });
 }
 
 async function dbPut(storeName, data) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
-        
+
         try {
             const transaction = db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.put(data);
-            
+
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
+
+            transaction.onerror = () => {
+                console.error(`Transaction error in dbPut(${storeName}):`, transaction.error);
+                reject(transaction.error);
+            };
         } catch (error) {
+            console.error(`Error in dbPut(${storeName}):`, error);
             reject(error);
         }
     });
 }
 
 async function dbAdd(storeName, data) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
 
@@ -227,16 +304,24 @@ async function dbAdd(storeName, data) {
 
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
+
+            transaction.onerror = () => {
+                console.error(`Transaction error in dbAdd(${storeName}):`, transaction.error);
+                reject(transaction.error);
+            };
         } catch (error) {
+            console.error(`Error in dbAdd(${storeName}):`, error);
             reject(error);
         }
     });
 }
 
 async function dbDelete(storeName, key) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
 
@@ -247,24 +332,32 @@ async function dbDelete(storeName, key) {
 
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
+
+            transaction.onerror = () => {
+                console.error(`Transaction error in dbDelete(${storeName}, ${key}):`, transaction.error);
+                reject(transaction.error);
+            };
         } catch (error) {
+            console.error(`Error in dbDelete(${storeName}, ${key}):`, error);
             reject(error);
         }
     });
 }
 
 async function dbGetAll(storeName) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
-        
+
         try {
             const transaction = db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
             const request = store.getAll();
-            
+
             request.onsuccess = () => resolve(request.result || []);
             request.onerror = () => reject(request.error);
         } catch (error) {
@@ -276,18 +369,20 @@ async function dbGetAll(storeName) {
 }
 
 async function dbGetByIndex(storeName, indexName, value) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
-        
+
         try {
             const transaction = db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
             const index = store.index(indexName);
             const request = index.getAll(value);
-            
+
             request.onsuccess = () => resolve(request.result || []);
             request.onerror = () => reject(request.error);
         } catch (error) {
@@ -309,24 +404,26 @@ async function dbGetByUserAndDate(storeName, userId, date) {
 
 // Helper: Get by date range
 async function dbGetByDateRange(storeName, userId, startDate, endDate) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
-        
+
         try {
             const transaction = db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
             const index = store.index('userId_date');
-            
+
             const range = IDBKeyRange.bound(
                 [userId, startDate],
                 [userId, endDate]
             );
-            
+
             const request = index.getAll(range);
-            
+
             request.onsuccess = () => resolve(request.result || []);
             request.onerror = () => reject(request.error);
         } catch (error) {
@@ -338,23 +435,31 @@ async function dbGetByDateRange(storeName, userId, startDate, endDate) {
 
 // Helper: Clear all data (for testing/reset)
 async function dbClear(storeName) {
+    await ensureDBReady();
+
     return new Promise((resolve, reject) => {
-        if (!db) {
-            reject(new Error('Database not initialized'));
+        if (!db || !dbReady) {
+            reject(new Error('Database not ready'));
             return;
         }
-        
+
         try {
             const transaction = db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.clear();
-            
+
             request.onsuccess = () => {
                 console.log(`✅ Cleared ${storeName}`);
                 resolve(request.result);
             };
             request.onerror = () => reject(request.error);
+
+            transaction.onerror = () => {
+                console.error(`Transaction error in dbClear(${storeName}):`, transaction.error);
+                reject(transaction.error);
+            };
         } catch (error) {
+            console.error(`Error in dbClear(${storeName}):`, error);
             reject(error);
         }
     });
@@ -363,31 +468,37 @@ async function dbClear(storeName) {
 // Helper: Delete entire database
 async function deleteDatabase() {
     return new Promise((resolve, reject) => {
+        // Close existing connection first
         if (db) {
             db.close();
             db = null;
         }
-        
+
+        // Reset state
+        dbReady = false;
+        dbInitPromise = null;
+
         const request = indexedDB.deleteDatabase(DB_NAME);
-        
+
         request.onsuccess = () => {
             console.log('✅ Database deleted');
             resolve();
         };
-        
+
         request.onerror = () => {
             console.error('❌ Error deleting database:', request.error);
             reject(request.error);
         };
-        
+
         request.onblocked = () => {
-            console.warn('⚠️ Database deletion blocked');
+            console.warn('⚠️ Database deletion blocked - please close all tabs');
         };
     });
 }
 
 // Export for use in app
 window.initDB = initDB;
+window.ensureDBReady = ensureDBReady;
 window.db = db;
 window.dbGet = dbGet;
 window.dbPut = dbPut;
@@ -400,4 +511,4 @@ window.dbGetByDateRange = dbGetByDateRange;
 window.dbClear = dbClear;
 window.deleteDatabase = deleteDatabase;
 
-console.log('✅ Database module loaded');
+console.log('✅ Database module v2.2.3 loaded');
