@@ -2466,6 +2466,15 @@ async function getPreferences() {
 }
 
 // ============ ZERO-POINT FOOD HELPERS ============
+// NOTE: Auto-badge logic disabled - bot's calculation is source of truth
+// Keep zero-point-foods.json for educational reference only
+//
+// Future enhancement: Bot can explicitly check zero-point list and validate
+// with context (e.g., "apple" = yes, "apple crisp" = no)
+
+/*
+// DISABLED: This caused false positives (e.g., "passion" matching "passion fruit")
+// If re-enabling, bot should validate with full context instead of static matching
 
 function isZeroPointFood(foodName) {
     if (!foodName) return false;
@@ -2571,6 +2580,7 @@ function getZeroPointBadge(foodName) {
     }
     return '';
 }
+*/
 
 // ============ DATABASE HELPER FUNCTIONS ============
 
@@ -3959,11 +3969,11 @@ async function updateTodayLog() {
                 <br><strong>Net:</strong> ${netPoints} pts
             </div>
             ${foods.map(f => {
-                const zeroPointBadge = isZeroPointFood(f.name) ? getZeroPointBadge(f.name) : '';
-                const pointsDisplay = f.points === 0 && isZeroPointFood(f.name) ? 
-                    `<span style="color: #28a745; font-weight: bold;">0 pts</span>` : 
+                // Show points as calculated - no auto-badge based on static list
+                const pointsDisplay = f.points === 0 ?
+                    `<span style="color: #28a745; font-weight: bold;">0 pts</span>` :
                     `${f.points}pts`;
-                return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})${zeroPointBadge}</div>`;
+                return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})</div>`;
             }).join('')}
         `;
     } catch (error) {
@@ -4845,9 +4855,10 @@ function parseMealDataFromResponse(responseText) {
     return { type: 'success', data: mealData };
 }
 
-// Helper: Check if food is zero-point (with fallback)
+// Helper: Check if food is zero-point (bot must explicitly set this)
 function isFoodZeroPoint(food) {
-    return food.isZeroPoint || isZeroPointFood(food.name);
+    // Only trust bot's explicit determination, not static list matching
+    return food.isZeroPoint === true;
 }
 
 // Helper: Log parsed meal items to database
