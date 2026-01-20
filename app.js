@@ -767,7 +767,12 @@ async function loadExternalData() {
         const foods = await fetch('data/zero-point-foods.json');
         if (foods.ok) window.ZERO_POINT_FOODS = await foods.json();
     } catch (e) { console.warn('No zero-point foods:', e); }
-    
+
+    try {
+        const overrides = await fetch('data/zero-calorie-overrides.json');
+        if (overrides.ok) window.ZERO_CALORIE_OVERRIDES = await overrides.json();
+    } catch (e) { console.warn('No zero-calorie overrides:', e); }
+
     try {
         const scenarios = await fetch('data/bot-scenarios.json');
         if (scenarios.ok) window.BOT_SCENARIOS = await scenarios.json();
@@ -4575,6 +4580,43 @@ function getZeroPointFoodsList() {
     return formatted;
 }
 
+// Generate formatted zero-calorie overrides list for bot prompt
+function getZeroCalorieOverridesList() {
+    if (!window.ZERO_CALORIE_OVERRIDES) {
+        return `
+- Diet sodas and artificially sweetened beverages (Coke Zero, Diet Coke, etc.)
+- Sugar-free processed foods (sugar-free candy, jello, cookies, etc.)
+- Zero calorie condiments (spray butter, artificial sweeteners, etc.)
+
+EXCEPTIONS that ARE zero-point: water, black coffee, plain unsweetened tea`;
+    }
+
+    const overrides = ZERO_CALORIE_OVERRIDES;
+    let formatted = '';
+
+    // Format beverages
+    if (overrides.artificially_sweetened_beverages) {
+        formatted += `\n- Artificially Sweetened Beverages (${overrides.minimum_points_assignment?.beverages || 1} pt minimum): ${overrides.artificially_sweetened_beverages.slice(0, 8).join(', ')}${overrides.artificially_sweetened_beverages.length > 8 ? ', etc.' : ''}`;
+    }
+
+    // Format processed foods
+    if (overrides.sugar_free_processed_foods) {
+        formatted += `\n- Sugar-Free Processed Foods (${overrides.minimum_points_assignment?.processed_foods || 2} pts minimum): ${overrides.sugar_free_processed_foods.slice(0, 6).join(', ')}${overrides.sugar_free_processed_foods.length > 6 ? ', etc.' : ''}`;
+    }
+
+    // Format condiments
+    if (overrides.zero_calorie_condiments) {
+        formatted += `\n- Zero Calorie Condiments (${overrides.minimum_points_assignment?.condiments || 1} pt minimum): ${overrides.zero_calorie_condiments.join(', ')}`;
+    }
+
+    // Add exceptions
+    if (overrides.exceptions_that_ARE_zero_point?.allowed) {
+        formatted += `\n\nEXCEPTIONS that ARE zero-point: ${overrides.exceptions_that_ARE_zero_point.allowed.join(', ')}`;
+    }
+
+    return formatted;
+}
+
 async function buildAIContext() {
     // Gather user context for better AI responses
     const userId = getCurrentUserId();
@@ -4729,6 +4771,7 @@ function isMealLoggingRequest(message) {
 // Generate meal logging system prompt with comprehensive zero-point validation
 function getMealLoggingSystemPrompt() {
     const zeroPointFoodsList = getZeroPointFoodsList();
+    const zeroCalorieOverrides = getZeroCalorieOverridesList();
 
     return `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
 
@@ -4799,6 +4842,30 @@ WORD MATCHING LOGIC:
 - "Apple crisp" is NOT "apples" (it's a baked dessert!)
 - "Banana bread" is NOT "bananas" (it's processed bread!)
 - Check preparation method AND food type together
+
+═══════════════════════════════════════════════════════
+ZERO-CALORIE OVERRIDE LIST (CRITICAL)
+═══════════════════════════════════════════════════════
+
+These foods calculate to 0 points mathematically BUT should NOT be treated as zero-point:
+${zeroCalorieOverrides}
+
+OVERRIDE RULE:
+Even if SmartPoints formula = 0, you MUST assign minimum points for these items:
+- Diet sodas/zero-calorie drinks → 1 pt minimum
+- Sugar-free processed foods → 2 pts minimum
+- Zero-calorie condiments → 1 pt minimum
+- Set "isZeroPoint": false
+
+RATIONALE: While mathematically 0 calories, these are artificially sweetened/processed foods, not whole foods like vegetables or fresh fruit. They don't align with the zero-point food philosophy.
+
+OVERRIDE EXAMPLES:
+❌ "Coke Zero (500ml)" → Formula = 0 pts, Override = 1 pt, isZeroPoint: false
+❌ "Diet Coke" → Formula = 0 pts, Override = 1 pt, isZeroPoint: false
+❌ "Sugar-free jello" → Formula = 0 pts, Override = 2 pts, isZeroPoint: false
+✅ "Water" → Formula = 0 pts, Exception = 0 pts, isZeroPoint: true (allowed!)
+✅ "Black coffee" → Formula = 0 pts, Exception = 0 pts, isZeroPoint: true (allowed!)
+✅ "Plain unsweetened tea" → Formula = 0 pts, Exception = 0 pts, isZeroPoint: true (allowed!)
 
 ═══════════════════════════════════════════════════════
 CRITICAL QUANTITY RULES

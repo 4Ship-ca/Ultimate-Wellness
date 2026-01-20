@@ -1,0 +1,58 @@
+{
+  "description": "Foods that calculate to 0 points but should NOT be treated as zero-point foods",
+  "rationale": "These are processed/artificial foods with 0 calories, not whole foods. While mathematically 0 pts, they don't align with zero-point food philosophy.",
+
+  "artificially_sweetened_beverages": [
+    "coke zero",
+    "diet coke",
+    "pepsi zero",
+    "diet pepsi",
+    "coke zero sugar",
+    "pepsi zero sugar",
+    "diet dr pepper",
+    "diet mountain dew",
+    "diet sprite",
+    "diet 7up",
+    "zero sugar soda",
+    "sugar-free soda",
+    "diet soda",
+    "zero calorie energy drink",
+    "sugar-free energy drink"
+  ],
+
+  "sugar_free_processed_foods": [
+    "sugar-free candy",
+    "sugar-free gum",
+    "sugar-free jello",
+    "sugar-free pudding",
+    "sugar-free cookies",
+    "sugar-free ice cream",
+    "sugar-free chocolate",
+    "sugar-free syrup"
+  ],
+
+  "zero_calorie_condiments": [
+    "zero calorie spray butter",
+    "zero calorie cooking spray",
+    "artificial sweetener packets"
+  ],
+
+  "minimum_points_assignment": {
+    "beverages": 1,
+    "processed_foods": 2,
+    "condiments": 1,
+    "note": "Assign these minimum points even when formula calculates 0"
+  },
+
+  "exceptions_that_ARE_zero_point": {
+    "note": "These ARE zero-point despite being 0 calories:",
+    "allowed": [
+      "water",
+      "black coffee",
+      "plain tea (unsweetened)",
+      "herbal tea",
+      "sparkling water (unflavored)",
+      "seltzer water"
+    ]
+  }
+}
