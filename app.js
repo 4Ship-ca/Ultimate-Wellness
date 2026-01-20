@@ -758,6 +758,75 @@ const ACTIVITY_CATEGORIES = {
     recreation: { name: 'Recreation', icon: '🌱', description: 'Active daily living and hobbies' }
 };
 
+// ============ ACTIVITY PACKS BY FITNESS LEVEL ============
+// Default activity packs based on user's activity level setting
+
+const ACTIVITY_PACKS = {
+    low: {
+        name: 'Household & Light Activity',
+        description: 'Perfect for beginners or those focusing on daily movement',
+        activities: [
+            'walking_slow',
+            'walking_brisk',
+            'house_cleaning',
+            'gardening',
+            'yoga',
+            'stretching',
+            'elliptical',
+            'treadmill',
+            'stationary_bike',
+            'pilates'
+        ]
+    },
+    moderate: {
+        name: 'Fitness & Cardio',
+        description: 'For regular exercisers with moderate intensity workouts',
+        activities: [
+            'jogging',
+            'running',
+            'swimming_leisure',
+            'swimming_laps',
+            'cycling_leisure',
+            'weight_training',
+            'bodyweight',
+            'hiit',
+            'elliptical',
+            'rowing',
+            'treadmill',
+            'yoga_power',
+            'dancing'
+        ]
+    },
+    high: {
+        name: 'Endurance & Sports',
+        description: 'For athletes and high-intensity training',
+        activities: [
+            'running',
+            'cycling_fast',
+            'swimming_laps',
+            'hiit',
+            'crossfit',
+            'weight_training_heavy',
+            'basketball',
+            'tennis',
+            'soccer',
+            'rowing',
+            'stairs',
+            'hiking',
+            'golf'
+        ]
+    }
+};
+
+// Map activity level numbers to pack keys
+const ACTIVITY_LEVEL_MAP = {
+    1: 'low',      // Sedentary
+    2: 'low',      // Lightly active
+    3: 'moderate', // Moderately active
+    4: 'high',     // Very active
+    5: 'high'      // Extremely active
+};
+
 // Points calculation constants
 const EXERCISE_POINTS_PER_100_CALORIES = 2; // 100 calories = 2 points
 const DEFAULT_USER_WEIGHT_KG = 70; // Default if user weight not set
@@ -848,6 +917,146 @@ function calculateActivityRewards(activityId, durationMinutes) {
         points: points,
         activity: activity
     };
+}
+
+// ============ USER ACTIVITY MANAGEMENT ============
+// Manage user's personalized activity list based on their fitness level
+
+/**
+ * Get user's activity level pack key
+ */
+function getUserActivityPackKey() {
+    if (userSettings && userSettings.activityLevel) {
+        return ACTIVITY_LEVEL_MAP[userSettings.activityLevel] || 'moderate';
+    }
+    return 'moderate'; // Default to moderate
+}
+
+/**
+ * Get default activities for user's fitness level
+ */
+function getDefaultActivitiesForUser() {
+    const packKey = getUserActivityPackKey();
+    const pack = ACTIVITY_PACKS[packKey];
+    return pack ? pack.activities : ACTIVITY_PACKS.moderate.activities;
+}
+
+/**
+ * Get user's custom activity list from settings
+ * Returns array of activity IDs
+ */
+function getUserActivities() {
+    if (userSettings && userSettings.customActivities) {
+        return userSettings.customActivities;
+    }
+    // Return default pack if no custom list
+    return getDefaultActivitiesForUser();
+}
+
+/**
+ * Save user's custom activity list to settings
+ */
+async function saveUserActivities(activityIds) {
+    if (!userSettings) return false;
+
+    userSettings.customActivities = activityIds;
+
+    try {
+        await dbPut('settings', userSettings);
+        console.log('✅ User activities saved:', activityIds.length, 'activities');
+        return true;
+    } catch (error) {
+        console.error('Error saving user activities:', error);
+        return false;
+    }
+}
+
+/**
+ * Initialize user's activity list (call on first login or settings update)
+ */
+async function initializeUserActivities() {
+    if (!userSettings) return;
+
+    // If user doesn't have custom activities yet, set defaults based on their level
+    if (!userSettings.customActivities) {
+        const defaults = getDefaultActivitiesForUser();
+        await saveUserActivities(defaults);
+        console.log('📋 Initialized default activities for user:', getUserActivityPackKey());
+    }
+}
+
+/**
+ * Add activity to user's list
+ */
+async function addActivityToUserList(activityId) {
+    const currentList = getUserActivities();
+
+    if (currentList.includes(activityId)) {
+        console.log('Activity already in list:', activityId);
+        return false;
+    }
+
+    const updatedList = [...currentList, activityId];
+    const success = await saveUserActivities(updatedList);
+
+    if (success) {
+        await updateExerciseUI();
+    }
+
+    return success;
+}
+
+/**
+ * Remove activity from user's list
+ */
+async function removeActivityFromUserList(activityId) {
+    const currentList = getUserActivities();
+
+    if (!currentList.includes(activityId)) {
+        console.log('Activity not in list:', activityId);
+        return false;
+    }
+
+    const updatedList = currentList.filter(id => id !== activityId);
+    const success = await saveUserActivities(updatedList);
+
+    if (success) {
+        await updateExerciseUI();
+    }
+
+    return success;
+}
+
+/**
+ * Reset user's activities to default pack
+ */
+async function resetUserActivitiesToDefault() {
+    const defaults = getDefaultActivitiesForUser();
+    const success = await saveUserActivities(defaults);
+
+    if (success) {
+        await updateExerciseUI();
+    }
+
+    return success;
+}
+
+/**
+ * Get activities NOT in user's list (for "Add Activity" browser)
+ */
+function getAvailableActivitiesToAdd() {
+    const userActivities = getUserActivities();
+    return Object.values(ACTIVITY_LUT).filter(a => !userActivities.includes(a.id));
+}
+
+/**
+ * Get user's activity objects (full activity data, not just IDs)
+ */
+function getUserActivityObjects() {
+    const activityIds = getUserActivities();
+    return activityIds
+        .map(id => getActivityById(id))
+        .filter(a => a !== null); // Filter out any invalid IDs
 }
 
 // Exercise state for undo functionality
@@ -962,7 +1171,11 @@ async function initializeAfterLogin() {
             await initSync();
             console.log('✅ Sync system ready');
         }
-        
+
+        // Initialize user's activity list based on their fitness level
+        await initializeUserActivities();
+        console.log('✅ User activities initialized');
+
         // Initialize UI AFTER userSettings loaded
         await updateAllUI();
         
@@ -3367,23 +3580,46 @@ function calculateExerciseTotals(exercises) {
 }
 
 /**
- * Render the activity selector with category filter and activity dropdown
+ * Render the activity selector with user's personalized activity list
  */
 function renderActivitySelector() {
     const grid = document.getElementById('exerciseGrid');
     if (!grid) return;
 
-    const activities = getAllActivities(exerciseSelectedCategory);
+    // Get user's personalized activities
+    const userActivities = getUserActivityObjects();
+    const packKey = getUserActivityPackKey();
+    const packInfo = ACTIVITY_PACKS[packKey];
+
+    // Filter by category if selected
+    let filteredActivities = userActivities;
+    if (exerciseSelectedCategory && exerciseSelectedCategory !== 'all') {
+        filteredActivities = userActivities.filter(a => a.category === exerciseSelectedCategory);
+    }
+
+    // Get available categories from user's activities
+    const userCategories = [...new Set(userActivities.map(a => a.category))];
 
     grid.innerHTML = `
-        <!-- Category Filter -->
+        <!-- Pack Info & Manage Button -->
+        <div class="activity-pack-header">
+            <div class="pack-info">
+                <span class="pack-name">${packInfo ? packInfo.name : 'My Activities'}</span>
+                <span class="pack-count">${userActivities.length} activities</span>
+            </div>
+            <button class="btn btn-small manage-activities-btn" onclick="openActivityBrowser()">
+                + Add/Manage
+            </button>
+        </div>
+
+        <!-- Category Filter (only show categories that user has) -->
         <div class="exercise-category-filter">
             <button class="category-btn ${exerciseSelectedCategory === 'all' ? 'active' : ''}" onclick="filterExerciseCategory('all')">All</button>
-            <button class="category-btn ${exerciseSelectedCategory === 'cardio' ? 'active' : ''}" onclick="filterExerciseCategory('cardio')">❤️ Cardio</button>
-            <button class="category-btn ${exerciseSelectedCategory === 'strength' ? 'active' : ''}" onclick="filterExerciseCategory('strength')">💪 Strength</button>
-            <button class="category-btn ${exerciseSelectedCategory === 'sports' ? 'active' : ''}" onclick="filterExerciseCategory('sports')">⚽ Sports</button>
-            <button class="category-btn ${exerciseSelectedCategory === 'flexibility' ? 'active' : ''}" onclick="filterExerciseCategory('flexibility')">🧘 Flex</button>
-            <button class="category-btn ${exerciseSelectedCategory === 'recreation' ? 'active' : ''}" onclick="filterExerciseCategory('recreation')">🌱 Other</button>
+            ${userCategories.includes('cardio') ? `<button class="category-btn ${exerciseSelectedCategory === 'cardio' ? 'active' : ''}" onclick="filterExerciseCategory('cardio')">❤️ Cardio</button>` : ''}
+            ${userCategories.includes('strength') ? `<button class="category-btn ${exerciseSelectedCategory === 'strength' ? 'active' : ''}" onclick="filterExerciseCategory('strength')">💪 Strength</button>` : ''}
+            ${userCategories.includes('sports') ? `<button class="category-btn ${exerciseSelectedCategory === 'sports' ? 'active' : ''}" onclick="filterExerciseCategory('sports')">⚽ Sports</button>` : ''}
+            ${userCategories.includes('flexibility') ? `<button class="category-btn ${exerciseSelectedCategory === 'flexibility' ? 'active' : ''}" onclick="filterExerciseCategory('flexibility')">🧘 Flex</button>` : ''}
+            ${userCategories.includes('recreation') ? `<button class="category-btn ${exerciseSelectedCategory === 'recreation' ? 'active' : ''}" onclick="filterExerciseCategory('recreation')">🌱 Other</button>` : ''}
         </div>
 
         <!-- Activity Selector -->
@@ -3392,7 +3628,7 @@ function renderActivitySelector() {
                 <label for="activitySelect">Activity</label>
                 <select id="activitySelect" onchange="updateExercisePreview()">
                     <option value="">Choose activity...</option>
-                    ${activities.map(a => `<option value="${a.id}">${a.icon} ${a.name}</option>`).join('')}
+                    ${filteredActivities.map(a => `<option value="${a.id}">${a.icon} ${a.name}</option>`).join('')}
                 </select>
             </div>
 
@@ -3768,6 +4004,161 @@ async function resetExercise(activityName) {
         await deleteExerciseByActivity(today, activityName);
         await updateAllUI();
         await updateExerciseUI();
+    }
+}
+
+// ============ ACTIVITY BROWSER MODAL ============
+// Allow users to browse and add/remove activities from their personalized list
+
+let activityBrowserCategory = 'all';
+
+/**
+ * Open the activity browser modal
+ */
+function openActivityBrowser() {
+    activityBrowserCategory = 'all';
+    renderActivityBrowserModal();
+}
+
+/**
+ * Close the activity browser modal
+ */
+function closeActivityBrowser() {
+    const modal = document.getElementById('activityBrowserModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+/**
+ * Render the activity browser modal
+ */
+function renderActivityBrowserModal() {
+    // Remove existing modal if any
+    closeActivityBrowser();
+
+    const userActivityIds = getUserActivities();
+    const allActivities = getAllActivities(activityBrowserCategory === 'all' ? null : activityBrowserCategory);
+    const packKey = getUserActivityPackKey();
+    const packInfo = ACTIVITY_PACKS[packKey];
+
+    // Group activities by whether they're in user's list
+    const inList = allActivities.filter(a => userActivityIds.includes(a.id));
+    const notInList = allActivities.filter(a => !userActivityIds.includes(a.id));
+
+    const modal = document.createElement('div');
+    modal.id = 'activityBrowserModal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content activity-browser-modal">
+            <div class="modal-header">
+                <h3>Manage Activities</h3>
+                <button class="modal-close-btn" onclick="closeActivityBrowser()">×</button>
+            </div>
+
+            <div class="activity-browser-info">
+                <p>Your pack: <strong>${packInfo ? packInfo.name : 'Custom'}</strong></p>
+                <button class="btn btn-small btn-secondary" onclick="confirmResetActivities()">Reset to Default</button>
+            </div>
+
+            <!-- Category Filter -->
+            <div class="activity-browser-categories">
+                <button class="cat-btn ${activityBrowserCategory === 'all' ? 'active' : ''}" onclick="filterActivityBrowser('all')">All</button>
+                <button class="cat-btn ${activityBrowserCategory === 'cardio' ? 'active' : ''}" onclick="filterActivityBrowser('cardio')">❤️ Cardio</button>
+                <button class="cat-btn ${activityBrowserCategory === 'strength' ? 'active' : ''}" onclick="filterActivityBrowser('strength')">💪 Strength</button>
+                <button class="cat-btn ${activityBrowserCategory === 'sports' ? 'active' : ''}" onclick="filterActivityBrowser('sports')">⚽ Sports</button>
+                <button class="cat-btn ${activityBrowserCategory === 'flexibility' ? 'active' : ''}" onclick="filterActivityBrowser('flexibility')">🧘 Flex</button>
+                <button class="cat-btn ${activityBrowserCategory === 'recreation' ? 'active' : ''}" onclick="filterActivityBrowser('recreation')">🌱 Other</button>
+            </div>
+
+            <div class="activity-browser-sections">
+                <!-- Your Activities -->
+                <div class="activity-section">
+                    <h4>Your Activities (${inList.length})</h4>
+                    <div class="activity-list">
+                        ${inList.length === 0 ? '<p class="no-activities-msg">No activities in this category</p>' : ''}
+                        ${inList.map(a => `
+                            <div class="activity-item in-list">
+                                <span class="activity-icon">${a.icon}</span>
+                                <div class="activity-info">
+                                    <span class="activity-name">${a.name}</span>
+                                    <span class="activity-met">MET: ${a.met_value}</span>
+                                </div>
+                                <button class="remove-activity-btn" onclick="removeActivityFromList('${a.id}')" title="Remove">−</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Available to Add -->
+                <div class="activity-section">
+                    <h4>Available to Add (${notInList.length})</h4>
+                    <div class="activity-list">
+                        ${notInList.length === 0 ? '<p class="no-activities-msg">All activities in this category added</p>' : ''}
+                        ${notInList.map(a => `
+                            <div class="activity-item not-in-list">
+                                <span class="activity-icon">${a.icon}</span>
+                                <div class="activity-info">
+                                    <span class="activity-name">${a.name}</span>
+                                    <span class="activity-met">MET: ${a.met_value}</span>
+                                </div>
+                                <button class="add-activity-btn" onclick="addActivityToList('${a.id}')" title="Add">+</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeActivityBrowser()">Done</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeActivityBrowser();
+        }
+    });
+}
+
+/**
+ * Filter activity browser by category
+ */
+function filterActivityBrowser(category) {
+    activityBrowserCategory = category;
+    renderActivityBrowserModal();
+}
+
+/**
+ * Add activity to user's list (from browser)
+ */
+async function addActivityToList(activityId) {
+    await addActivityToUserList(activityId);
+    renderActivityBrowserModal(); // Refresh modal
+}
+
+/**
+ * Remove activity from user's list (from browser)
+ */
+async function removeActivityFromList(activityId) {
+    await removeActivityFromUserList(activityId);
+    renderActivityBrowserModal(); // Refresh modal
+}
+
+/**
+ * Confirm and reset activities to default
+ */
+async function confirmResetActivities() {
+    const packKey = getUserActivityPackKey();
+    const packInfo = ACTIVITY_PACKS[packKey];
+
+    if (confirm(`Reset your activities to the "${packInfo ? packInfo.name : 'default'}" pack?\n\nThis will replace your current list with the default activities for your fitness level.`)) {
+        await resetUserActivitiesToDefault();
+        renderActivityBrowserModal();
     }
 }
 
