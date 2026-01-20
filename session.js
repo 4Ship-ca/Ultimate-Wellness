@@ -673,10 +673,11 @@ function getCurrentLogicalDay() {
         return new Date().toISOString().split('T')[0];
     }
 
-    const resetHour = settings.dailyResetHour !== undefined ? settings.dailyResetHour : 4;
-    const resetMinute = settings.dailyResetMinute !== undefined ? settings.dailyResetMinute : 0;
+    // Settings stores resetTime as "HH:MM" string (e.g., "04:00")
+    const resetTime = settings.resetTime || '04:00';
+    const [resetHour, resetMinute] = resetTime.split(':').map(Number);
 
-    return getLogicalDay(new Date(), resetHour, resetMinute);
+    return getLogicalDay(new Date(), resetHour || 4, resetMinute || 0);
 }
 
 /**
@@ -686,19 +687,25 @@ window.getTodayKey = getCurrentLogicalDay;
 
 /**
  * Get reset time configuration
+ * Reads from user settings where resetTime is stored as "HH:MM" string
  */
 async function getResetTimeConfig() {
     const userId = getCurrentUserId();
-    if (!userId) return { hour: 4, minute: 0 };
+    if (!userId) return { hour: 4, minute: 0, timeString: '04:00' };
 
     try {
         const settings = await getSettings(userId);
+        // Settings stores resetTime as "HH:MM" string (e.g., "04:00")
+        const resetTime = settings?.resetTime || '04:00';
+        const [hour, minute] = resetTime.split(':').map(Number);
+
         return {
-            hour: settings?.dailyResetHour !== undefined ? settings.dailyResetHour : 4,
-            minute: settings?.dailyResetMinute !== undefined ? settings.dailyResetMinute : 0
+            hour: hour || 4,
+            minute: minute || 0,
+            timeString: resetTime
         };
     } catch (error) {
-        return { hour: 4, minute: 0 };
+        return { hour: 4, minute: 0, timeString: '04:00' };
     }
 }
 
@@ -952,19 +959,20 @@ async function performDailyReset(fromDate, toDate, daysMissed = 0) {
 function getNextResetTime() {
     const settings = window.userSettings;
     if (!settings) return null;
-    
-    const resetHour = settings.dailyResetHour !== undefined ? settings.dailyResetHour : 4;
-    const resetMinute = settings.dailyResetMinute !== undefined ? settings.dailyResetMinute : 0;
-    
+
+    // Settings stores resetTime as "HH:MM" string (e.g., "04:00")
+    const resetTime = settings.resetTime || '04:00';
+    const [resetHour, resetMinute] = resetTime.split(':').map(Number);
+
     const now = new Date();
     const next = new Date();
-    next.setHours(resetHour, resetMinute, 0, 0);
-    
+    next.setHours(resetHour || 4, resetMinute || 0, 0, 0);
+
     // If reset time has already passed today, next reset is tomorrow
     if (next <= now) {
         next.setDate(next.getDate() + 1);
     }
-    
+
     return next;
 }
 
