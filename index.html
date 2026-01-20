@@ -243,10 +243,10 @@
         }
 
         .exercise-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            display: flex;
+            flex-direction: column;
             gap: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         .nap-presets {
@@ -316,6 +316,344 @@
             background: var(--primary);
             border-color: var(--primary);
             color: white;
+        }
+
+        /* Enhanced Exercise UI Styles */
+        .exercise-category-filter {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 15px;
+        }
+
+        .exercise-category-filter .category-btn {
+            padding: 8px 12px;
+            background: var(--bg-light);
+            border: 1px solid transparent;
+            border-radius: 20px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .exercise-category-filter .category-btn:hover {
+            background: var(--bg-card);
+            border-color: var(--primary);
+        }
+
+        .exercise-category-filter .category-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .exercise-entry-form {
+            background: var(--bg-light);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+
+        .exercise-entry-form .form-row {
+            margin-bottom: 12px;
+        }
+
+        .exercise-entry-form label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .exercise-entry-form select,
+        .exercise-entry-form input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--bg-light);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .exercise-entry-form select:focus,
+        .exercise-entry-form input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .quick-duration-btns {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .quick-duration-btns .duration-btn {
+            flex: 1;
+            min-width: 50px;
+            padding: 10px 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--bg-light);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-duration-btns .duration-btn:hover {
+            background: var(--bg-light);
+            border-color: var(--primary);
+        }
+
+        .quick-duration-btns .duration-btn:active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .exercise-preview {
+            background: var(--bg-card);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            min-height: 60px;
+        }
+
+        .exercise-preview p {
+            margin: 0;
+            color: var(--text-secondary);
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .preview-result {
+            text-align: center;
+        }
+
+        .preview-result .preview-activity {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .preview-stats {
+            display: flex;
+            justify-content: space-around;
+            gap: 10px;
+        }
+
+        .preview-stat {
+            text-align: center;
+        }
+
+        .preview-stat .stat-label {
+            display: block;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .preview-stat .stat-value {
+            display: block;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .preview-stat.highlight .stat-value {
+            color: var(--success);
+        }
+
+        .exercise-log-btn {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .exercise-log-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Undo Button */
+        .undo-btn {
+            width: 100%;
+            margin-bottom: 15px;
+            padding: 12px;
+            font-size: 14px;
+        }
+
+        .undo-btn.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Points Earned Display */
+        .points-earned {
+            background: var(--success);
+            color: white;
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .points-earned-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .points-earned .points-label {
+            font-size: 14px;
+        }
+
+        .points-earned .points-value {
+            font-size: 20px;
+        }
+
+        /* Exercise Intervals Container */
+        .exercise-intervals-container {
+            margin-top: 15px;
+        }
+
+        .exercise-intervals-header h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .exercise-intervals-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .exercise-interval {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--bg-light);
+            padding: 12px;
+            border-radius: 10px;
+        }
+
+        .interval-icon {
+            font-size: 24px;
+            width: 40px;
+            text-align: center;
+        }
+
+        .interval-details {
+            flex: 1;
+        }
+
+        .interval-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .interval-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .interval-meta .interval-points {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .interval-time {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .interval-delete-btn {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            background: transparent;
+            border: 1px solid var(--bg-card);
+            border-radius: 50%;
+            color: var(--text-secondary);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .interval-delete-btn:hover {
+            background: #ff4444;
+            border-color: #ff4444;
+            color: white;
+        }
+
+        /* Exercise Totals Summary */
+        .exercise-totals-summary {
+            background: var(--bg-light);
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 15px;
+        }
+
+        .exercise-totals-summary .totals-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        .exercise-totals-summary .total-item {
+            text-align: center;
+        }
+
+        .exercise-totals-summary .total-label {
+            display: block;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .exercise-totals-summary .total-value {
+            display: block;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .exercise-totals-summary .total-item.highlight .total-value {
+            color: var(--success);
+        }
+
+        /* No Exercises Message */
+        .no-exercises {
+            text-align: center;
+            padding: 30px 15px;
+            color: var(--text-secondary);
+        }
+
+        .no-exercises p {
+            margin: 0 0 5px 0;
+        }
+
+        .no-exercises .hint {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        @media (max-width: 600px) {
+            .exercise-totals-summary .totals-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
 
         .sleep-buttons {
@@ -1282,9 +1620,26 @@
         <div id="exerciseTab" class="tab-content">
             <div class="card">
                 <h3 style="margin-bottom: 15px;">💪 Exercise Log</h3>
+
+                <!-- Activity Selector (dynamically populated) -->
                 <div class="exercise-grid" id="exerciseGrid"></div>
+
+                <!-- Undo Button -->
+                <button id="undoExerciseBtn" class="btn btn-secondary undo-btn disabled" onclick="undoLastExercise()" disabled>
+                    ↩️ No activities to undo
+                </button>
+
+                <!-- Points Earned Display -->
                 <div class="points-earned" id="exercisePoints">
                     Points Earned Today: 0 pts
+                </div>
+
+                <!-- Exercise Intervals List -->
+                <div id="exerciseIntervals" class="exercise-intervals-container">
+                    <div class="no-exercises">
+                        <p>No activities logged today</p>
+                        <p class="hint">Select an activity above to get started!</p>
+                    </div>
                 </div>
             </div>
         </div>
