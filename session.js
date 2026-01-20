@@ -1,6 +1,7 @@
-// ============ SESSION MANAGEMENT MODULE v2.3.0 ============
+// ============ SESSION MANAGEMENT MODULE v2.4.0 ============
 // Session persistence, state restoration, daily reset logic, and robust heartbeat system
-// Now with browser-independent sleep recovery and user interaction detection
+// Now with browser-independent sleep recovery, user interaction detection,
+// and comprehensive daily reset (points/water/meds/exercise/tasks)
 
 // ============ APP HEARTBEAT / PULSE SYSTEM ============
 // Robust system for detecting app wake/reanimation and handling time-sensitive state
@@ -25,7 +26,11 @@ const HEARTBEAT_KEYS = {
     OPEN_SLEEP_SESSION: 'openSleepSession',
     LAST_HEARTBEAT: 'lastHeartbeat',
     LAST_INTERACTION: 'lastUserInteraction',
-    PENDING_SLEEP_RECOVERY: 'pendingSleepRecovery'
+    PENDING_SLEEP_RECOVERY: 'pendingSleepRecovery',
+    // Daily reset keys
+    LAST_DAILY_RESET: 'lastDailyReset',
+    LAST_ACTIVE_DATE: 'lastActiveDate',
+    PENDING_DAY_TRANSITION: 'pendingDayTransition'
 };
 
 /**
@@ -355,32 +360,100 @@ async function heartbeatPulse() {
 /**
  * Called when app "wakes up" after being dormant
  * Handles: device sleep, tab close/reopen, browser restart
+ *
+ * This is the CRITICAL function that ensures app state is correct after hibernation.
+ * It answers: "What day is it? What should I check/do/update?"
  */
 async function onAppWake() {
-    console.log('🔄 App wake detected - running checks...');
+    console.log('🔄 App wake detected - running comprehensive checks...');
 
-    // 1. Check for day rollover (4am reset or user-defined)
-    await checkDailyReset();
+    const wakeReport = {
+        timestamp: Date.now(),
+        checks: []
+    };
 
-    // 2. Check for open sleep session (but wait for user interaction)
+    // 1. CHECK: What day/time is it? Has the day changed?
+    console.log('   1️⃣ Checking day/time transition...');
+    const resetResult = await checkDailyReset();
+    wakeReport.checks.push({
+        name: 'daily_reset',
+        result: resetResult
+    });
+
+    if (resetResult.resetPerformed) {
+        console.log(`   ✅ Day transition handled (${resetResult.daysMissed || 0} days missed)`);
+    }
+
+    // 2. CHECK: Is there an open sleep session?
+    console.log('   2️⃣ Checking for open sleep session...');
     const hasOpenSleep = getPersistedOpenSleepSession();
     if (hasOpenSleep) {
-        console.log('🛏️ Open sleep session detected - awaiting user interaction');
+        console.log('   🛏️ Open sleep session detected - awaiting user interaction');
         // Mark that we have pending sleep recovery
         localStorage.setItem(HEARTBEAT_KEYS.PENDING_SLEEP_RECOVERY, 'true');
+
+        wakeReport.checks.push({
+            name: 'sleep_recovery',
+            result: { pending: true, session: hasOpenSleep }
+        });
 
         // If user has already interacted, show prompt now
         if (HeartbeatState.userHasInteracted && !HeartbeatState.sleepRecoveryShown) {
             checkPendingSleepRecovery();
         }
+    } else {
+        wakeReport.checks.push({
+            name: 'sleep_recovery',
+            result: { pending: false }
+        });
     }
 
-    // 3. Refresh UI if needed
-    if (typeof updateAllUI === 'function') {
-        await updateAllUI();
+    // 3. UPDATE: Refresh all UI components
+    console.log('   3️⃣ Refreshing UI components...');
+    try {
+        // Points/Food
+        if (typeof updateFoodUI === 'function') await updateFoodUI();
+
+        // Water
+        if (typeof updateWaterUI === 'function') await updateWaterUI();
+
+        // Exercise
+        if (typeof updateExerciseUI === 'function') await updateExerciseUI();
+
+        // Medications
+        if (typeof updateMedicationUI === 'function') await updateMedicationUI();
+
+        // Tasks
+        if (typeof updateTasksUI === 'function') await updateTasksUI();
+
+        // Sleep
+        if (typeof updateSleepUI === 'function') await updateSleepUI();
+
+        // Home stats
+        if (typeof updateHomeStats === 'function') await updateHomeStats();
+
+        // Generic fallback
+        if (typeof updateAllUI === 'function') await updateAllUI();
+
+        wakeReport.checks.push({
+            name: 'ui_refresh',
+            result: { success: true }
+        });
+    } catch (error) {
+        console.warn('   ⚠️ UI refresh had errors:', error);
+        wakeReport.checks.push({
+            name: 'ui_refresh',
+            result: { success: false, error: error.message }
+        });
     }
+
+    // 4. PERSIST: Update active date
+    persistActiveDate();
 
     console.log('✅ App wake checks complete');
+    console.log('   Wake report:', wakeReport);
+
+    return wakeReport;
 }
 
 /**
@@ -565,28 +638,29 @@ function clearSessionState(userId = null) {
     localStorage.removeItem(sessionKey);
 }
 
-// ============ DAILY RESET LOGIC ============
+// ============ DAILY RESET LOGIC (ROBUST) ============
+// Browser-independent daily reset with time-aware logic
 
 /**
  * Get logical day based on user's reset time
- * 
+ *
  * If current time is before reset time, logical day is "yesterday"
  * If current time is after reset time, logical day is "today"
  */
 function getLogicalDay(date, resetHour, resetMinute) {
     const d = new Date(date);
-    
+
     // Current time in minutes since midnight
     const currentMinutes = d.getHours() * 60 + d.getMinutes();
-    
+
     // Reset time in minutes since midnight
     const resetMinutes = resetHour * 60 + resetMinute;
-    
+
     // If we haven't hit reset time yet, we're still in "yesterday"
     if (currentMinutes < resetMinutes) {
         d.setDate(d.getDate() - 1);
     }
-    
+
     return d.toISOString().split('T')[0];
 }
 
@@ -598,10 +672,10 @@ function getCurrentLogicalDay() {
     if (!settings) {
         return new Date().toISOString().split('T')[0];
     }
-    
+
     const resetHour = settings.dailyResetHour !== undefined ? settings.dailyResetHour : 4;
     const resetMinute = settings.dailyResetMinute !== undefined ? settings.dailyResetMinute : 0;
-    
+
     return getLogicalDay(new Date(), resetHour, resetMinute);
 }
 
@@ -611,64 +685,265 @@ function getCurrentLogicalDay() {
 window.getTodayKey = getCurrentLogicalDay;
 
 /**
- * Check if we've crossed the daily reset boundary
+ * Get reset time configuration
  */
-async function checkDailyReset() {
-    console.log('🕐 Checking daily reset...');
-    
+async function getResetTimeConfig() {
     const userId = getCurrentUserId();
-    if (!userId) return;
-    
-    // Get user's reset time from settings
-    const settings = await getSettings(userId);
-    const resetHour = settings?.dailyResetHour !== undefined ? settings.dailyResetHour : 4;
-    const resetMinute = settings?.dailyResetMinute !== undefined ? settings.dailyResetMinute : 0;
-    
-    // Get last reset date
-    const resetKey = `lastDailyReset_user_${userId}`;
-    const lastReset = localStorage.getItem(resetKey);
-    
-    // Calculate current logical day
-    const currentLogicalDay = getLogicalDay(new Date(), resetHour, resetMinute);
-    
-    if (lastReset !== currentLogicalDay) {
-        console.log(`🌅 New day detected! Last reset: ${lastReset}, Current: ${currentLogicalDay}`);
-        
-        // Perform daily reset
-        await performDailyReset();
-        
-        // Save new reset date
-        localStorage.setItem(resetKey, currentLogicalDay);
-        
-        // Show notification (optional)
-        if (window.showToast) {
-            showToast('New day started! 🌅');
-        }
-    } else {
-        console.log(`✅ Same day (${currentLogicalDay}), no reset needed`);
+    if (!userId) return { hour: 4, minute: 0 };
+
+    try {
+        const settings = await getSettings(userId);
+        return {
+            hour: settings?.dailyResetHour !== undefined ? settings.dailyResetHour : 4,
+            minute: settings?.dailyResetMinute !== undefined ? settings.dailyResetMinute : 0
+        };
+    } catch (error) {
+        return { hour: 4, minute: 0 };
     }
 }
 
 /**
- * Perform the actual daily reset
+ * Calculate days between two date strings (YYYY-MM-DD format)
  */
-async function performDailyReset() {
-    console.log('🔄 Performing daily reset...');
-    
-    // Clear any cached daily stats
-    // (IndexedDB data persists - we just recalculate from today's data)
-    
-    // Reset UI counters if they exist
-    if (window.refreshAllData) {
-        await window.refreshAllData();
+function daysBetween(date1Str, date2Str) {
+    const d1 = new Date(date1Str + 'T00:00:00');
+    const d2 = new Date(date2Str + 'T00:00:00');
+    const diffMs = Math.abs(d2 - d1);
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Persist the current active date to localStorage
+ * Called periodically to track when user was last active
+ */
+function persistActiveDate() {
+    const userId = getCurrentUserId();
+    if (!userId) return;
+
+    const currentLogicalDay = getCurrentLogicalDay();
+    localStorage.setItem(`${HEARTBEAT_KEYS.LAST_ACTIVE_DATE}_${userId}`, JSON.stringify({
+        date: currentLogicalDay,
+        timestamp: Date.now(),
+        actualDate: new Date().toISOString()
+    }));
+}
+
+/**
+ * Get the last active date from localStorage
+ */
+function getLastActiveDate() {
+    const userId = getCurrentUserId();
+    if (!userId) return null;
+
+    try {
+        const data = localStorage.getItem(`${HEARTBEAT_KEYS.LAST_ACTIVE_DATE}_${userId}`);
+        if (!data) return null;
+        return JSON.parse(data);
+    } catch (error) {
+        return null;
     }
-    
-    // Trigger UI refresh
-    if (window.refreshStats) {
-        await window.refreshStats();
+}
+
+/**
+ * Check if we've crossed the daily reset boundary
+ * Robust version that handles device sleep, browser close, etc.
+ */
+async function checkDailyReset() {
+    console.log('🕐 Checking daily reset...');
+
+    const userId = getCurrentUserId();
+    if (!userId) return { resetPerformed: false, reason: 'no_user' };
+
+    // Get user's reset time from settings
+    const { hour: resetHour, minute: resetMinute } = await getResetTimeConfig();
+
+    // Get last reset date (user-specific)
+    const resetKey = `lastDailyReset_user_${userId}`;
+    const lastReset = localStorage.getItem(resetKey);
+
+    // Calculate current logical day
+    const currentLogicalDay = getLogicalDay(new Date(), resetHour, resetMinute);
+
+    // Get last active date for gap detection
+    const lastActive = getLastActiveDate();
+
+    if (lastReset !== currentLogicalDay) {
+        // Calculate how many days have passed
+        const daysMissed = lastReset ? daysBetween(lastReset, currentLogicalDay) : 0;
+
+        console.log(`🌅 Day transition detected!`);
+        console.log(`   Last reset: ${lastReset || 'never'}`);
+        console.log(`   Current day: ${currentLogicalDay}`);
+        console.log(`   Days since last reset: ${daysMissed}`);
+
+        if (lastActive) {
+            const lastActiveTime = new Date(lastActive.timestamp);
+            const hoursSinceActive = (Date.now() - lastActiveTime) / (1000 * 60 * 60);
+            console.log(`   Hours since last active: ${hoursSinceActive.toFixed(1)}`);
+        }
+
+        // Perform daily reset
+        await performDailyReset(lastReset, currentLogicalDay, daysMissed);
+
+        // Save new reset date
+        localStorage.setItem(resetKey, currentLogicalDay);
+
+        // Update active date
+        persistActiveDate();
+
+        // Show time-of-day aware notification
+        const { greeting, emoji } = getTimeOfDayGreeting();
+        const resetTimeStr = formatResetTime(resetHour, resetMinute);
+
+        if (window.showToast) {
+            if (daysMissed > 1) {
+                showToast(`${greeting}! ${emoji} Welcome back! (${daysMissed} days)`);
+            } else {
+                showToast(`${greeting}! ${emoji} New day started!`);
+            }
+        }
+
+        return { resetPerformed: true, daysMissed, currentDay: currentLogicalDay };
+    } else {
+        console.log(`✅ Same day (${currentLogicalDay}), no reset needed`);
+
+        // Still update active date
+        persistActiveDate();
+
+        return { resetPerformed: false, currentDay: currentLogicalDay };
     }
-    
-    console.log('✅ Daily reset complete');
+}
+
+/**
+ * Perform the actual daily reset - comprehensive version
+ * Resets: points, water, meds, exercise, tasks
+ */
+async function performDailyReset(fromDate, toDate, daysMissed = 0) {
+    console.log('🔄 Performing comprehensive daily reset...');
+    console.log(`   From: ${fromDate || 'initial'} → To: ${toDate}`);
+
+    const resetActions = [];
+
+    // 1. POINTS - Clear cached daily points (will recalculate from DB)
+    try {
+        if (window.refreshFoodData) {
+            await window.refreshFoodData();
+            resetActions.push('points');
+        }
+    } catch (e) {
+        console.warn('Points refresh failed:', e);
+    }
+
+    // 2. WATER - Reset water counter display
+    try {
+        if (window.updateWaterUI) {
+            await window.updateWaterUI();
+            resetActions.push('water');
+        } else if (window.refreshWaterData) {
+            await window.refreshWaterData();
+            resetActions.push('water');
+        }
+    } catch (e) {
+        console.warn('Water refresh failed:', e);
+    }
+
+    // 3. MEDICATIONS - Reset med tracking for new day
+    try {
+        if (window.updateMedicationUI) {
+            await window.updateMedicationUI();
+            resetActions.push('meds');
+        } else if (window.refreshMedsData) {
+            await window.refreshMedsData();
+            resetActions.push('meds');
+        }
+    } catch (e) {
+        console.warn('Meds refresh failed:', e);
+    }
+
+    // 4. EXERCISE - Reset exercise points display
+    try {
+        if (window.updateExerciseUI) {
+            await window.updateExerciseUI();
+            resetActions.push('exercise');
+        } else if (window.refreshExerciseData) {
+            await window.refreshExerciseData();
+            resetActions.push('exercise');
+        }
+    } catch (e) {
+        console.warn('Exercise refresh failed:', e);
+    }
+
+    // 5. TASKS - Reset daily tasks
+    try {
+        if (window.updateTasksUI) {
+            await window.updateTasksUI();
+            resetActions.push('tasks');
+        } else if (window.refreshTasksData) {
+            await window.refreshTasksData();
+            resetActions.push('tasks');
+        }
+    } catch (e) {
+        console.warn('Tasks refresh failed:', e);
+    }
+
+    // 6. SLEEP - Update sleep UI (but DON'T reset open sessions - handled separately)
+    try {
+        if (window.updateSleepUI) {
+            await window.updateSleepUI();
+            resetActions.push('sleep_ui');
+        }
+    } catch (e) {
+        console.warn('Sleep UI refresh failed:', e);
+    }
+
+    // 7. HOME DASHBOARD - Refresh home stats
+    try {
+        if (window.updateHomeStats) {
+            await window.updateHomeStats();
+            resetActions.push('home');
+        }
+    } catch (e) {
+        console.warn('Home stats refresh failed:', e);
+    }
+
+    // 8. GENERIC REFRESH - Fallback to general refresh functions
+    try {
+        if (window.refreshAllData) {
+            await window.refreshAllData();
+        }
+        if (window.refreshStats) {
+            await window.refreshStats();
+        }
+        if (window.updateAllUI) {
+            await window.updateAllUI();
+        }
+    } catch (e) {
+        console.warn('General refresh failed:', e);
+    }
+
+    // Log the reset event for debugging
+    console.log(`✅ Daily reset complete. Reset: ${resetActions.join(', ') || 'general refresh'}`);
+
+    // Store reset event in localStorage for debugging
+    try {
+        const resetLog = JSON.parse(localStorage.getItem('dailyResetLog') || '[]');
+        resetLog.push({
+            timestamp: Date.now(),
+            from: fromDate,
+            to: toDate,
+            daysMissed,
+            actions: resetActions
+        });
+        // Keep only last 10 resets
+        if (resetLog.length > 10) {
+            resetLog.shift();
+        }
+        localStorage.setItem('dailyResetLog', JSON.stringify(resetLog));
+    } catch (e) {
+        // Ignore logging errors
+    }
+
+    return resetActions;
 }
 
 /**
@@ -905,7 +1180,7 @@ window.saveSessionState = saveSessionState;
 window.restoreSession = restoreSession;
 window.clearSessionState = clearSessionState;
 
-// Daily reset
+// Daily reset (robust version)
 window.checkDailyReset = checkDailyReset;
 window.performDailyReset = performDailyReset;
 window.getLogicalDay = getLogicalDay;
@@ -913,6 +1188,10 @@ window.getCurrentLogicalDay = getCurrentLogicalDay;
 window.getNextResetTime = getNextResetTime;
 window.formatResetTime = formatResetTime;
 window.getTimeUntilReset = getTimeUntilReset;
+window.getResetTimeConfig = getResetTimeConfig;
+window.persistActiveDate = persistActiveDate;
+window.getLastActiveDate = getLastActiveDate;
+window.daysBetween = daysBetween;
 
 // In-progress helpers
 window.getCurrentFoodEntry = getCurrentFoodEntry;
@@ -947,4 +1226,4 @@ window.HeartbeatState = HeartbeatState;
 // Time-of-day helpers
 window.getTimeOfDayGreeting = getTimeOfDayGreeting;
 
-console.log('📋 Session management v2.3.0 loaded (with robust heartbeat system)');
+console.log('📋 Session management v2.4.0 loaded (robust heartbeat + comprehensive daily reset)');
