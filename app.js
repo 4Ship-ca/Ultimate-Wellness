@@ -2466,6 +2466,15 @@ async function getPreferences() {
 }
 
 // ============ ZERO-POINT FOOD HELPERS ============
+// NOTE: Auto-badge logic disabled - bot's calculation is source of truth
+// Keep zero-point-foods.json for educational reference only
+//
+// Future enhancement: Bot can explicitly check zero-point list and validate
+// with context (e.g., "apple" = yes, "apple crisp" = no)
+
+/*
+// DISABLED: This caused false positives (e.g., "passion" matching "passion fruit")
+// If re-enabling, bot should validate with full context instead of static matching
 
 function isZeroPointFood(foodName) {
     if (!foodName) return false;
@@ -2473,6 +2482,35 @@ function isZeroPointFood(foodName) {
 
     const normalized = foodName.toLowerCase().trim();
     const allFoods = Object.values(ZERO_POINT_FOODS).flat();
+
+    // Exclude processed/packaged foods - these should NEVER be zero points
+    const processedKeywords = [
+        'pastry', 'pastries', 'cookie', 'cookies', 'cake', 'cakes',
+        'donut', 'donuts', 'doughnut', 'muffin', 'muffins',
+        'croissant', 'brownie', 'brownies', 'pie', 'pies',
+        'candy', 'chocolate', 'chips', 'crackers', 'snack',
+        'flakey', 'flaky', 'frosted', 'glazed', 'fried',
+        'packaged', 'processed', 'frozen dessert', 'ice cream'
+    ];
+
+    for (const keyword of processedKeywords) {
+        if (normalized.includes(keyword)) {
+            return false; // Immediately reject processed foods
+        }
+    }
+
+    // Exclude brand names - branded products are rarely zero-point
+    const brandKeywords = [
+        'vachon', 'kraft', 'nestle', 'nabisco', 'kellogg',
+        'general mills', 'pepsi', 'coca-cola', 'coke',
+        'lay\'s', 'doritos', 'frito', 'oreo', 'chips ahoy'
+    ];
+
+    for (const brand of brandKeywords) {
+        if (normalized.includes(brand)) {
+            return false; // Reject branded processed foods
+        }
+    }
 
     // Helper to remove common plural endings for better matching
     const singularize = (word) => {
@@ -2485,41 +2523,54 @@ function isZeroPointFood(foodName) {
     return allFoods.some(zeroFood => {
         const zeroLower = zeroFood.toLowerCase();
 
-        // Direct substring match (either direction)
-        if (zeroLower.includes(normalized) || normalized.includes(zeroLower)) {
+        // Direct exact match
+        if (normalized === zeroLower) {
             return true;
         }
 
-        // Word-by-word matching with pluralization handling
-        const userWords = normalized.split(/\s+/);
-        const zeroWords = zeroLower.split(/\s+/);
-
-        // Check if any significant user word matches any zero-point food word
-        for (let userWord of userWords) {
-            // Skip very short words (like "a", "of", etc.)
-            if (userWord.length < 3) continue;
-
-            for (let zeroWord of zeroWords) {
-                // Remove parenthetical info like "(whole)" or "(skinless)"
-                zeroWord = zeroWord.replace(/[()]/g, '');
-                if (zeroWord.length < 3) continue;
-
-                // Direct match
-                if (userWord === zeroWord) return true;
-
-                // Singular/plural match
-                if (singularize(userWord) === singularize(zeroWord)) return true;
-
-                // Partial match for compound words (e.g., "chicken" in "chicken breast")
-                if (zeroWord.includes(userWord) || userWord.includes(zeroWord)) {
-                    // Ensure at least 4 characters match to avoid false positives
-                    const minLength = Math.min(userWord.length, zeroWord.length);
-                    if (minLength >= 4) return true;
-                }
-            }
+        // Check if the zero-point food is a complete substring (with word boundaries)
+        // e.g., "fresh strawberries" contains "strawberries"
+        const pattern = new RegExp('\\b' + zeroLower.replace(/[()]/g, '').trim() + '\\b');
+        if (pattern.test(normalized)) {
+            return true;
         }
 
-        return false;
+        // Word-by-word matching: ALL significant words from zero-point food must be present
+        const userWords = normalized.split(/\s+/);
+        const zeroWords = zeroLower.split(/\s+/).map(w => w.replace(/[(),]/g, '').trim()).filter(w => w.length >= 3);
+
+        // Skip single-word zero foods for stricter matching (to avoid "passion" matching "passion fruit")
+        if (zeroWords.length === 1) {
+            // For single-word zero foods, require exact word match only
+            const zeroWord = zeroWords[0];
+            return userWords.some(userWord => {
+                return userWord === zeroWord || singularize(userWord) === singularize(zeroWord);
+            });
+        }
+
+        // For multi-word zero foods, require ALL words to be present
+        // e.g., "chicken breast" requires both "chicken" AND "breast"
+        const allWordsPresent = zeroWords.every(zeroWord => {
+            return userWords.some(userWord => {
+                if (userWord.length < 3) return false;
+
+                // Direct match or singular/plural match
+                if (userWord === zeroWord || singularize(userWord) === singularize(zeroWord)) {
+                    return true;
+                }
+
+                // Partial match for compound words (minimum 4 chars overlap)
+                if (zeroWord.length >= 4 && userWord.length >= 4) {
+                    if (zeroWord.includes(userWord) || userWord.includes(zeroWord)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            });
+        });
+
+        return allWordsPresent;
     });
 }
 
@@ -2529,6 +2580,7 @@ function getZeroPointBadge(foodName) {
     }
     return '';
 }
+*/
 
 // ============ DATABASE HELPER FUNCTIONS ============
 
@@ -3917,11 +3969,11 @@ async function updateTodayLog() {
                 <br><strong>Net:</strong> ${netPoints} pts
             </div>
             ${foods.map(f => {
-                const zeroPointBadge = isZeroPointFood(f.name) ? getZeroPointBadge(f.name) : '';
-                const pointsDisplay = f.points === 0 && isZeroPointFood(f.name) ? 
-                    `<span style="color: #28a745; font-weight: bold;">0 pts</span>` : 
+                // Show points as calculated - no auto-badge based on static list
+                const pointsDisplay = f.points === 0 ?
+                    `<span style="color: #28a745; font-weight: bold;">0 pts</span>` :
                     `${f.points}pts`;
-                return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})${zeroPointBadge}</div>`;
+                return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})</div>`;
             }).join('')}
         `;
     } catch (error) {
@@ -4499,6 +4551,30 @@ function getRandomZeroPointFoods(category = null, count = 10) {
     return shuffled.slice(0, count);
 }
 
+// Generate formatted zero-point foods list for bot prompt
+function getZeroPointFoodsList() {
+    if (!window.ZERO_POINT_FOODS) {
+        return `
+- Non-Starchy Vegetables (artichokes, asparagus, broccoli, carrots, cauliflower, celery, cucumbers, lettuce, mushrooms, peppers, spinach, tomatoes, etc.)
+- Fruits (apples, bananas, berries, oranges, grapes, melon, peaches, pears, strawberries, watermelon, etc.)
+- Lean Meats & Poultry (skinless chicken breast, skinless turkey breast, lean ground chicken, lean ground turkey, pork tenderloin, lean beef, etc.)
+- Fish & Shellfish (salmon, tuna, cod, tilapia, shrimp, crab, lobster, scallops, etc.)
+- Eggs (whole eggs, egg whites)
+- Plain Yogurt (nonfat plain yogurt, nonfat plain greek yogurt, nonfat cottage cheese)
+- Beans & Legumes (black beans, chickpeas, lentils, kidney beans, pinto beans, split peas, etc.)
+- Tofu & Tempeh
+- Potatoes & Starchy Vegetables (all types of potatoes, sweet potatoes, corn, peas, winter squash, etc.)
+- Whole Grains (oats, quinoa, brown rice, wild rice, barley, whole wheat pasta, whole grain bread)`;
+    }
+
+    // Format the actual loaded list
+    let formatted = '';
+    for (const [category, foods] of Object.entries(ZERO_POINT_FOODS)) {
+        formatted += `\n- ${category}: ${foods.slice(0, 10).join(', ')}${foods.length > 10 ? ', etc.' : ''}`;
+    }
+    return formatted;
+}
+
 async function buildAIContext() {
     // Gather user context for better AI responses
     const userId = getCurrentUserId();
@@ -4650,26 +4726,83 @@ function isMealLoggingRequest(message) {
 }
 
 // Constant: Meal logging AI system prompt
-const MEAL_LOGGING_SYSTEM_PROMPT = `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
+// Generate meal logging system prompt with comprehensive zero-point validation
+function getMealLoggingSystemPrompt() {
+    const zeroPointFoodsList = getZeroPointFoodsList();
 
-ZERO-POINT FOODS (0 pts - DO NOT charge points for these):
-- Vegetables: Most non-starchy vegetables (broccoli, spinach, tomatoes, peppers, etc.)
-- Fruits: Fresh fruits (apples, berries, oranges, bananas, etc.)
-- Lean Proteins: Skinless chicken breast, turkey breast, fish, shrimp, egg whites
-- Eggs & Dairy: Whole eggs, non-fat greek yogurt, non-fat cottage cheese
-- Beans & Legumes: Black beans, chickpeas, lentils, etc.
-- Starches: Plain potatoes, sweet potatoes, corn, plain popcorn
+    return `You are a food logging assistant. Parse the user's meal description and extract food items with quantities.
 
-ZERO-POINT RULES:
-1. If a food is on the zero-point list AND prepared simply (grilled, steamed, baked), assign 0 points
-2. If zero-point food is fried, breaded, or has added fats/oils, calculate points normally
-3. Examples:
-   - "Grilled chicken breast" = 0 pts ✅
-   - "Fried chicken breast" = Calculate points ❌
-   - "Steamed broccoli" = 0 pts ✅
-   - "Broccoli with cheese sauce" = Calculate points ❌
+═══════════════════════════════════════════════════════
+ZERO-POINT FOODS REFERENCE LIST
+═══════════════════════════════════════════════════════
+${zeroPointFoodsList}
 
-CRITICAL QUANTITY RULES:
+═══════════════════════════════════════════════════════
+ZERO-POINT VALIDATION RULES (CRITICAL - READ CAREFULLY)
+═══════════════════════════════════════════════════════
+
+You MUST check each food against the zero-point list above AND apply contextual logic:
+
+✅ ASSIGN 0 POINTS IF:
+1. Food is on the zero-point list above
+2. AND prepared simply: grilled, baked, steamed, boiled, roasted (no oil), raw, fresh
+3. AND no added fats, oils, sugar, cheese, sauces, or processed ingredients
+4. Set "isZeroPoint": true in the JSON response
+
+❌ CALCULATE POINTS NORMALLY IF:
+1. Food is NOT on the zero-point list
+2. OR food is on the list BUT prepared with added fats/oils/sugar:
+   - Fried, sautéed, breaded, crispy, crunchy, glazed, candied
+   - With butter, oil, cheese, cream sauce, gravy, dressing
+   - Sweetened, honeyed, caramelized, frosted
+3. OR food is processed/packaged (brand names, pre-made, frozen meals)
+4. OR food is a dessert/baked good containing zero-point ingredients:
+   - "Apple crisp" = Calculate (baked with sugar/butter)
+   - "Banana bread" = Calculate (processed, added sugar/fat)
+   - "Strawberry cheesecake" = Calculate (dessert)
+   - "Chicken nuggets" = Calculate (breaded/fried)
+5. Set "isZeroPoint": false in the JSON response
+
+CONTEXTUAL EXAMPLES:
+✅ "Fresh apple" → on list, simple → 0 pts, isZeroPoint: true
+❌ "Apple crisp" → on list BUT baked dessert with sugar → Calculate pts, isZeroPoint: false
+❌ "Apple pie" → on list BUT processed dessert → Calculate pts, isZeroPoint: false
+
+✅ "Grilled chicken breast" → on list, simple → 0 pts, isZeroPoint: true
+✅ "Baked skinless chicken breast" → on list, simple → 0 pts, isZeroPoint: true
+❌ "Fried chicken breast" → on list BUT fried → Calculate pts, isZeroPoint: false
+❌ "Chicken breast with cream sauce" → on list BUT added fat → Calculate pts, isZeroPoint: false
+❌ "Breaded chicken" → on list BUT breaded → Calculate pts, isZeroPoint: false
+
+✅ "Steamed broccoli" → on list, simple → 0 pts, isZeroPoint: true
+❌ "Broccoli with cheese sauce" → on list BUT added cheese → Calculate pts, isZeroPoint: false
+❌ "Broccoli sautéed in butter" → on list BUT added fat → Calculate pts, isZeroPoint: false
+
+✅ "Fresh strawberries" → on list, simple → 0 pts, isZeroPoint: true
+❌ "Strawberry cheesecake" → on list BUT dessert → Calculate pts, isZeroPoint: false
+❌ "Strawberry smoothie with sugar" → on list BUT added sugar → Calculate pts, isZeroPoint: false
+
+✅ "Baked potato" → on list, simple → 0 pts, isZeroPoint: true
+❌ "Loaded baked potato" → on list BUT added toppings → Calculate pts, isZeroPoint: false
+❌ "French fries" → on list BUT fried → Calculate pts, isZeroPoint: false
+
+✅ "Passion fruit" → on list, fresh → 0 pts, isZeroPoint: true
+❌ "Passion flakey pastries" → contains word "passion" BUT is pastry → Calculate pts, isZeroPoint: false
+❌ "Vachon Passion pastries" → brand + pastry → Calculate pts, isZeroPoint: false
+
+BRAND NAMES = ALWAYS CALCULATE:
+If you see brand names (Vachon, Kraft, Nestlé, etc.), it's processed → Calculate points, isZeroPoint: false
+
+WORD MATCHING LOGIC:
+- Don't just match individual words - use FULL CONTEXT
+- "Passion flakey pastries" is NOT "passion fruit" (it's a pastry!)
+- "Apple crisp" is NOT "apples" (it's a baked dessert!)
+- "Banana bread" is NOT "bananas" (it's processed bread!)
+- Check preparation method AND food type together
+
+═══════════════════════════════════════════════════════
+CRITICAL QUANTITY RULES
+═══════════════════════════════════════════════════════
 1. ALWAYS look for specific quantities in the user's message
 2. If quantity is NOT specified, ASK the user (e.g., "How much rice did you have?")
 3. Common serving sizes:
@@ -4744,6 +4877,7 @@ If clarification needed:
   "needsClarification": true,
   "question": "How much rice did you have? (1 cup, 2 cups, etc.)"
 }`;
+}
 
 // Helper: Call Claude API for meal parsing
 async function callMealParsingAPI(userMessage) {
@@ -4754,7 +4888,7 @@ async function callMealParsingAPI(userMessage) {
     const requestBody = {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
-        system: MEAL_LOGGING_SYSTEM_PROMPT,
+        system: getMealLoggingSystemPrompt(),
         messages: [{ role: 'user', content: userMessage }]
     };
 
@@ -4803,9 +4937,10 @@ function parseMealDataFromResponse(responseText) {
     return { type: 'success', data: mealData };
 }
 
-// Helper: Check if food is zero-point (with fallback)
+// Helper: Check if food is zero-point (bot must explicitly set this)
 function isFoodZeroPoint(food) {
-    return food.isZeroPoint || isZeroPointFood(food.name);
+    // Only trust bot's explicit determination, not static list matching
+    return food.isZeroPoint === true;
 }
 
 // Helper: Log parsed meal items to database
