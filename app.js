@@ -12,6 +12,26 @@
 const APP_VERSION = '2.2.2';
 const APP_NAME = 'Ultimate Wellness';
 
+// Hydrating foods - water content in ml per typical serving
+const HYDRATING_FOODS = {
+    'watermelon': 250,
+    'cucumber': 200,
+    'celery': 180,
+    'tomato': 150,
+    'lettuce': 150,
+    'strawberries': 120,
+    'cantaloupe': 200,
+    'peaches': 140,
+    'oranges': 150,
+    'grapefruit': 180,
+    'milk': 240,
+    'yogurt': 200,
+    'soup': 300,
+    'broth': 300,
+    'smoothie': 250,
+    'juice': 240
+};
+
 // ============================================================================
 // BULLETPROOF AUTHENTICATION & SESSION SYSTEM
 // ============================================================================
