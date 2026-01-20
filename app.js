@@ -700,7 +700,10 @@ async function startSleepSession(startTime) {
     try {
         const userId = getCurrentUserId();
         const now = startTime ? new Date(startTime) : new Date();
-        const date = getCurrentLogicalDay();
+
+        // Sleep uses ACTUAL calendar date, NOT logical day
+        // Sleep is independent of the daily reset time
+        const date = now.toISOString().split('T')[0];
 
         const sleepSession = {
             id: `sleep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,

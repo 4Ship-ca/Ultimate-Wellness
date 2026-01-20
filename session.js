@@ -209,6 +209,32 @@ function formatSleepDuration(startDateTime) {
 }
 
 /**
+ * Check if sleep duration is suspiciously long (likely missed button press)
+ * Returns warning message if over threshold, null otherwise
+ */
+function checkSleepDurationWarning(startDateTime) {
+    const start = new Date(startDateTime);
+    const now = new Date();
+    const durationHours = (now - start) / (1000 * 60 * 60);
+
+    // Max reasonable sleep is ~16 hours, anything over 18 is suspicious
+    if (durationHours > 24) {
+        return {
+            level: 'error',
+            message: `This session is over 24 hours. Did you forget to end a previous session?`,
+            durationHours
+        };
+    } else if (durationHours > 16) {
+        return {
+            level: 'warning',
+            message: `This is a long session (${Math.round(durationHours)}h). You may want to adjust the time.`,
+            durationHours
+        };
+    }
+    return null;
+}
+
+/**
  * Show sleep recovery prompt to user
  * AM/PM aware greeting with option to end session
  */
@@ -223,6 +249,14 @@ function showSleepRecoveryPrompt(session) {
         minute: '2-digit',
         hour12: true
     });
+    const startDate = new Date(session.start_datetime).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric'
+    });
+
+    // Check for suspiciously long duration (missed button press)
+    const durationWarning = checkSleepDurationWarning(session.start_datetime);
 
     console.log(`🛏️ Sleep recovery prompt - Session started: ${startTime}, Duration: ${duration}`);
 
@@ -254,15 +288,26 @@ function showSleepRecoveryPrompt(session) {
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     `;
 
+    // Build warning HTML if duration is suspicious
+    const warningHtml = durationWarning ? `
+        <div style="background: ${durationWarning.level === 'error' ? '#ff4444' : '#ff9800'};
+                    padding: 10px; border-radius: 8px; margin-bottom: 16px;">
+            <p style="margin: 0; font-size: 13px; color: white;">
+                ⚠️ ${durationWarning.message}
+            </p>
+        </div>
+    ` : '';
+
     modal.innerHTML = `
         <div style="font-size: 48px; margin-bottom: 16px;">${emoji}</div>
         <h2 style="margin: 0 0 8px 0; color: var(--text-primary, #fff);">${greeting}!</h2>
         <p style="color: var(--text-secondary, #aaa); margin: 0 0 16px 0;">
             You have an open sleep session
         </p>
+        ${warningHtml}
         <div style="background: var(--bg-light, #252540); padding: 12px; border-radius: 8px; margin-bottom: 20px;">
-            <p style="margin: 0 0 4px 0; font-size: 14px; color: var(--text-secondary, #aaa);">Started at ${startTime}</p>
-            <p style="margin: 0; font-size: 24px; font-weight: bold; color: var(--primary, #4CAF50);">${duration}</p>
+            <p style="margin: 0 0 4px 0; font-size: 14px; color: var(--text-secondary, #aaa);">Started ${startDate} at ${startTime}</p>
+            <p style="margin: 0; font-size: 24px; font-weight: bold; color: ${durationWarning ? '#ff9800' : 'var(--primary, #4CAF50)'};">${duration}</p>
         </div>
         <p style="color: var(--text-secondary, #aaa); margin: 0 0 20px 0; font-size: 14px;">
             Would you like to end your sleep session?
@@ -277,7 +322,7 @@ function showSleepRecoveryPrompt(session) {
                 border-radius: 8px;
                 cursor: pointer;
                 font-size: 14px;
-            ">Keep Sleeping</button>
+            ">${durationWarning ? 'Cancel Session' : 'Keep Sleeping'}</button>
             <button id="sleepRecoveryEnd" style="
                 flex: 1;
                 padding: 12px;
@@ -295,10 +340,42 @@ function showSleepRecoveryPrompt(session) {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
-    // Handle dismiss - keep session open
-    document.getElementById('sleepRecoveryDismiss').addEventListener('click', () => {
+    // Handle dismiss - keep sleeping OR cancel if duration is suspicious
+    document.getElementById('sleepRecoveryDismiss').addEventListener('click', async () => {
         overlay.remove();
-        console.log('😴 User chose to keep sleeping');
+
+        if (durationWarning && durationWarning.level === 'error') {
+            // Duration is way too long - offer to cancel/delete the session
+            const shouldCancel = confirm(
+                'This sleep session is over 24 hours old.\n\n' +
+                'Would you like to CANCEL this session?\n' +
+                '(Click OK to delete it, or Cancel to keep it open)'
+            );
+
+            if (shouldCancel) {
+                try {
+                    // Delete the incomplete session from DB
+                    if (typeof dbDelete === 'function' && session.id) {
+                        await dbDelete('sleep', session.id);
+                    }
+                    clearOpenSleepSession();
+                    console.log('🗑️ Stale sleep session cancelled/deleted');
+
+                    if (typeof showToast === 'function') {
+                        showToast('Stale sleep session cancelled');
+                    }
+                    if (typeof updateSleepUI === 'function') {
+                        await updateSleepUI();
+                    }
+                } catch (error) {
+                    console.error('Error cancelling sleep session:', error);
+                }
+            } else {
+                console.log('😴 User chose to keep the session open');
+            }
+        } else {
+            console.log('😴 User chose to keep sleeping');
+        }
     });
 
     // Handle end session
@@ -1233,5 +1310,6 @@ window.HeartbeatState = HeartbeatState;
 
 // Time-of-day helpers
 window.getTimeOfDayGreeting = getTimeOfDayGreeting;
+window.checkSleepDurationWarning = checkSleepDurationWarning;
 
 console.log('📋 Session management v2.4.0 loaded (robust heartbeat + comprehensive daily reset)');
