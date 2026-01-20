@@ -2224,13 +2224,30 @@ function getNextWeighinDate() {
 function getTodayKey() {
     // Get current date/time
     const now = new Date();
-    
-    // If before 4am, use yesterday's date
-    // (day doesn't "change" until 4am)
-    if (now.getHours() < 4) {
+
+    // Get user's reset time from settings (default 4:00 AM)
+    // Settings stores resetTime as "HH:MM" string (e.g., "04:00")
+    const settings = window.userSettings;
+    let resetHour = 4;
+    let resetMinute = 0;
+
+    if (settings?.resetTime) {
+        const parts = settings.resetTime.split(':').map(Number);
+        resetHour = parts[0] || 4;
+        resetMinute = parts[1] || 0;
+    }
+
+    // Current time in minutes since midnight
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    // Reset time in minutes since midnight
+    const resetMinutes = resetHour * 60 + resetMinute;
+
+    // If before reset time, use yesterday's date
+    // (day doesn't "change" until reset time)
+    if (currentMinutes < resetMinutes) {
         now.setDate(now.getDate() - 1);
     }
-    
+
     return now.toISOString().split('T')[0];
 }
 
