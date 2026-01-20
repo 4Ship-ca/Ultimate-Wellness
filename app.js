@@ -2474,6 +2474,35 @@ function isZeroPointFood(foodName) {
     const normalized = foodName.toLowerCase().trim();
     const allFoods = Object.values(ZERO_POINT_FOODS).flat();
 
+    // Exclude processed/packaged foods - these should NEVER be zero points
+    const processedKeywords = [
+        'pastry', 'pastries', 'cookie', 'cookies', 'cake', 'cakes',
+        'donut', 'donuts', 'doughnut', 'muffin', 'muffins',
+        'croissant', 'brownie', 'brownies', 'pie', 'pies',
+        'candy', 'chocolate', 'chips', 'crackers', 'snack',
+        'flakey', 'flaky', 'frosted', 'glazed', 'fried',
+        'packaged', 'processed', 'frozen dessert', 'ice cream'
+    ];
+
+    for (const keyword of processedKeywords) {
+        if (normalized.includes(keyword)) {
+            return false; // Immediately reject processed foods
+        }
+    }
+
+    // Exclude brand names - branded products are rarely zero-point
+    const brandKeywords = [
+        'vachon', 'kraft', 'nestle', 'nabisco', 'kellogg',
+        'general mills', 'pepsi', 'coca-cola', 'coke',
+        'lay\'s', 'doritos', 'frito', 'oreo', 'chips ahoy'
+    ];
+
+    for (const brand of brandKeywords) {
+        if (normalized.includes(brand)) {
+            return false; // Reject branded processed foods
+        }
+    }
+
     // Helper to remove common plural endings for better matching
     const singularize = (word) => {
         if (word.endsWith('ies')) return word.slice(0, -3) + 'y';  // berries -> berry
@@ -2485,41 +2514,54 @@ function isZeroPointFood(foodName) {
     return allFoods.some(zeroFood => {
         const zeroLower = zeroFood.toLowerCase();
 
-        // Direct substring match (either direction)
-        if (zeroLower.includes(normalized) || normalized.includes(zeroLower)) {
+        // Direct exact match
+        if (normalized === zeroLower) {
             return true;
         }
 
-        // Word-by-word matching with pluralization handling
-        const userWords = normalized.split(/\s+/);
-        const zeroWords = zeroLower.split(/\s+/);
-
-        // Check if any significant user word matches any zero-point food word
-        for (let userWord of userWords) {
-            // Skip very short words (like "a", "of", etc.)
-            if (userWord.length < 3) continue;
-
-            for (let zeroWord of zeroWords) {
-                // Remove parenthetical info like "(whole)" or "(skinless)"
-                zeroWord = zeroWord.replace(/[()]/g, '');
-                if (zeroWord.length < 3) continue;
-
-                // Direct match
-                if (userWord === zeroWord) return true;
-
-                // Singular/plural match
-                if (singularize(userWord) === singularize(zeroWord)) return true;
-
-                // Partial match for compound words (e.g., "chicken" in "chicken breast")
-                if (zeroWord.includes(userWord) || userWord.includes(zeroWord)) {
-                    // Ensure at least 4 characters match to avoid false positives
-                    const minLength = Math.min(userWord.length, zeroWord.length);
-                    if (minLength >= 4) return true;
-                }
-            }
+        // Check if the zero-point food is a complete substring (with word boundaries)
+        // e.g., "fresh strawberries" contains "strawberries"
+        const pattern = new RegExp('\\b' + zeroLower.replace(/[()]/g, '').trim() + '\\b');
+        if (pattern.test(normalized)) {
+            return true;
         }
 
-        return false;
+        // Word-by-word matching: ALL significant words from zero-point food must be present
+        const userWords = normalized.split(/\s+/);
+        const zeroWords = zeroLower.split(/\s+/).map(w => w.replace(/[(),]/g, '').trim()).filter(w => w.length >= 3);
+
+        // Skip single-word zero foods for stricter matching (to avoid "passion" matching "passion fruit")
+        if (zeroWords.length === 1) {
+            // For single-word zero foods, require exact word match only
+            const zeroWord = zeroWords[0];
+            return userWords.some(userWord => {
+                return userWord === zeroWord || singularize(userWord) === singularize(zeroWord);
+            });
+        }
+
+        // For multi-word zero foods, require ALL words to be present
+        // e.g., "chicken breast" requires both "chicken" AND "breast"
+        const allWordsPresent = zeroWords.every(zeroWord => {
+            return userWords.some(userWord => {
+                if (userWord.length < 3) return false;
+
+                // Direct match or singular/plural match
+                if (userWord === zeroWord || singularize(userWord) === singularize(zeroWord)) {
+                    return true;
+                }
+
+                // Partial match for compound words (minimum 4 chars overlap)
+                if (zeroWord.length >= 4 && userWord.length >= 4) {
+                    if (zeroWord.includes(userWord) || userWord.includes(zeroWord)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            });
+        });
+
+        return allWordsPresent;
     });
 }
 
