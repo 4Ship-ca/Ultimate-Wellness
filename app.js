@@ -9,7 +9,7 @@
 // - Added sodium tracking to nutrition data
 // - Improved points calculation accuracy
 
-const APP_VERSION = '2.2.2';
+const APP_VERSION = '2.2.3';
 const APP_NAME = 'Ultimate Wellness';
 
 // Hydrating foods - water content in ml per typical serving
