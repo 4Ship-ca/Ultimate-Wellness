@@ -354,25 +354,26 @@ const BotDataAPI = {
      */
     async queryExercise(options = {}) {
         const allExercise = await dbGetAll('exercise') || [];
-        
+
         if (options.date) {
             return allExercise.filter(e => e.date === options.date);
         }
-        
+
         if (options.type) {
-            return allExercise.filter(e => e.type === options.type);
+            // Support both 'type' and 'activity' field names for backwards compatibility
+            return allExercise.filter(e => (e.activity || e.type) === options.type);
         }
-        
+
         if (options.days) {
             const last = getLast7Days().slice(0, options.days);
             return allExercise.filter(e => last.includes(e.date));
         }
-        
+
         return allExercise;
     },
-    
+
     /**
-     * Get exercise summary
+     * Get exercise summary with MET-based metrics
      */
     async getExerciseSummary(days = 7) {
         const allExercise = await dbGetAll('exercise') || [];
@@ -380,20 +381,24 @@ const BotDataAPI = {
             const daysAgo = Math.floor((new Date() - new Date(e.date)) / (1000 * 60 * 60 * 24));
             return daysAgo <= days;
         });
-        
-        const totalMinutes = recent.reduce((sum, e) => sum + e.minutes, 0);
-        const totalPoints = recent.reduce((sum, e) => sum + e.points, 0);
+
+        const totalMinutes = recent.reduce((sum, e) => sum + (e.minutes || 0), 0);
+        const totalCalories = recent.reduce((sum, e) => sum + (e.calories || 0), 0);
+        const totalPoints = recent.reduce((sum, e) => sum + (e.points || 0), 0);
         const types = {};
         recent.forEach(e => {
-            types[e.type] = (types[e.type] || 0) + 1;
+            const activityName = e.activity || e.type || 'Unknown';
+            types[activityName] = (types[activityName] || 0) + 1;
         });
         const mostCommon = Object.entries(types).sort((a, b) => b[1] - a[1])[0];
-        
+
         return {
             totalWorkouts: recent.length,
             totalMinutes: totalMinutes,
-            totalPoints: totalPoints,
+            totalCalories: Math.round(totalCalories * 10) / 10,
+            totalPoints: Math.round(totalPoints * 10) / 10,
             avgMinutesPerDay: (totalMinutes / days).toFixed(0),
+            avgCaloriesPerDay: (totalCalories / days).toFixed(0),
             mostCommonType: mostCommon ? mostCommon[0] : null,
             daysActive: [...new Set(recent.map(e => e.date))].length
         };
