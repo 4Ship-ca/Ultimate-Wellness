@@ -4898,6 +4898,113 @@ function getNextWeighinDate() {
 // RESTORED FUNCTIONS - These were accidentally removed during refactoring
 // ============================================================================
 
+// Water tracking functions
+async function updateWater(date, drops, foodWater) {
+    try {
+        const userId = getCurrentUserId();
+        if (!userId) {
+            console.warn('No user ID for water update');
+            return;
+        }
+
+        const waterRecord = {
+            id: `water_${userId}_${date}`,
+            userId: userId,
+            date: date,
+            drops: drops || 0,
+            foodWater: foodWater || 0,
+            timestamp: new Date().toISOString()
+        };
+
+        await dbPut('water', waterRecord);
+    } catch (error) {
+        console.error('Error updating water:', error);
+    }
+}
+
+async function getWaterByDate(userId, date) {
+    try {
+        const waters = await dbGetByUserAndDate('water', userId, date);
+        return waters.length > 0 ? waters[0] : { drops: 0, foodWater: 0 };
+    } catch (error) {
+        console.warn('Error getting water by date:', error);
+        return { drops: 0, foodWater: 0 };
+    }
+}
+
+async function fillWaterDrop(dropNum) {
+    const today = getTodayKey();
+    const userId = getCurrentUserId();
+    const currentWater = await getWaterByDate(userId, today);
+
+    let newDrops = currentWater.drops || 0;
+
+    if (newDrops >= dropNum) {
+        newDrops = dropNum - 1;
+    } else {
+        newDrops = dropNum;
+    }
+
+    await updateWater(today, newDrops, currentWater.foodWater || 0);
+    await updateWaterDisplay();
+}
+
+async function updateWaterDisplay() {
+    const today = getTodayKey();
+    const userId = getCurrentUserId();
+    const water = await getWaterByDate(userId, today);
+    const manualDrops = water.drops || 0;
+    const foodWaterMl = water.foodWater || 0;
+
+    const manualMl = manualDrops * 250;
+    const totalMl = manualMl + foodWaterMl;
+
+    const totalDropsFromWater = Math.floor(totalMl / 250);
+    const dropsToShow = Math.min(8, totalDropsFromWater);
+
+    for (let i = 1; i <= 8; i++) {
+        const drop = document.getElementById(`drop${i}`);
+        if (drop) {
+            if (i <= dropsToShow) {
+                drop.classList.add('filled');
+            } else {
+                drop.classList.remove('filled');
+            }
+        }
+    }
+
+    const totalDiv = document.getElementById('waterTotal');
+    if (totalDiv) {
+        if (foodWaterMl > 0) {
+            totalDiv.innerHTML = `
+                <div style="font-weight: 600;">${totalMl}ml / 2000ml</div>
+                <div style="font-size: 10px; opacity: 0.7;">
+                    💧 Direct: ${manualMl}ml (${manualDrops} cups) + 🍽️ Food: ${foodWaterMl}ml
+                </div>
+            `;
+        } else {
+            totalDiv.textContent = `${totalMl}ml / 2000ml (${dropsToShow}/8 cups)`;
+        }
+    }
+}
+
+async function addFoodWaterToDate(date, ml) {
+    try {
+        const userId = getCurrentUserId();
+        const water = await getWaterByDate(userId, date);
+        const newFoodWater = (water.foodWater || 0) + ml;
+        await updateWater(date, water.drops || 0, newFoodWater);
+    } catch (error) {
+        console.error('Error adding food water:', error);
+    }
+}
+
+async function addFoodWaterML(ml) {
+    const today = getTodayKey();
+    await addFoodWaterToDate(today, ml);
+    await updateWaterDisplay();
+}
+
 async function loadExternalData() {
     try {
         const foods = await fetch('data/zero-point-foods.json');
