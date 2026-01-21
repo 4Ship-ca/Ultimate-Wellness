@@ -4873,6 +4873,28 @@ async function getAllMedications() {
     }
 }
 
+function calculateWeightProgress() {
+    if (!userSettings) return 0;
+
+    const totalToLose = userSettings.currentWeight - userSettings.goalWeight;
+    const alreadyLost = 0; // This would be calculated from weight logs
+
+    if (totalToLose <= 0) return 100;
+
+    const progress = (alreadyLost / totalToLose) * 100;
+    return Math.min(100, Math.max(0, progress));
+}
+
+function getNextWeighinDate() {
+    // Weigh-in every Sunday
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
+    const nextSunday = new Date(today);
+    nextSunday.setDate(today.getDate() + daysUntilSunday);
+    return nextSunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 // ============================================================================
 // APP INITIALIZATION
 // ============================================================================
