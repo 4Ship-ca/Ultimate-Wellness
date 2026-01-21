@@ -5005,6 +5005,51 @@ async function addFoodWaterML(ml) {
     await updateWaterDisplay();
 }
 
+// Sleep tracking functions
+async function getRecentSleepSessions(days = 7) {
+    try {
+        const userId = getCurrentUserId();
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const sessions = await dbGetByDateRange('sleep', userId, startDate, endDate);
+        return sessions || [];
+    } catch (error) {
+        console.warn('Error getting recent sleep sessions:', error);
+        return [];
+    }
+}
+
+// Task tracking functions
+async function getTasksByDate(userId, date) {
+    try {
+        const tasks = await dbGetByUserAndDate('tasks', userId, date);
+        return tasks || [];
+    } catch (error) {
+        console.warn('Error getting tasks by date:', error);
+        return [];
+    }
+}
+
+async function updateTask(id, updates) {
+    try {
+        const task = await dbGet('tasks', id);
+        if (task) {
+            Object.assign(task, updates);
+            await dbPut('tasks', task);
+        }
+    } catch (error) {
+        console.error('Error updating task:', error);
+    }
+}
+
+async function deleteTask(id) {
+    try {
+        await dbDelete('tasks', id);
+    } catch (error) {
+        console.error('Error deleting task:', error);
+    }
+}
+
 async function loadExternalData() {
     try {
         const foods = await fetch('data/zero-point-foods.json');
