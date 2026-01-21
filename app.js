@@ -4789,6 +4789,159 @@ function getCurrentUser() {
 }
 
 // ============================================================================
+// APP INITIALIZATION
+// ============================================================================
+
+let appReady = false;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log(`🚀 ${APP_NAME} v${APP_VERSION} initializing...`);
+
+    try {
+        // STEP 1: Initialize Database
+        await initDB();
+        console.log('✅ Database ready');
+
+        // STEP 2: Initialize Auth System
+        const authResult = await initAuthSystem();
+        console.log('✅ Auth system initialized');
+
+        // STEP 3: Handle auth result
+        const loading = document.getElementById('loading');
+        const setupScreen = document.getElementById('setupScreen');
+        const container = document.querySelector('.container');
+
+        if (authResult.action === 'SETUP') {
+            // New user - show setup
+            console.log('👋 New user - showing setup screen');
+            if (loading) loading.style.display = 'none';
+            if (setupScreen) setupScreen.classList.add('active');
+            if (container) container.style.display = 'none';
+
+        } else if (authResult.action === 'AUTO_LOGIN') {
+            // User logged in - continue initialization
+            console.log(`✅ User logged in: ${authResult.user.username}`);
+            if (loading) loading.style.display = 'none';
+            if (setupScreen) setupScreen.classList.remove('active');
+            if (container) container.style.display = 'block';
+
+            // Continue initialization
+            await initializeAfterLogin();
+
+        } else if (authResult.action === 'SELECT_USER') {
+            // Multiple users - show selection (future feature)
+            console.log('👥 Multiple users - showing selection');
+            if (loading) loading.style.display = 'none';
+            alert('Multiple users detected. Please contact support.');
+
+        } else if (authResult.action === 'ERROR') {
+            console.error('❌ Auth error:', authResult.error);
+            if (loading) loading.style.display = 'none';
+            alert(`❌ Initialization failed: ${authResult.error}\n\nPlease refresh and try again.`);
+        }
+
+    } catch (error) {
+        console.error('💥 Init error:', error);
+        const loading = document.getElementById('loading');
+        if (loading) loading.style.display = 'none';
+        alert(`❌ App failed to initialize: ${error.message}\n\nPlease refresh and try again.`);
+    }
+});
+
+// Continue initialization after login
+async function initializeAfterLogin() {
+    try {
+        console.log('Continuing app initialization...');
+
+        // CRITICAL FIX: Load userSettings first!
+        const userId = getCurrentUserId();
+        if (!userId) {
+            throw new Error('No user ID found');
+        }
+
+        // Load settings from database
+        const settings = await dbGet('settings', `user_${userId}`);
+        if (!settings) {
+            throw new Error('User settings not found in database');
+        }
+
+        // Set global userSettings
+        window.userSettings = settings;
+        console.log('✅ userSettings loaded:', settings.name);
+
+        // Initialize API configuration from dedicated storage
+        await initAPIConfig();
+        console.log('✅ API configuration loaded');
+
+        // Track login
+        if (typeof trackUserLogin === 'function') {
+            await trackUserLogin();
+            console.log('✅ Login tracked');
+        }
+
+        // Load external data
+        if (typeof loadExternalData === 'function') {
+            await loadExternalData();
+            console.log('✅ External data loaded');
+        }
+
+        // Init session
+        if (typeof initSession === 'function') {
+            await initSession();
+            console.log('✅ Session initialized');
+        }
+
+        // Init sync
+        if (typeof initSync === 'function') {
+            await initSync();
+            console.log('✅ Sync system ready');
+        }
+
+        // Initialize user's activity list based on their fitness level
+        if (typeof initializeUserActivities === 'function') {
+            await initializeUserActivities();
+            console.log('✅ User activities initialized');
+        }
+
+        // Initialize UI AFTER userSettings loaded
+        await updateAllUI();
+
+        // Ensure sessionState is initialized (even if no previous session)
+        if (!sessionState.initialized) {
+            sessionState = {
+                lastActiveTab: 'home',
+                lastActiveDate: new Date().toISOString().split('T')[0],
+                scrollPositions: {},
+                formData: {},
+                initialized: true
+            };
+            console.log('✅ Session state initialized (new user)');
+        }
+
+        // Restore session tab
+        if (sessionState.initialized && sessionState.lastActiveTab) {
+            console.log(`📂 Restoring session - tab: ${sessionState.lastActiveTab}`);
+            switchTab(sessionState.lastActiveTab);
+        } else {
+            switchTab('home');
+        }
+
+        // Mark ready
+        appReady = true;
+        console.log('🎉 App ready!');
+        console.log('⏰ Auto-save active: Session saves every 30 seconds');
+
+    } catch (error) {
+        console.error('💥 Post-login error:', error);
+        alert(`Failed to load data: ${error.message}`);
+    }
+}
+
+// Export globals
+window.initializeAfterLogin = initializeAfterLogin;
+window.appReady = () => appReady;
+
+// ============================================================================
 // AUTO-SAVE SESSION HOOKS
 // ============================================================================
 

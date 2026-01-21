@@ -454,8 +454,12 @@ const ActivityModule = (function() {
         window.userSettings.customActivities = activityIds;
 
         try {
-            await dbPut('settings', window.userSettings);
-            console.log('✅ User activities saved:', activityIds.length, 'activities');
+            if (typeof dbPut === 'function') {
+                await dbPut('settings', window.userSettings);
+                console.log('✅ User activities saved:', activityIds.length, 'activities');
+            } else {
+                console.warn('dbPut not available, activities saved to memory only');
+            }
             return true;
         } catch (error) {
             console.error('Error saving user activities:', error);
@@ -532,10 +536,39 @@ const ActivityModule = (function() {
             .filter(a => a !== null);
     }
 
+    // ============ HELPER WRAPPERS FOR EXTERNAL DEPENDENCIES ============
+    // These wrap functions from other modules to handle cases where they might not be loaded yet
+
+    function safeGetCurrentUserId() {
+        if (typeof getCurrentUserId === 'function') {
+            return getCurrentUserId();
+        }
+        if (typeof window.getCurrentUserId === 'function') {
+            return window.getCurrentUserId();
+        }
+        console.warn('getCurrentUserId not available');
+        return null;
+    }
+
+    function safeGetTodayKey() {
+        if (typeof getTodayKey === 'function') {
+            return getTodayKey();
+        }
+        if (typeof window.getTodayKey === 'function') {
+            return window.getTodayKey();
+        }
+        // Fallback: return today's date in YYYY-MM-DD format
+        return new Date().toISOString().split('T')[0];
+    }
+
     // ============ DATABASE FUNCTIONS ============
 
     async function getExerciseByDate(userId, date) {
         try {
+            if (typeof dbGetByUserAndDate !== 'function') {
+                console.warn('dbGetByUserAndDate not available');
+                return [];
+            }
             const exercises = await dbGetByUserAndDate('exercise', userId, date);
             return exercises || [];
         } catch (error) {
@@ -551,7 +584,12 @@ const ActivityModule = (function() {
                 return null;
             }
 
-            const userId = getCurrentUserId();
+            const userId = safeGetCurrentUserId();
+            if (!userId) {
+                console.warn('Cannot add exercise: no user ID');
+                return null;
+            }
+
             const exercise = {
                 id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 userId: userId,
@@ -565,7 +603,12 @@ const ActivityModule = (function() {
                 time: exerciseData.time,
                 timestamp: exerciseData.timestamp || Date.now()
             };
-            await dbPut('exercise', exercise);
+
+            if (typeof dbPut === 'function') {
+                await dbPut('exercise', exercise);
+            } else {
+                console.warn('dbPut not available');
+            }
             return exercise;
         } catch (error) {
             console.error('Error adding exercise:', error);
@@ -575,12 +618,14 @@ const ActivityModule = (function() {
 
     async function deleteExerciseByActivity(date, activity) {
         try {
-            const userId = getCurrentUserId();
+            const userId = safeGetCurrentUserId();
             const exercises = await getExerciseByDate(userId, date);
             const toDelete = exercises.filter(e => e.activity === activity);
 
-            for (const exercise of toDelete) {
-                await dbDelete('exercise', exercise.id);
+            if (typeof dbDelete === 'function') {
+                for (const exercise of toDelete) {
+                    await dbDelete('exercise', exercise.id);
+                }
             }
 
             console.log(`Deleted ${toDelete.length} ${activity} entries for ${date}`);
@@ -625,13 +670,13 @@ const ActivityModule = (function() {
     }
 
     async function updateExerciseUI() {
-        const userId = getCurrentUserId();
+        const userId = safeGetCurrentUserId();
         if (!userId) {
             console.warn('⚠️ No user ID for exercise UI');
             return;
         }
 
-        const today = getTodayKey();
+        const today = safeGetTodayKey();
         const todayExercise = await getExerciseByDate(userId, today);
         const totals = calculateExerciseTotals(todayExercise);
 
@@ -793,7 +838,7 @@ const ActivityModule = (function() {
     }
 
     async function logExercise(activityId, minutes) {
-        const today = getTodayKey();
+        const today = safeGetTodayKey();
         let activity = getActivityById(activityId);
 
         if (!activity) {
@@ -943,8 +988,8 @@ const ActivityModule = (function() {
     }
 
     async function undoLastExercise() {
-        const userId = getCurrentUserId();
-        const today = getTodayKey();
+        const userId = safeGetCurrentUserId();
+        const today = safeGetTodayKey();
         const exercises = await getExerciseByDate(userId, today);
 
         if (!exercises || exercises.length === 0) {
@@ -956,7 +1001,9 @@ const ActivityModule = (function() {
         const lastExercise = sorted[0];
 
         if (confirm(`Undo ${lastExercise.activity}? (${lastExercise.minutes} min, +${lastExercise.points} pts)`)) {
-            await dbDelete('exercise', lastExercise.id);
+            if (typeof dbDelete === 'function') {
+                await dbDelete('exercise', lastExercise.id);
+            }
 
             const stackIndex = exerciseUndoStack.findIndex(e => e.id === lastExercise.id);
             if (stackIndex !== -1) {
@@ -973,8 +1020,8 @@ const ActivityModule = (function() {
     }
 
     async function deleteExerciseEntry(exerciseId) {
-        const userId = getCurrentUserId();
-        const today = getTodayKey();
+        const userId = safeGetCurrentUserId();
+        const today = safeGetTodayKey();
         const exercises = await getExerciseByDate(userId, today);
 
         const exercise = exercises.find(e => e.id === exerciseId);
@@ -984,7 +1031,9 @@ const ActivityModule = (function() {
         }
 
         if (confirm(`Delete ${exercise.activity}? (${exercise.minutes} min, +${exercise.points} pts)`)) {
-            await dbDelete('exercise', exerciseId);
+            if (typeof dbDelete === 'function') {
+                await dbDelete('exercise', exerciseId);
+            }
 
             if (typeof updateAllUI === 'function') {
                 await updateAllUI();
@@ -1009,7 +1058,7 @@ const ActivityModule = (function() {
 
     async function resetExercise(activityName) {
         if (confirm(`Reset all ${activityName} entries for today?`)) {
-            const today = getTodayKey();
+            const today = safeGetTodayKey();
             await deleteExerciseByActivity(today, activityName);
             if (typeof updateAllUI === 'function') {
                 await updateAllUI();
@@ -1155,8 +1204,8 @@ const ActivityModule = (function() {
     }
 
     async function updateExercisePoints() {
-        const userId = getCurrentUserId();
-        const today = getTodayKey();
+        const userId = safeGetCurrentUserId();
+        const today = safeGetTodayKey();
         const exercises = await getExerciseByDate(userId, today);
         const totals = calculateExerciseTotals(exercises);
         updateExercisePointsDisplay(totals);
