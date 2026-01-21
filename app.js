@@ -45,6 +45,14 @@ let sessionState = {
     initialized: false
 };
 
+// Camera and recording variables
+let cameraStream = null;
+let cameraMode = 'photo';
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordingTimer = null;
+let recordingSeconds = 0;
+
 // Initialize auth system
 async function initAuthSystem() {
     console.log('🔐 Initializing authentication system...');
@@ -4786,6 +4794,83 @@ function closeScan() {
 
 function getCurrentUser() {
     return currentUser;
+}
+
+// ============================================================================
+// DOM SAFETY HELPERS
+// ============================================================================
+
+function safeSetText(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (el) el.textContent = text;
+}
+
+function safeSetHTML(elementId, html) {
+    const el = document.getElementById(elementId);
+    if (el) el.innerHTML = html;
+}
+
+function safeSetValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (el) el.value = value;
+}
+
+// ============================================================================
+// MISSING HELPER FUNCTIONS
+// ============================================================================
+
+async function getIncompleteSleepSession() {
+    try {
+        const userId = getCurrentUserId();
+
+        // First, try to get from localStorage (fast check)
+        if (typeof getPersistedOpenSleepSession === 'function') {
+            const persisted = getPersistedOpenSleepSession();
+            if (persisted) {
+                // Verify it still exists in DB
+                const dbSession = await dbGet('sleep', persisted.id);
+                if (dbSession && !dbSession.end_datetime) {
+                    return dbSession;
+                }
+            }
+        }
+
+        // Check recent days (sleep sessions can span multiple days)
+        // Look back up to 3 days to catch any lingering open sessions
+        const today = new Date();
+        for (let i = 0; i < 3; i++) {
+            const checkDate = new Date(today);
+            checkDate.setDate(checkDate.getDate() - i);
+            const dateKey = checkDate.toISOString().split('T')[0];
+
+            const sleepLogs = await dbGetByUserAndDate('sleep', userId, dateKey);
+            const incomplete = sleepLogs.find(log => log.start_datetime && !log.end_datetime);
+
+            if (incomplete) {
+                // Found an incomplete session - persist it to localStorage
+                if (typeof persistOpenSleepSession === 'function') {
+                    persistOpenSleepSession(incomplete);
+                }
+                return incomplete;
+            }
+        }
+
+        return null;
+    } catch (error) {
+        console.warn('Error getting incomplete sleep session:', error);
+        return null;
+    }
+}
+
+async function getAllMedications() {
+    try {
+        const userId = getCurrentUserId();
+        const meds = await dbGetAll('medications', userId);
+        return meds || [];
+    } catch (error) {
+        console.warn('Error getting medications:', error);
+        return [];
+    }
 }
 
 // ============================================================================
