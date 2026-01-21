@@ -5359,6 +5359,929 @@ async function addFood(foodData) {
     }
 }
 
+// ============================================================================
+// MISSING CORE FUNCTIONS RESTORED
+// ============================================================================
+
+async function getMedLogsByDate(date) {
+    try {
+        const userId = getCurrentUserId();
+        const logs = await dbGetByUserAndDate('medications', userId, date);
+        return logs || [];
+    } catch (error) {
+        console.warn('Error getting medication logs:', error);
+        return [];
+    }
+}
+
+async function restoreSettingsFromBackup() {
+    try {
+        const backupKey = 'ultimateWellness_settingsBackup';
+        const backup = localStorage.getItem(backupKey);
+
+        if (backup) {
+            const settings = JSON.parse(backup);
+            console.log('Found settings backup in localStorage');
+
+            const userId = getCurrentUserId();
+            settings.userId = userId;
+            settings.id = `user_${userId}`;
+
+            await dbPut('settings', settings);
+            console.log('Settings restored to IndexedDB');
+
+            localStorage.removeItem(backupKey);
+            return settings;
+        }
+
+        return null;
+    } catch (error) {
+        console.warn('Error restoring settings from backup:', error);
+        return null;
+    }
+}
+
+async function startSleepSession(startTime) {
+    try {
+        const userId = getCurrentUserId();
+        const now = startTime ? new Date(startTime) : new Date();
+        const date = now.toISOString().split('T')[0];
+
+        const sleepSession = {
+            id: `sleep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            userId: userId,
+            date: date,
+            start_datetime: now.toISOString(),
+            timestamp: new Date().toISOString()
+        };
+
+        await dbPut('sleep', sleepSession);
+
+        if (typeof persistOpenSleepSession === 'function') {
+            persistOpenSleepSession(sleepSession);
+        }
+
+        console.log('Sleep session started:', sleepSession);
+        return sleepSession;
+    } catch (error) {
+        console.error('Error starting sleep session:', error);
+        throw error;
+    }
+}
+
+async function endSleepSession(endTimeISO, manualHours) {
+    try {
+        const incomplete = await getIncompleteSleepSession();
+
+        if (!incomplete) {
+            throw new Error('No active sleep session to end');
+        }
+
+        const startTime = new Date(incomplete.start_datetime);
+        const endTime = endTimeISO ? new Date(endTimeISO) : new Date();
+
+        let duration;
+        if (manualHours !== null && manualHours !== undefined) {
+            duration = manualHours;
+        } else {
+            duration = (endTime - startTime) / (1000 * 60 * 60);
+        }
+
+        incomplete.end_datetime = endTime.toISOString();
+        incomplete.duration_hours = duration;
+
+        await dbPut('sleep', incomplete);
+
+        if (typeof clearOpenSleepSession === 'function') {
+            clearOpenSleepSession();
+        }
+
+        console.log('Sleep session ended:', incomplete);
+        return incomplete;
+    } catch (error) {
+        console.error('Error ending sleep session:', error);
+        throw error;
+    }
+}
+
+function getPointsBreakdown() {
+    if (!userSettings) return null;
+
+    const age = new Date().getFullYear() - new Date(userSettings.birthday).getFullYear();
+    const result = calculateDailyPoints(
+        userSettings.gender,
+        age,
+        userSettings.currentWeight,
+        userSettings.heightInInches,
+        userSettings.activity
+    );
+
+    return result.breakdown;
+}
+
+function startNewPointsPeriod() {
+    if (!userSettings) return;
+
+    const today = new Date();
+    const periodEnd = new Date(today);
+    periodEnd.setDate(periodEnd.getDate() + (12 * 7));
+
+    const age = calculateAge(userSettings.birthday);
+    const result = calculateDailyPoints(
+        userSettings.gender,
+        age,
+        userSettings.currentWeight,
+        userSettings.heightInInches,
+        userSettings.activity
+    );
+
+    const weightDelta = userSettings.currentWeight - userSettings.goalWeight;
+    const targetWeeklyLoss = Math.max(0, Math.min(2, weightDelta / 12));
+
+    userSettings.pointsPeriodStart = today.toISOString().split('T')[0];
+    userSettings.pointsPeriodEnd = periodEnd.toISOString().split('T')[0];
+    userSettings.lockedPoints = result.points;
+    userSettings.dailyPoints = result.points;
+    userSettings.targetWeeklyLoss = targetWeeklyLoss;
+    userSettings.periodStartWeight = userSettings.currentWeight;
+    userSettings.maintenanceMode = false;
+    userSettings.sixWeekCheckpointDone = false;
+
+    console.log(`Started new 12-week points period: ${result.points}/day`);
+
+    return result.points;
+}
+
+function checkPointsPeriodBoundary() {
+    if (!userSettings) return false;
+
+    if (!userSettings.pointsPeriodStart || !userSettings.pointsPeriodEnd) {
+        startNewPointsPeriod();
+        return true;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const periodEnd = userSettings.pointsPeriodEnd;
+    const periodStart = userSettings.pointsPeriodStart;
+
+    if (today >= periodEnd) {
+        console.log('Reached 12-week boundary - recalculating points');
+        startNewPointsPeriod();
+        return true;
+    }
+
+    const startDate = new Date(periodStart);
+    const sixWeeksLater = new Date(startDate);
+    sixWeeksLater.setDate(sixWeeksLater.getDate() + (6 * 7));
+    const sixWeekStr = sixWeeksLater.toISOString().split('T')[0];
+
+    if (today >= sixWeekStr && !userSettings.sixWeekCheckpointDone) {
+        console.log('6-week checkpoint - checking progress');
+        performSixWeekCheckpoint();
+        return true;
+    }
+
+    return false;
+}
+
+async function performSixWeekCheckpoint() {
+    if (!userSettings) return;
+
+    console.log('Performing 6-week mid-period checkpoint');
+
+    const periodStart = new Date(userSettings.pointsPeriodStart);
+    const today = new Date();
+    const daysSinceStart = Math.max(1, (today - periodStart) / (1000 * 60 * 60 * 24));
+    const weeksSinceStart = daysSinceStart / 7;
+
+    const allLogs = await getAllWeightLogs();
+    const periodLogs = allLogs.filter(log => log.date >= userSettings.pointsPeriodStart)
+                              .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (periodLogs.length < 2) {
+        console.log('Not enough weight data for checkpoint');
+        userSettings.sixWeekCheckpointDone = true;
+        await dbPut('settings', userSettings);
+        return;
+    }
+
+    const startWeight = userSettings.periodStartWeight || periodLogs[0].weight;
+    const currentWeight = userSettings.currentWeight;
+    const actualLoss = startWeight - currentWeight;
+    const actualWeeklyRate = actualLoss / weeksSinceStart;
+
+    const targetWeeklyRate = userSettings.targetWeeklyLoss || 1.5;
+    const expectedLoss = targetWeeklyRate * weeksSinceStart;
+    const variance = actualLoss - expectedLoss;
+
+    const weeklyVariance = Math.abs(actualWeeklyRate - targetWeeklyRate);
+
+    if (weeklyVariance < 0.5) {
+        alert(
+            `6-Week Progress Check\n\n` +
+            `You're on track!\n\n` +
+            `Lost: ${actualLoss.toFixed(1)} lbs (${actualWeeklyRate.toFixed(1)} lbs/week)\n` +
+            `Your points stay at ${userSettings.lockedPoints}/day.`
+        );
+    } else {
+        const calorieDeficitNeeded = weeklyVariance * 500;
+        const dailyCalDeficitNeeded = calorieDeficitNeeded / 7;
+        const pointsAdjustment = Math.round(dailyCalDeficitNeeded / 35);
+
+        const cappedAdjustment = Math.max(-3, Math.min(3, pointsAdjustment));
+        const finalAdjustment = actualWeeklyRate < targetWeeklyRate ? -Math.abs(cappedAdjustment) : Math.abs(cappedAdjustment);
+
+        if (finalAdjustment !== 0) {
+            const newPoints = userSettings.lockedPoints + finalAdjustment;
+
+            const confirmed = confirm(
+                `6-Week Mid-Period Check-In\n\n` +
+                `Progress: ${actualLoss.toFixed(1)} lbs lost\n` +
+                `Recommended adjustment: ${userSettings.lockedPoints} -> ${newPoints} points/day\n\n` +
+                `Accept adjustment?`
+            );
+
+            if (confirmed) {
+                userSettings.lockedPoints = newPoints;
+                userSettings.dailyPoints = newPoints;
+            }
+        }
+    }
+
+    userSettings.sixWeekCheckpointDone = true;
+    userSettings.sixWeekCheckpointDate = new Date().toISOString().split('T')[0];
+    await dbPut('settings', userSettings);
+}
+
+function calculateActualBurnRate() {
+    if (!userSettings) return null;
+
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0];
+
+    getAllWeightLogs().then(logs => {
+        const recentLogs = logs.filter(log => log.date >= twoWeeksAgoStr).sort((a, b) => a.date.localeCompare(b.date));
+
+        if (recentLogs.length < 2) {
+            return null;
+        }
+
+        const oldestRecent = recentLogs[0];
+        const newestRecent = recentLogs[recentLogs.length - 1];
+
+        const weightChange = oldestRecent.weight - newestRecent.weight;
+        const daysBetween = Math.max(1, (new Date(newestRecent.date) - new Date(oldestRecent.date)) / (1000 * 60 * 60 * 24));
+        const weeksBetween = daysBetween / 7;
+
+        const actualWeeklyLoss = weightChange / weeksBetween;
+
+        return {
+            actualWeeklyLoss: Math.round(actualWeeklyLoss * 10) / 10,
+            targetWeeklyLoss: userSettings.targetWeeklyLoss || 0,
+            onTrack: Math.abs(actualWeeklyLoss - (userSettings.targetWeeklyLoss || 0)) < 0.5,
+            behind: actualWeeklyLoss < (userSettings.targetWeeklyLoss || 0) - 0.5,
+            ahead: actualWeeklyLoss > (userSettings.targetWeeklyLoss || 0) + 0.5
+        };
+    });
+}
+
+async function suggestActivityAdjustment() {
+    const burnRate = await calculateActualBurnRate();
+
+    if (!burnRate || !burnRate.behind) return null;
+
+    const deficit = (userSettings.targetWeeklyLoss - burnRate.actualWeeklyLoss) * 3500 / 7;
+    const exerciseMinutes = Math.round(deficit / 5);
+
+    return {
+        message: `You're ${(userSettings.targetWeeklyLoss - burnRate.actualWeeklyLoss).toFixed(1)} lbs/week behind target`,
+        suggestion: `Add ${exerciseMinutes} minutes of daily activity`,
+        keepPoints: true,
+        dontReducePoints: 'We recommend more activity instead of reducing your points budget'
+    };
+}
+
+function enterMaintenanceMode() {
+    if (!userSettings) return;
+
+    const weightDelta = Math.abs(userSettings.currentWeight - userSettings.goalWeight);
+
+    if (weightDelta <= 2) {
+        console.log('Goal reached! Entering maintenance mode');
+
+        const age = calculateAge(userSettings.birthday);
+        const result = calculateDailyPoints(
+            userSettings.gender,
+            age,
+            userSettings.currentWeight,
+            userSettings.heightInInches,
+            userSettings.activity
+        );
+
+        const maintenancePoints = result.points + 5;
+
+        userSettings.maintenanceMode = true;
+        userSettings.lockedPoints = maintenancePoints;
+        userSettings.dailyPoints = maintenancePoints;
+
+        console.log(`Maintenance points: ${maintenancePoints}/day`);
+
+        return maintenancePoints;
+    }
+
+    return null;
+}
+
+function didPointsSettingsChange(current, updated) {
+    return current.activity !== updated.activity ||
+           Math.abs(current.goalWeight - updated.goalWeight) > 5 ||
+           current.birthday !== updated.birthday ||
+           current.gender !== updated.gender;
+}
+
+function handlePointsRecalculation(currentSettings, formData, age, heightInInches, updatedSettings) {
+    const newPoints = calculateDailyPoints(
+        formData.gender,
+        age,
+        currentSettings.currentWeight,
+        heightInInches,
+        formData.activity
+    ).points;
+
+    const userConfirmed = window.confirm(
+        `You changed settings that affect your daily points.\n\n` +
+        `Current: ${currentSettings.lockedPoints} pts/day\n` +
+        `New calculation: ${newPoints} pts/day\n\n` +
+        `Would you like to restart your 12-week period with ${newPoints} pts/day?`
+    );
+
+    if (userConfirmed) {
+        updatedSettings.dailyPoints = newPoints;
+        updatedSettings.lockedPoints = newPoints;
+
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 84);
+        updatedSettings.pointsPeriodStart = today;
+        updatedSettings.pointsPeriodEnd = endDate.toISOString().split('T')[0];
+
+        return true;
+    }
+
+    return false;
+}
+
+async function displayPointsBreakdown() {
+    const breakdown = getPointsBreakdown();
+    const breakdownDiv = document.getElementById('pointsBreakdown');
+
+    if (!breakdown || !breakdownDiv) return;
+
+    let periodInfo = '';
+    if (userSettings.pointsPeriodStart && userSettings.pointsPeriodEnd) {
+        const today = new Date();
+        const periodEnd = new Date(userSettings.pointsPeriodEnd);
+        const daysRemaining = Math.max(0, Math.ceil((periodEnd - today) / (1000 * 60 * 60 * 24)));
+        const weeksRemaining = Math.floor(daysRemaining / 7);
+
+        periodInfo = `
+            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; margin-top: 15px;">
+                <div style="font-weight: bold; margin-bottom: 5px;">Points Locked Until:</div>
+                <div>${new Date(userSettings.pointsPeriodEnd).toLocaleDateString()}</div>
+                <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">
+                    ${weeksRemaining} weeks, ${daysRemaining % 7} days remaining
+                </div>
+            </div>
+        `;
+    }
+
+    breakdownDiv.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 10px;">
+            <div><strong>S</strong> (Sex):</div>
+            <div style="text-align: right;">${breakdown.sex} pts</div>
+
+            <div><strong>A</strong> (Age):</div>
+            <div style="text-align: right;">${breakdown.age} pts</div>
+
+            <div><strong>W</strong> (Weight):</div>
+            <div style="text-align: right;">${breakdown.weight} pts</div>
+
+            <div><strong>H</strong> (Height):</div>
+            <div style="text-align: right;">${breakdown.height} pts</div>
+
+            <div><strong>E</strong> (Activity):</div>
+            <div style="text-align: right;">${breakdown.activity} pts</div>
+
+            <div style="border-top: 2px solid rgba(255,255,255,0.3); padding-top: 8px; font-weight: bold;">Subtotal:</div>
+            <div style="border-top: 2px solid rgba(255,255,255,0.3); padding-top: 8px; text-align: right; font-weight: bold;">${breakdown.subtotal} pts</div>
+
+            <div style="font-size: 18px; font-weight: bold; color: #fff; padding-top: 8px; border-top: 2px solid #fff;">Daily Total:</div>
+            <div style="font-size: 18px; font-weight: bold; color: #fff; text-align: right; padding-top: 8px; border-top: 2px solid #fff;">${breakdown.final} pts</div>
+        </div>
+        ${periodInfo}
+    `;
+}
+
+async function recalculatePoints() {
+    if (!userSettings) {
+        alert('No user settings found');
+        return;
+    }
+
+    const floorInput = document.getElementById('pointsFloor');
+    const customFloor = floorInput ? parseInt(floorInput.value) : 23;
+
+    if (customFloor < 20 || customFloor > 35) {
+        alert('Floor must be between 20 and 35 points');
+        return;
+    }
+
+    const age = calculateAge(userSettings.birthday);
+    const result = calculateDailyPoints(
+        userSettings.gender,
+        age,
+        userSettings.currentWeight,
+        userSettings.heightInInches,
+        userSettings.activity
+    );
+
+    result.breakdown.floor = customFloor;
+    result.breakdown.final = Math.max(customFloor, result.breakdown.subtotal);
+    result.points = result.breakdown.final;
+
+    userSettings.dailyPoints = result.points;
+    userSettings.pointsFloor = customFloor;
+
+    await dbPut('settings', userSettings);
+    await displayPointsBreakdown();
+    await updatePointsDisplay();
+
+    alert(`Points recalculated! New daily total: ${result.points} pts`);
+}
+
+async function updateWeight() {
+    const weight = parseFloat(document.getElementById('settingsWeight').value);
+
+    if (!weight || weight <= 0) {
+        alert('Please enter a valid weight');
+        return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const todayLogs = await getAllWeightLogs();
+    const existingToday = todayLogs.find(log => log.date === today);
+
+    if (existingToday) {
+        if (!confirm('You already logged weight today. Update?')) {
+            return;
+        }
+    }
+
+    await addWeightLog({
+        date: today,
+        weight: weight,
+        notes: ''
+    });
+
+    const oldWeight = userSettings.currentWeight;
+    userSettings.currentWeight = weight;
+    userSettings.lastWeighIn = today;
+
+    const boundaryReached = checkPointsPeriodBoundary();
+    const maintenancePoints = enterMaintenanceMode();
+
+    let pointsMessage = '';
+
+    if (maintenancePoints) {
+        pointsMessage = `\n\nGOAL REACHED! Entering maintenance mode.\nDaily points increased to ${maintenancePoints}.`;
+    } else if (boundaryReached) {
+        pointsMessage = `\n\n12-week period ended. Points recalculated to ${userSettings.lockedPoints}.`;
+    } else {
+        pointsMessage = `\n\nPoints locked at ${userSettings.lockedPoints}/day until ${userSettings.pointsPeriodEnd}`;
+    }
+
+    await dbPut('settings', userSettings);
+    await updateAllUI();
+
+    const weightChange = oldWeight ? weight - oldWeight : 0;
+    const weeklyGoal = calculateWeeklyGoal();
+
+    let message = `Weight updated to ${weight} lbs!`;
+
+    if (weightChange !== 0) {
+        message += `\n\nChange: ${weightChange > 0 ? '+' : ''}${weightChange.toFixed(1)} lbs`;
+    }
+
+    message += `\nWeekly goal: ${weeklyGoal.toFixed(1)} lbs/week`;
+    message += `\nTo go: ${(weight - userSettings.goalWeight).toFixed(1)} lbs`;
+    message += pointsMessage;
+
+    alert(message);
+}
+
+async function testAPIConnection() {
+    const btn = document.getElementById('apiTestBtn');
+    const result = document.getElementById('apiTestResult');
+
+    const proxyUrlInput = document.getElementById('settingsProxyUrl');
+    const useProxyInput = document.getElementById('settingsUseProxy');
+
+    const currentProxyUrl = proxyUrlInput ? proxyUrlInput.value.trim() : PROXY_URL;
+    const currentUseProxy = useProxyInput ? useProxyInput.checked : USE_PROXY;
+
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    result.innerHTML = '<div style="color: var(--text-secondary);">Sending test request...</div>';
+
+    try {
+        if (currentUseProxy && !currentProxyUrl) {
+            throw new Error('Cloudflare Worker URL is required when proxy is enabled');
+        }
+
+        if (!currentUseProxy && (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE')) {
+            throw new Error('API key not configured.');
+        }
+
+        const testMessage = "Hello! Just testing the API connection.";
+
+        const requestBody = {
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 50,
+            messages: [
+                { role: 'user', content: testMessage }
+            ]
+        };
+
+        let response;
+        const startTime = Date.now();
+
+        if (currentUseProxy) {
+            response = await fetch(currentProxyUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(requestBody)
+            });
+        }
+
+        const elapsed = Date.now() - startTime;
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch {
+                errorData = { error: { message: errorText } };
+            }
+            throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const aiResponse = data.content[0].text;
+
+        result.innerHTML = `
+            <div style="color: var(--success); padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border-left: 3px solid var(--success);">
+                <strong>API Connection Successful!</strong><br>
+                <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
+                    Response time: ${elapsed}ms<br>
+                    Proxy: ${currentUseProxy ? 'Enabled' : 'Disabled'}
+                </div>
+            </div>
+        `;
+
+    } catch (error) {
+        console.error('API Test Error:', error);
+
+        result.innerHTML = `
+            <div style="color: var(--danger); padding: 10px; background: rgba(244, 67, 54, 0.1); border-radius: 8px; border-left: 3px solid var(--danger);">
+                <strong>API Connection Failed</strong><br>
+                <div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">
+                    Error: ${error.message}
+                </div>
+            </div>
+        `;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test API Connection';
+    }
+}
+
+function checkDailyReset() {
+    const lastCheck = localStorage.getItem('lastDailyCheck');
+    const currentDay = getTodayKey();
+
+    if (lastCheck && lastCheck !== currentDay) {
+        console.log('New day detected - refreshing...');
+        localStorage.setItem('lastDailyCheck', currentDay);
+        alert('Good morning! Starting a new day...');
+        location.reload();
+    } else if (!lastCheck) {
+        localStorage.setItem('lastDailyCheck', currentDay);
+    }
+}
+
+async function logFood(name, points, imageData = null) {
+    const today = getTodayKey();
+
+    const food = {
+        date: today,
+        name: name,
+        points: points,
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    };
+
+    await addFood(food);
+
+    if (imageData) {
+        await addPhoto({
+            date: today,
+            type: 'food',
+            data: imageData,
+            foodName: name
+        });
+    }
+
+    await updateAllUI();
+
+    checkAndPromptFoodWater(name);
+}
+
+function checkAndPromptFoodWater(foodName) {
+    const nameLower = foodName.toLowerCase();
+    let waterContent = 0;
+    let matchedFood = '';
+
+    for (const [food, ml] of Object.entries(HYDRATING_FOODS)) {
+        if (nameLower.includes(food)) {
+            if (ml > waterContent) {
+                waterContent = ml;
+                matchedFood = food;
+            }
+        }
+    }
+
+    if (waterContent > 0) {
+        const message = `This ${matchedFood} contains about ${waterContent}ml of water!\n\nAdd to your daily water intake?`;
+
+        if (confirm(message)) {
+            addFoodWaterML(waterContent);
+        }
+    }
+}
+
+async function logFoodWithWater(name, points, waterMl, imageData = null) {
+    const today = getTodayKey();
+
+    const food = {
+        date: today,
+        name: name,
+        points: points,
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    };
+
+    await addFood(food);
+
+    if (imageData) {
+        await addPhoto({
+            date: today,
+            type: 'food',
+            data: imageData,
+            foodName: name
+        });
+    }
+
+    if (waterMl > 0) {
+        await addFoodWaterML(waterMl);
+    }
+
+    await updateAllUI();
+}
+
+function calculatePoints(calories, protein, sugar, saturatedFat) {
+    const points = (calories * 0.0305) + (saturatedFat * 0.275) + (sugar * 0.12) - (protein * 0.098);
+    return Math.max(0, Math.round(points));
+}
+
+function manualAddFoodWater() {
+    const examples = [
+        'Smoothie: 300ml',
+        'Bowl of soup: 200ml',
+        'Coffee/Tea: 250ml',
+        'Milk (1 cup): 250ml',
+        'Watermelon: 200ml',
+        'Orange: 125ml',
+        'Salad: 100ml'
+    ];
+
+    const amount = prompt(
+        'How much water did your food/drink contain?\n\n' +
+        'Common amounts:\n' +
+        examples.join('\n') +
+        '\n\nEnter amount in ml (e.g., 250):'
+    );
+
+    if (amount) {
+        const ml = parseInt(amount);
+        if (ml > 0 && ml <= 1000) {
+            addFoodWaterML(ml);
+            alert(`Added ${ml}ml from food!`);
+        } else {
+            alert('Please enter a valid amount between 1-1000ml');
+        }
+    }
+}
+
+async function getPreferences() {
+    try {
+        return {
+            noGoFoods: userSettings?.noGoFoods || [],
+            ingredientPrefs: userSettings?.ingredientPrefs || {}
+        };
+    } catch (error) {
+        console.warn('Error getting preferences:', error);
+        return {
+            noGoFoods: [],
+            ingredientPrefs: {}
+        };
+    }
+}
+
+async function getAllTasks() {
+    try {
+        const userId = getCurrentUserId();
+        const allTasks = await dbGetAll('tasks');
+        return allTasks.filter(t => t.userId === userId);
+    } catch (error) {
+        console.warn('Error getting all tasks:', error);
+        return [];
+    }
+}
+
+async function getFoodsByDate(userId, date) {
+    try {
+        const foods = await dbGetByUserAndDate('foods', userId, date);
+        return foods || [];
+    } catch (error) {
+        console.warn('Error getting foods by date:', error);
+        return [];
+    }
+}
+
+async function getExerciseByDate(userId, date) {
+    try {
+        const exercises = await dbGetByUserAndDate('exercise', userId, date);
+        return exercises || [];
+    } catch (error) {
+        console.warn('Error getting exercise by date:', error);
+        return [];
+    }
+}
+
+async function addExercise(exerciseData) {
+    try {
+        if (!exerciseData.activity || !exerciseData.minutes || exerciseData.minutes <= 0) {
+            console.warn('Cannot add exercise: missing or invalid data');
+            return null;
+        }
+
+        const userId = getCurrentUserId();
+        const exercise = {
+            id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            userId: userId,
+            date: exerciseData.date,
+            activity: exerciseData.activity,
+            activity_id: exerciseData.activity_id || null,
+            minutes: exerciseData.minutes,
+            calories: exerciseData.calories || 0,
+            points: exerciseData.points || 0,
+            met_value: exerciseData.met_value || null,
+            time: exerciseData.time,
+            timestamp: exerciseData.timestamp || Date.now()
+        };
+        await dbPut('exercise', exercise);
+        return exercise;
+    } catch (error) {
+        console.error('Error adding exercise:', error);
+        return null;
+    }
+}
+
+async function deleteExerciseByActivity(date, activity) {
+    try {
+        const userId = getCurrentUserId();
+        const exercises = await getExerciseByDate(userId, date);
+        const toDelete = exercises.filter(e => e.activity === activity);
+
+        for (const exercise of toDelete) {
+            if (typeof dbDelete === 'function') {
+                await dbDelete('exercise', exercise.id);
+            }
+        }
+
+        console.log(`Deleted ${toDelete.length} ${activity} entries for ${date}`);
+    } catch (error) {
+        console.error('Error deleting exercise by activity:', error);
+    }
+}
+
+async function getSleepByDate(userId, date) {
+    try {
+        const sleeps = await dbGetByUserAndDate('sleep', userId, date);
+        return sleeps.length > 0 ? sleeps[0] : null;
+    } catch (error) {
+        console.warn('Error getting sleep by date:', error);
+        return null;
+    }
+}
+
+async function updateSleepSession(id, updates) {
+    try {
+        const session = await dbGet('sleep', id);
+        if (session) {
+            Object.assign(session, updates);
+            await dbPut('sleep', session);
+        }
+    } catch (error) {
+        console.error('Error updating sleep session:', error);
+    }
+}
+
+async function addStoreVisit(visitData) {
+    try {
+        const userId = getCurrentUserId();
+        const visit = {
+            id: `store_${Date.now()}`,
+            userId: userId,
+            ...visitData,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('store_visits', visit);
+    } catch (error) {
+        console.error('Error adding store visit:', error);
+    }
+}
+
+async function addPhoto(photoData) {
+    try {
+        const userId = getCurrentUserId();
+        const photo = {
+            id: `photo_${Date.now()}`,
+            userId: userId,
+            ...photoData,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('photos', photo);
+    } catch (error) {
+        console.error('Error adding photo:', error);
+    }
+}
+
+async function logMedTaken(medId, date, time) {
+    try {
+        const userId = getCurrentUserId();
+        const log = {
+            id: `medlog_${Date.now()}`,
+            userId: userId,
+            medId: medId,
+            date: date,
+            time: time,
+            timestamp: new Date().toISOString()
+        };
+        await dbPut('med_logs', log);
+    } catch (error) {
+        console.error('Error logging med taken:', error);
+    }
+}
+
+async function deleteMedLogsByMedAndDate(medId, date) {
+    try {
+        const logs = await getMedLogsByDate(date);
+        for (const log of logs) {
+            if (log.medId === medId) {
+                if (typeof dbDelete === 'function') {
+                    await dbDelete('med_logs', log.id);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error deleting med logs:', error);
+    }
+}
+
 function getTodayKey() {
     const now = new Date();
     const settings = window.userSettings;
