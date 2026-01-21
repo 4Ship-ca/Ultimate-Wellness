@@ -45,6 +45,14 @@ let sessionState = {
     initialized: false
 };
 
+// Camera and recording variables
+let cameraStream = null;
+let cameraMode = 'photo';
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordingTimer = null;
+let recordingSeconds = 0;
+
 // Initialize auth system
 async function initAuthSystem() {
     console.log('🔐 Initializing authentication system...');
