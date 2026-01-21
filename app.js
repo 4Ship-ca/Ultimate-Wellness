@@ -4873,6 +4873,361 @@ async function getAllMedications() {
     }
 }
 
+function calculateWeightProgress() {
+    if (!userSettings) return 0;
+
+    const totalToLose = userSettings.currentWeight - userSettings.goalWeight;
+    const alreadyLost = 0; // This would be calculated from weight logs
+
+    if (totalToLose <= 0) return 100;
+
+    const progress = (alreadyLost / totalToLose) * 100;
+    return Math.min(100, Math.max(0, progress));
+}
+
+function getNextWeighinDate() {
+    // Weigh-in every Sunday
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
+    const nextSunday = new Date(today);
+    nextSunday.setDate(today.getDate() + daysUntilSunday);
+    return nextSunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+// ============================================================================
+// RESTORED FUNCTIONS - These were accidentally removed during refactoring
+// ============================================================================
+
+async function loadExternalData() {
+    try {
+        const foods = await fetch('data/zero-point-foods.json');
+        if (foods.ok) window.ZERO_POINT_FOODS = await foods.json();
+    } catch (e) { console.warn('No zero-point foods:', e); }
+
+    try {
+        const overrides = await fetch('data/zero-calorie-overrides.json');
+        if (overrides.ok) window.ZERO_CALORIE_OVERRIDES = await overrides.json();
+    } catch (e) { console.warn('No zero-calorie overrides:', e); }
+
+    try {
+        const scenarios = await fetch('data/bot-scenarios.json');
+        if (scenarios.ok) window.BOT_SCENARIOS = await scenarios.json();
+    } catch (e) { console.warn('No bot scenarios:', e); }
+}
+
+async function getSettings() {
+    try {
+        const userId = getCurrentUserId();
+        const settings = await dbGet('settings', `user_${userId}`);
+        return settings || null;
+    } catch (error) {
+        console.warn('Error getting settings:', error);
+        return null;
+    }
+}
+
+function calculateAge(birthday) {
+    const today = new Date();
+    const birthDate = new Date(birthday);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    return age;
+}
+
+function calculateDailyPoints(gender, age, weight, heightInInches, activity, customFloor = null) {
+    const floor = customFloor !== null ? customFloor : (userSettings?.pointsFloor || 23);
+    
+    let breakdown = {
+        sex: 0, age: 0, weight: 0, height: 0, activity: 0,
+        subtotal: 0, floor: floor, final: 0
+    };
+    
+    breakdown.sex = gender === 'female' ? 2 : (gender === 'male' ? 8 : 0);
+    
+    if (age >= 17 && age <= 26) breakdown.age = 4;
+    else if (age >= 27 && age <= 37) breakdown.age = 3;
+    else if (age >= 38 && age <= 47) breakdown.age = 2;
+    else if (age >= 48 && age <= 58) breakdown.age = 1;
+    else breakdown.age = 0;
+    
+    breakdown.weight = Math.floor(weight / 10);
+    
+    if (heightInInches < 61) breakdown.height = 0;
+    else if (heightInInches <= 70) breakdown.height = 1;
+    else breakdown.height = 2;
+    
+    const activityPoints = {
+        'sedentary': 0, 'light': 2, 'moderate': 4, 'active': 6, 'very_active': 6
+    };
+    breakdown.activity = activityPoints[activity] || 0;
+    
+    breakdown.subtotal = breakdown.sex + breakdown.age + breakdown.weight + breakdown.height + breakdown.activity;
+    breakdown.final = Math.max(breakdown.floor, breakdown.subtotal);
+    
+    return { points: breakdown.final, breakdown: breakdown };
+}
+
+function calculateWeeklyGoal() {
+    if (!userSettings) return 0;
+    const delta = userSettings.currentWeight - userSettings.goalWeight;
+    const weeklyGoal = Math.max(0, delta / 12);
+    return Math.round(weeklyGoal * 10) / 10;
+}
+
+async function addWeightLog(logData) {
+    try {
+        const userId = getCurrentUserId();
+        if (!userId) return;
+        
+        const weightLog = {
+            id: `weight_${userId}_${Date.now()}`,
+            userId: userId,
+            date: logData.date,
+            weight: logData.weight,
+            notes: logData.notes || '',
+            timestamp: new Date().toISOString()
+        };
+        
+        await dbPut('weight_logs', weightLog);
+        console.log('✅ Weight log added:', weightLog.weight, 'lbs');
+    } catch (error) {
+        console.error('Error adding weight log:', error);
+    }
+}
+
+async function getAllWeightLogs() {
+    try {
+        const userId = getCurrentUserId();
+        if (!userId) return [];
+        const allLogs = await dbGetAll('weight_logs');
+        return allLogs.filter(log => log.userId === userId);
+    } catch (error) {
+        console.warn('Error getting weight logs:', error);
+        return [];
+    }
+}
+
+function isZeroPointFood(foodName) {
+    // Simplified - bot handles this logic now
+    return false;
+}
+
+function getZeroPointBadge(foodName) {
+    return '';
+}
+
+function collectSettingsFormData() {
+    return {
+        name: document.getElementById('settingsName')?.value?.trim() || '',
+        email: document.getElementById('settingsEmail')?.value?.trim() || '',
+        birthday: document.getElementById('settingsBirthday')?.value || '',
+        gender: document.getElementById('settingsGender')?.value || '',
+        goalWeight: parseFloat(document.getElementById('settingsGoalWeight')?.value) || 0,
+        heightFeet: parseInt(document.getElementById('settingsHeightFeet')?.value) || 0,
+        heightInches: parseInt(document.getElementById('settingsHeightInches')?.value) || 0,
+        activity: document.getElementById('settingsActivity')?.value || '',
+        resetTime: document.getElementById('settingsResetTime')?.value || '04:00',
+        proxyUrl: 'https://ultimate-wellness.your4ship.workers.dev/',
+        useProxy: true
+    };
+}
+
+function validateSettingsForm(formData) {
+    if (!formData.name) { alert('❌ Name is required'); return false; }
+    if (!formData.email || !formData.email.includes('@')) { alert('❌ Valid email is required'); return false; }
+    if (!formData.birthday) { alert('❌ Birthday is required'); return false; }
+    if (!formData.gender) { alert('❌ Gender is required'); return false; }
+    if (!formData.goalWeight || formData.goalWeight < 80 || formData.goalWeight > 600) { 
+        alert('❌ Goal weight must be between 80-600 lbs'); return false; 
+    }
+    if (!formData.heightFeet || formData.heightFeet < 3 || formData.heightFeet > 8) { 
+        alert('❌ Height must be between 3-8 feet'); return false; 
+    }
+    if (!formData.activity) { alert('❌ Activity level is required'); return false; }
+    return true;
+}
+
+function validateFieldWithFeedback(value, fieldId, validator, errorMsg) {
+    const field = document.getElementById(fieldId);
+    if (!validator(value)) {
+        alert(errorMsg);
+        if (field) field.focus();
+        return false;
+    }
+    return true;
+}
+
+async function saveSettings() {
+    console.log('💾 Save Settings clicked');
+    try {
+        const formData = collectSettingsFormData();
+        if (!validateSettingsForm(formData)) return;
+
+        const userId = getCurrentUserId();
+        if (!userId) { alert('❌ No user logged in'); return; }
+
+        const currentSettings = await dbGet('settings', `user_${userId}`);
+        if (!currentSettings) { alert('❌ Settings not found'); return; }
+
+        const heightInInches = (formData.heightFeet * 12) + formData.heightInches;
+
+        const updatedSettings = {
+            ...currentSettings,
+            name: formData.name,
+            email: formData.email,
+            birthday: formData.birthday,
+            gender: formData.gender,
+            goalWeight: formData.goalWeight,
+            heightInInches: heightInInches,
+            heightFeet: formData.heightFeet,
+            heightInches: formData.heightInches,
+            activity: formData.activity,
+            resetTime: formData.resetTime,
+            proxyUrl: formData.proxyUrl,
+            useProxy: formData.useProxy,
+            lastModified: new Date().toISOString()
+        };
+
+        await dbPut('settings', updatedSettings);
+        window.userSettings = updatedSettings;
+        await saveAPIConfigToStorage(formData.proxyUrl, formData.useProxy);
+        await saveSession();
+        await updateAllUI();
+        alert('✅ Settings saved successfully!');
+    } catch (error) {
+        console.error('❌ Save settings error:', error);
+        alert(`❌ Save failed: ${error.message}`);
+    }
+}
+
+async function completeSetup() {
+    const setupButton = document.getElementById('setupButton');
+    const originalText = setupButton?.innerHTML || 'Start My Journey! 🚀';
+    
+    try {
+        if (setupButton) {
+            setupButton.disabled = true;
+            setupButton.innerHTML = 'Setting up... ⏳';
+        }
+        
+        let attempts = 0;
+        while (!db && attempts < 50) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+        
+        if (!db) {
+            if (setupButton) { setupButton.disabled = false; setupButton.innerHTML = originalText; }
+            alert('❌ Database failed to initialize. Please refresh.');
+            return;
+        }
+        
+        const formData = {
+            name: document.getElementById('setupName')?.value?.trim() || '',
+            email: document.getElementById('setupEmail')?.value?.trim() || '',
+            birthday: document.getElementById('setupBirthday')?.value || '',
+            gender: document.getElementById('setupGender')?.value || '',
+            currentWeight: parseFloat(document.getElementById('setupWeight')?.value) || 0,
+            goalWeight: parseFloat(document.getElementById('setupGoalWeight')?.value) || 0,
+            heightFeet: parseInt(document.getElementById('setupHeightFeet')?.value) || 0,
+            heightInches: parseInt(document.getElementById('setupHeightInches')?.value) || 0,
+            activity: document.getElementById('setupActivity')?.value || ''
+        };
+        
+        if (!formData.name || !formData.email || !formData.birthday || !formData.gender ||
+            !formData.currentWeight || !formData.goalWeight || !formData.heightFeet || !formData.activity) {
+            if (setupButton) { setupButton.disabled = false; setupButton.innerHTML = originalText; }
+            alert('❌ Please fill in all required fields');
+            return;
+        }
+        
+        const result = await registerUser(formData);
+        if (!result.success) {
+            if (setupButton) { setupButton.disabled = false; setupButton.innerHTML = originalText; }
+            alert(`❌ Setup failed: ${result.error}`);
+            return;
+        }
+        
+        await addWeightLog({
+            date: new Date().toISOString().split('T')[0],
+            weight: formData.currentWeight,
+            notes: 'Starting weight'
+        });
+        
+        const setupScreen = document.getElementById('setupScreen');
+        if (setupScreen) setupScreen.classList.remove('active');
+        
+        const container = document.querySelector('.container');
+        if (container) container.style.display = 'block';
+        
+        await updateAllUI();
+        
+        userSettings = await getSettings();
+        const dailyPoints = userSettings?.lockedPoints || userSettings?.dailyPoints || 0;
+        alert(`🎉 Welcome ${formData.name}!\n\nYour daily points: ${dailyPoints}\n\nLet's start your wellness journey!`);
+        
+    } catch (error) {
+        console.error('Setup error:', error);
+        if (setupButton) { setupButton.disabled = false; setupButton.innerHTML = originalText; }
+        alert(`❌ Setup failed: ${error.message}`);
+    }
+}
+
+async function addFood(foodData) {
+    try {
+        const userId = getCurrentUserId();
+        const today = getTodayKey();
+        
+        const food = {
+            id: `food_${userId}_${Date.now()}`,
+            oderId: `food_${Date.now()}`,
+            userId: userId,
+            date: today,
+            name: foodData.name,
+            points: foodData.points || 0,
+            calories: foodData.calories || 0,
+            protein: foodData.protein || 0,
+            carbs: foodData.carbs || 0,
+            fat: foodData.fat || 0,
+            fiber: foodData.fiber || 0,
+            sodium: foodData.sodium || 0,
+            source: foodData.source || 'manual',
+            timestamp: new Date().toISOString()
+        };
+        
+        await dbPut('foods', food);
+        console.log('✅ Food logged:', food.name);
+        return food;
+    } catch (error) {
+        console.error('Error adding food:', error);
+        throw error;
+    }
+}
+
+function getTodayKey() {
+    const now = new Date();
+    const settings = window.userSettings;
+    let resetHour = 4, resetMinute = 0;
+
+    if (settings?.resetTime) {
+        const parts = settings.resetTime.split(':').map(Number);
+        resetHour = parts[0] || 4;
+        resetMinute = parts[1] || 0;
+    }
+
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const resetMinutes = resetHour * 60 + resetMinute;
+
+    if (currentMinutes < resetMinutes) {
+        now.setDate(now.getDate() - 1);
+    }
+
+    return now.toISOString().split('T')[0];
+}
+
 // ============================================================================
 // APP INITIALIZATION
 // ============================================================================
