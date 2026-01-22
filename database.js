@@ -7,6 +7,122 @@ let dbInitPromise = null;
 const DB_NAME = 'UltimateWellnessDB';
 const DB_VERSION = 5;
 
+// ============================================================================
+// DATABASE RECOVERY SYSTEM
+// ============================================================================
+
+// Attempt to recover from database corruption
+async function attemptDatabaseRecovery() {
+    console.warn('🔧 Starting database recovery...');
+
+    try {
+        // Close existing connection
+        if (db) {
+            try {
+                db.close();
+            } catch (e) {
+                console.warn('Could not close database connection:', e);
+            }
+            db = null;
+        }
+
+        // Reset state
+        dbReady = false;
+        dbInitPromise = null;
+
+        // Delete the corrupted database
+        console.log('🗑️ Deleting corrupted database...');
+        await new Promise((resolve, reject) => {
+            const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+
+            deleteRequest.onsuccess = () => {
+                console.log('✅ Database deleted successfully');
+                resolve();
+            };
+
+            deleteRequest.onerror = () => {
+                console.error('❌ Failed to delete database:', deleteRequest.error);
+                reject(deleteRequest.error);
+            };
+
+            deleteRequest.onblocked = () => {
+                console.warn('⚠️ Database deletion blocked - other tabs may be open');
+                // Still continue even if blocked
+                setTimeout(() => resolve(), 1000);
+            };
+        });
+
+        // Clear IndexedDB caches
+        console.log('🧹 Clearing IndexedDB caches...');
+        if (indexedDB.databases) {
+            try {
+                const dbs = await indexedDB.databases();
+                for (const dbInfo of dbs) {
+                    if (dbInfo.name && dbInfo.name !== DB_NAME) {
+                        await new Promise((resolve) => {
+                            const req = indexedDB.deleteDatabase(dbInfo.name);
+                            req.onsuccess = () => resolve();
+                            req.onerror = () => resolve();
+                            req.onblocked = () => setTimeout(() => resolve(), 500);
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not clear all IndexedDB databases:', e);
+            }
+        }
+
+        // Store recovery flag for UI feedback
+        localStorage.setItem('dbRecoveredAt', new Date().toISOString());
+
+        console.log('✅ Database recovery completed');
+        return true;
+    } catch (error) {
+        console.error('❌ Database recovery failed:', error);
+        throw error;
+    }
+}
+
+// Helper function to force purge storage (user-triggered)
+async function purgeAllStorage() {
+    console.warn('🗑️ User initiated storage purge...');
+
+    try {
+        // Close database
+        if (db) {
+            db.close();
+            db = null;
+        }
+
+        dbReady = false;
+        dbInitPromise = null;
+
+        // Delete the database
+        await new Promise((resolve, reject) => {
+            const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+            deleteRequest.onsuccess = () => resolve();
+            deleteRequest.onerror = () => reject(deleteRequest.error);
+            deleteRequest.onblocked = () => setTimeout(() => resolve(), 1000);
+        });
+
+        // Clear all localStorage
+        localStorage.clear();
+
+        // Clear sessionStorage
+        sessionStorage.clear();
+
+        console.log('✅ All storage purged successfully');
+
+        // Reload the page
+        window.location.reload();
+        return true;
+    } catch (error) {
+        console.error('❌ Purge failed:', error);
+        alert('Error purging storage: ' + error.message);
+        return false;
+    }
+}
+
 // Initialize database with all required stores
 async function initDB() {
     // Prevent multiple simultaneous initializations
@@ -27,9 +143,27 @@ async function initDB() {
 
         request.onerror = () => {
             console.error('❌ Database failed to open:', request.error);
+            console.error('Error name:', request.error.name);
+            console.error('Error message:', request.error.message);
             dbInitPromise = null;
             dbReady = false;
-            reject(request.error);
+
+            // Check if this is a version change transaction error
+            if (request.error && (request.error.name === 'AbortError' || request.error.message?.includes('transaction'))) {
+                console.warn('⚠️ Database appears corrupted - attempting recovery...');
+                // Attempt database recovery
+                attemptDatabaseRecovery()
+                    .then(() => {
+                        console.log('✅ Database recovery initiated - please refresh the page');
+                        reject(new Error('Database was corrupted and has been reset. Please refresh the page.'));
+                    })
+                    .catch((recoveryError) => {
+                        console.error('❌ Recovery failed:', recoveryError);
+                        reject(request.error);
+                    });
+            } else {
+                reject(request.error);
+            }
         };
 
         request.onblocked = () => {
@@ -71,143 +205,160 @@ async function initDB() {
         };
         
         request.onupgradeneeded = (event) => {
-            db = event.target.result;
-            console.log('🔄 Upgrading database from version', event.oldVersion, 'to', event.newVersion);
-            
-            // Define all required object stores
-            const stores = [
-                'users',
-                'login_history',
-                'improvement_log',
-                'sent_emails',
-                'sync_queue',
-                'settings',
-                'foods',
-                'exercise',
-                'water',
-                'sleep',
-                'tasks',
-                'medications',
-                'med_logs',
-                'weight_logs',
-                'naps',
-                'store_visits',
-                'stores',
-                'pantry',
-                'pantry_items',
-                'photos',
-                'recipes',
-                'upc_database',
-                'upc_preferences'
-            ];
-            
-            // Create stores that don't exist
-            stores.forEach(storeName => {
-                if (!db.objectStoreNames.contains(storeName)) {
-                    const store = db.createObjectStore(storeName, { keyPath: 'id' });
+            try {
+                db = event.target.result;
+                console.log('🔄 Upgrading database from version', event.oldVersion, 'to', event.newVersion);
 
-                    // Add indexes for common queries
-                    if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'].includes(storeName)) {
-                        store.createIndex('userId', 'userId', { unique: false });
-                        store.createIndex('date', 'date', { unique: false });
-                        store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                // Define all required object stores
+                const stores = [
+                    'users',
+                    'login_history',
+                    'improvement_log',
+                    'sent_emails',
+                    'sync_queue',
+                    'settings',
+                    'foods',
+                    'exercise',
+                    'water',
+                    'sleep',
+                    'tasks',
+                    'medications',
+                    'med_logs',
+                    'weight_logs',
+                    'naps',
+                    'store_visits',
+                    'stores',
+                    'pantry',
+                    'pantry_items',
+                    'photos',
+                    'recipes',
+                    'upc_database',
+                    'upc_preferences'
+                ];
+
+                // Create stores that don't exist
+                stores.forEach(storeName => {
+                    if (!db.objectStoreNames.contains(storeName)) {
+                        const store = db.createObjectStore(storeName, { keyPath: 'id' });
+
+                        // Add indexes for common queries
+                        if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'].includes(storeName)) {
+                            store.createIndex('userId', 'userId', { unique: false });
+                            store.createIndex('date', 'date', { unique: false });
+                            store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                        }
+
+                        if (storeName === 'users') {
+                            store.createIndex('username', 'username', { unique: true });
+                        }
+
+                        if (storeName === 'login_history') {
+                            store.createIndex('timestamp', 'timestamp', { unique: false });
+                            store.createIndex('date', 'date', { unique: false });
+                        }
+
+                        if (storeName === 'improvement_log') {
+                            store.createIndex('timestamp', 'timestamp', { unique: false });
+                            store.createIndex('date', 'date', { unique: false });
+                            store.createIndex('category', 'category', { unique: false });
+                        }
+
+                        if (storeName === 'sent_emails') {
+                            store.createIndex('templateId', 'templateId', { unique: false });
+                            store.createIndex('sentDate', 'sentDate', { unique: false });
+                        }
+
+                        if (storeName === 'upc_database') {
+                            store.createIndex('upc', 'upc', { unique: true });
+                            store.createIndex('product_name', 'product_name', { unique: false });
+                        }
+
+                        if (storeName === 'upc_preferences') {
+                            store.createIndex('upc', 'upc', { unique: true });
+                        }
+
+                        if (storeName === 'medications') {
+                            store.createIndex('userId', 'userId', { unique: false });
+                        }
+
+                        console.log('✅ Created object store:', storeName);
+                    } else {
+                        console.log('ℹ️ Object store already exists:', storeName);
                     }
-                    
-                    if (storeName === 'users') {
-                        store.createIndex('username', 'username', { unique: true });
-                    }
-                    
-                    if (storeName === 'login_history') {
-                        store.createIndex('timestamp', 'timestamp', { unique: false });
-                        store.createIndex('date', 'date', { unique: false });
-                    }
-                    
-                    if (storeName === 'improvement_log') {
-                        store.createIndex('timestamp', 'timestamp', { unique: false });
-                        store.createIndex('date', 'date', { unique: false });
-                        store.createIndex('category', 'category', { unique: false });
-                    }
-                    
-                    if (storeName === 'sent_emails') {
-                        store.createIndex('templateId', 'templateId', { unique: false });
-                        store.createIndex('sentDate', 'sentDate', { unique: false });
-                    }
-                    
-                    if (storeName === 'upc_database') {
-                        store.createIndex('upc', 'upc', { unique: true });
-                        store.createIndex('product_name', 'product_name', { unique: false });
-                    }
-                    
-                    if (storeName === 'upc_preferences') {
-                        store.createIndex('upc', 'upc', { unique: true });
-                    }
-                    
-                    if (storeName === 'medications') {
-                        store.createIndex('userId', 'userId', { unique: false });
-                    }
-                    
-                    console.log('✅ Created object store:', storeName);
-                } else {
-                    console.log('ℹ️ Object store already exists:', storeName);
+                });
+
+                // For v3->v4 upgrade: Add missing indexes to existing stores
+                if (event.oldVersion < 4) {
+                    console.log('🔄 Upgrading to v4: Adding missing indexes...');
+                    const transaction = event.target.transaction;
+
+                    // Add userId_date index to stores that need it
+                    const storesNeedingIndexes = ['exercise', 'tasks', 'medications'];
+                    storesNeedingIndexes.forEach(storeName => {
+                        if (db.objectStoreNames.contains(storeName)) {
+                            const store = transaction.objectStore(storeName);
+
+                            // Check if indexes exist, if not add them
+                            if (!store.indexNames.contains('userId')) {
+                                store.createIndex('userId', 'userId', { unique: false });
+                                console.log(`✅ Added userId index to ${storeName}`);
+                            }
+                            if (!store.indexNames.contains('date')) {
+                                store.createIndex('date', 'date', { unique: false });
+                                console.log(`✅ Added date index to ${storeName}`);
+                            }
+                            if (!store.indexNames.contains('userId_date')) {
+                                store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                                console.log(`✅ Added userId_date index to ${storeName}`);
+                            }
+                        }
+                    });
                 }
-            });
 
-            // For v3->v4 upgrade: Add missing indexes to existing stores
-            if (event.oldVersion < 4) {
-                console.log('🔄 Upgrading to v4: Adding missing indexes...');
-                const transaction = event.target.transaction;
+                // For v4->v5 upgrade: Ensure all critical indexes exist
+                if (event.oldVersion < 5) {
+                    console.log('🔄 Upgrading to v5: Verifying all critical indexes...');
+                    const transaction = event.target.transaction;
 
-                // Add userId_date index to stores that need it
-                const storesNeedingIndexes = ['exercise', 'tasks', 'medications'];
-                storesNeedingIndexes.forEach(storeName => {
-                    if (db.objectStoreNames.contains(storeName)) {
-                        const store = transaction.objectStore(storeName);
+                    // Ensure all data stores have the necessary indexes
+                    const storesNeedingIndexes = ['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'];
+                    storesNeedingIndexes.forEach(storeName => {
+                        if (db.objectStoreNames.contains(storeName)) {
+                            const store = transaction.objectStore(storeName);
 
-                        // Check if indexes exist, if not add them
-                        if (!store.indexNames.contains('userId')) {
-                            store.createIndex('userId', 'userId', { unique: false });
-                            console.log(`✅ Added userId index to ${storeName}`);
+                            // Ensure userId index exists
+                            if (!store.indexNames.contains('userId')) {
+                                store.createIndex('userId', 'userId', { unique: false });
+                                console.log(`✅ Added userId index to ${storeName}`);
+                            }
+                            // Ensure date index exists
+                            if (!store.indexNames.contains('date')) {
+                                store.createIndex('date', 'date', { unique: false });
+                                console.log(`✅ Added date index to ${storeName}`);
+                            }
+                            // Ensure userId_date compound index exists
+                            if (!store.indexNames.contains('userId_date')) {
+                                store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                                console.log(`✅ Added userId_date index to ${storeName}`);
+                            }
                         }
-                        if (!store.indexNames.contains('date')) {
-                            store.createIndex('date', 'date', { unique: false });
-                            console.log(`✅ Added date index to ${storeName}`);
-                        }
-                        if (!store.indexNames.contains('userId_date')) {
-                            store.createIndex('userId_date', ['userId', 'date'], { unique: false });
-                            console.log(`✅ Added userId_date index to ${storeName}`);
-                        }
-                    }
-                });
-            }
+                    });
+                }
 
-            // For v4->v5 upgrade: Ensure all critical indexes exist
-            if (event.oldVersion < 5) {
-                console.log('🔄 Upgrading to v5: Verifying all critical indexes...');
-                const transaction = event.target.transaction;
+                console.log('✅ Database upgrade completed successfully');
+            } catch (error) {
+                console.error('❌ Error during database upgrade:', error);
+                console.error('Error message:', error.message);
+                console.error('Error stack:', error.stack);
 
-                // Ensure all data stores have the necessary indexes
-                const storesNeedingIndexes = ['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'];
-                storesNeedingIndexes.forEach(storeName => {
-                    if (db.objectStoreNames.contains(storeName)) {
-                        const store = transaction.objectStore(storeName);
+                // Abort the transaction explicitly
+                try {
+                    event.target.transaction.abort();
+                } catch (e) {
+                    console.warn('Transaction already aborted or not available');
+                }
 
-                        // Ensure userId index exists
-                        if (!store.indexNames.contains('userId')) {
-                            store.createIndex('userId', 'userId', { unique: false });
-                            console.log(`✅ Added userId index to ${storeName}`);
-                        }
-                        // Ensure date index exists
-                        if (!store.indexNames.contains('date')) {
-                            store.createIndex('date', 'date', { unique: false });
-                            console.log(`✅ Added date index to ${storeName}`);
-                        }
-                        // Ensure userId_date compound index exists
-                        if (!store.indexNames.contains('userId_date')) {
-                            store.createIndex('userId_date', ['userId', 'date'], { unique: false });
-                            console.log(`✅ Added userId_date index to ${storeName}`);
-                        }
-                    }
-                });
+                throw error;
             }
         };
     });
@@ -510,5 +661,7 @@ window.dbGetByUserAndDate = dbGetByUserAndDate;
 window.dbGetByDateRange = dbGetByDateRange;
 window.dbClear = dbClear;
 window.deleteDatabase = deleteDatabase;
+window.attemptDatabaseRecovery = attemptDatabaseRecovery;
+window.purgeAllStorage = purgeAllStorage;
 
-console.log('✅ Database module v2.2.3 loaded');
+console.log('✅ Database module v2.2.3 loaded (with storage recovery)');

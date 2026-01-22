@@ -2240,6 +2240,16 @@
                     <input type="file" id="importFile" accept=".json" style="display: none;" onchange="handleImport(event)">
                 </div>
 
+                <div style="margin-top: 20px; padding: 15px; background: var(--danger); border-radius: 8px; color: white;">
+                    <h4 style="margin-top: 0; margin-bottom: 10px; color: white;">⚠️ Database Recovery</h4>
+                    <p style="font-size: 12px; margin-bottom: 10px;">
+                        If you experience database errors or the app won't load, you can purge all local data to reset the application. <strong>This will delete all your data and require you to set up again.</strong>
+                    </p>
+                    <button class="btn" style="background: var(--text-primary); color: var(--danger); font-weight: bold;" onclick="if(confirm('⚠️ This will DELETE ALL YOUR DATA! Are you sure?')) { purgeAllStorage(); }">
+                        🗑️ Purge All Storage & Reset App
+                    </button>
+                </div>
+
                 <div style="margin-top: 20px; padding: 15px; background: var(--bg-light); border-radius: 8px; font-size: 12px; color: var(--text-secondary);">
                     <strong>About:</strong><br>
                     <span id="aboutVersion">Ultimate Wellness System v2.2.1</span><br>
