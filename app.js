@@ -1551,7 +1551,13 @@ async function updateTodayLog() {
                 const pointsDisplay = f.points === 0 ?
                     `<span style="color: #28a745; font-weight: bold;">0 pts</span>` :
                     `${f.points}pts`;
-                return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})</div>`;
+                // Handle missing time gracefully - extract from timestamp if available
+                let displayTime = f.time;
+                if (!displayTime && f.timestamp) {
+                    displayTime = new Date(f.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                }
+                displayTime = displayTime || 'logged';
+                return `<div style="margin-bottom: 5px;">${displayTime} - ${f.name} (${pointsDisplay})</div>`;
             }).join('')}
         `;
     } catch (error) {
@@ -5332,12 +5338,16 @@ async function addFood(foodData) {
     try {
         const userId = getCurrentUserId();
         const today = getTodayKey();
-        
+        const now = new Date();
+
+        // Generate consistent time string for display
+        const timeString = foodData.time || now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
         const food = {
             id: `food_${userId}_${Date.now()}`,
             oderId: `food_${Date.now()}`,
             userId: userId,
-            date: today,
+            date: foodData.date || today,  // Use provided date or current app day
             name: foodData.name,
             points: foodData.points || 0,
             calories: foodData.calories || 0,
@@ -5347,11 +5357,12 @@ async function addFood(foodData) {
             fiber: foodData.fiber || 0,
             sodium: foodData.sodium || 0,
             source: foodData.source || 'manual',
-            timestamp: new Date().toISOString()
+            time: timeString,  // Display time (e.g., "7:53 PM")
+            timestamp: now.toISOString()  // Full ISO timestamp for sorting/auditing
         };
-        
+
         await dbPut('foods', food);
-        console.log('✅ Food logged:', food.name);
+        console.log('✅ Food logged:', food.name, 'at', food.time, 'for date', food.date);
         return food;
     } catch (error) {
         console.error('Error adding food:', error);
@@ -6159,20 +6170,24 @@ async function addExercise(exerciseData) {
         }
 
         const userId = getCurrentUserId();
+        const now = new Date();
+        const today = getTodayKey();
+
         const exercise = {
             id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             userId: userId,
-            date: exerciseData.date,
+            date: exerciseData.date || today,  // Use provided date or current app day
             activity: exerciseData.activity,
             activity_id: exerciseData.activity_id || null,
             minutes: exerciseData.minutes,
             calories: exerciseData.calories || 0,
             points: exerciseData.points || 0,
             met_value: exerciseData.met_value || null,
-            time: exerciseData.time,
-            timestamp: exerciseData.timestamp || Date.now()
+            time: exerciseData.time || now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+            timestamp: exerciseData.timestamp || now.toISOString()
         };
         await dbPut('exercise', exercise);
+        console.log('✅ Exercise logged:', exercise.activity, 'at', exercise.time, 'for date', exercise.date);
         return exercise;
     } catch (error) {
         console.error('Error adding exercise:', error);
