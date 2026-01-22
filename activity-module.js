@@ -680,78 +680,223 @@ const ActivityModule = (function() {
         const todayExercise = await getExerciseByDate(userId, today);
         const totals = calculateExerciseTotals(todayExercise);
 
-        renderActivitySelector();
+        await renderActivitySelector();
         renderExerciseIntervals(todayExercise, totals);
         updateUndoButton(todayExercise);
         updateExercisePointsDisplay(totals);
     }
 
-    function renderActivitySelector() {
+    // ============ GRID ACTIVITY STATE ============
+    // Track which activities are displayed in the grid
+    let activeGridActivities = [];
+
+    async function initializeActiveGridActivities() {
+        const userActivities = getUserActivities();
+        // Limit to first 4 activities by default
+        activeGridActivities = userActivities.slice(0, 4);
+        await saveActiveGridActivities();
+    }
+
+    async function saveActiveGridActivities() {
+        if (!window.userSettings) return false;
+        window.userSettings.activeGridActivities = activeGridActivities;
+        try {
+            if (typeof dbPut === 'function') {
+                await dbPut('settings', window.userSettings);
+            }
+            return true;
+        } catch (error) {
+            console.error('Error saving active grid activities:', error);
+            return false;
+        }
+    }
+
+    function getActiveGridActivities() {
+        if (window.userSettings && window.userSettings.activeGridActivities) {
+            return window.userSettings.activeGridActivities;
+        }
+        // Fallback to first 4 user activities
+        const userActivities = getUserActivities();
+        return userActivities.slice(0, 4);
+    }
+
+    function getCumulativeActivityTime(activityId, exercises) {
+        if (!exercises) return 0;
+        return exercises
+            .filter(ex => ex.activity_id === activityId)
+            .reduce((sum, ex) => sum + (ex.minutes || 0), 0);
+    }
+
+    async function renderActivitySelector() {
         const grid = document.getElementById('exerciseGrid');
         if (!grid) return;
 
-        const userActivities = getUserActivityObjects();
-        const packKey = getUserActivityPackKey();
-        const packInfo = ACTIVITY_PACKS[packKey];
+        const userId = safeGetCurrentUserId();
+        const today = safeGetTodayKey();
+        const todayExercises = await getExerciseByDate(userId, today);
 
-        let filteredActivities = userActivities;
-        if (exerciseSelectedCategory && exerciseSelectedCategory !== 'all') {
-            filteredActivities = userActivities.filter(a => a.category === exerciseSelectedCategory);
+        activeGridActivities = getActiveGridActivities();
+        const gridActivityObjects = activeGridActivities
+            .map(id => getActivityById(id))
+            .filter(a => a !== null);
+
+        if (gridActivityObjects.length === 0) {
+            grid.innerHTML = `
+                <div style="text-align: center; padding: 30px 15px; color: var(--text-secondary);">
+                    <p>No activities in grid. Click + to add one!</p>
+                </div>
+            `;
+            return;
         }
 
-        const userCategories = [...new Set(userActivities.map(a => a.category))];
+        let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">';
 
-        grid.innerHTML = `
-            <div class="activity-pack-header">
-                <div class="pack-info">
-                    <span class="pack-name">${packInfo ? packInfo.name : 'My Activities'}</span>
-                    <span class="pack-count">${userActivities.length} activities</span>
+        for (const activity of gridActivityObjects) {
+            const cumulativeTime = getCumulativeActivityTime(activity.id, todayExercises);
+            const interval = activity.typical_duration || 15;
+            const btn1x = interval;
+            const btn2x = interval * 2;
+            const btn3x = interval * 3;
+            const btn4x = interval * 4;
+
+            html += `
+                <div class="activity-card">
+                    <div class="activity-card-header">
+                        <div class="activity-card-title">
+                            <span class="activity-card-icon">${activity.icon}</span>
+                            <span>${activity.name}</span>
+                        </div>
+                        <div class="activity-card-controls">
+                            <button class="activity-refresh-btn" onclick="ActivityModule.resetActivityGridTime('${activity.id}')" title="Reset time">↻</button>
+                            <button class="activity-remove-btn" onclick="ActivityModule.removeFromGrid('${activity.id}')" title="Remove">−</button>
+                        </div>
+                    </div>
+
+                    <div class="activity-card-time">
+                        <span class="activity-total-time">${cumulativeTime}m</span>
+                        <span class="activity-time-label">total</span>
+                    </div>
+
+                    <div class="preset-time-buttons">
+                        <button class="preset-time-btn" onclick="ActivityModule.logActivityGridTime('${activity.id}', ${btn1x})">+${btn1x}m</button>
+                        <button class="preset-time-btn" onclick="ActivityModule.logActivityGridTime('${activity.id}', ${btn2x})">+${btn2x}m</button>
+                        <button class="preset-time-btn" onclick="ActivityModule.logActivityGridTime('${activity.id}', ${btn3x})">+${btn3x}m</button>
+                        <button class="preset-time-btn" onclick="ActivityModule.logActivityGridTime('${activity.id}', ${btn4x})">+${btn4x}m</button>
+                    </div>
                 </div>
-                <button class="btn btn-small manage-activities-btn" onclick="ActivityModule.openActivityBrowser()">
-                    + Add/Manage
-                </button>
-            </div>
+            `;
+        }
 
-            <div class="exercise-category-filter">
-                <button class="category-btn ${exerciseSelectedCategory === 'all' ? 'active' : ''}" onclick="ActivityModule.filterExerciseCategory('all')">All</button>
-                ${userCategories.includes('cardio') ? `<button class="category-btn ${exerciseSelectedCategory === 'cardio' ? 'active' : ''}" onclick="ActivityModule.filterExerciseCategory('cardio')">❤️ Cardio</button>` : ''}
-                ${userCategories.includes('strength') ? `<button class="category-btn ${exerciseSelectedCategory === 'strength' ? 'active' : ''}" onclick="ActivityModule.filterExerciseCategory('strength')">💪 Strength</button>` : ''}
-                ${userCategories.includes('sports') ? `<button class="category-btn ${exerciseSelectedCategory === 'sports' ? 'active' : ''}" onclick="ActivityModule.filterExerciseCategory('sports')">⚽ Sports</button>` : ''}
-                ${userCategories.includes('flexibility') ? `<button class="category-btn ${exerciseSelectedCategory === 'flexibility' ? 'active' : ''}" onclick="ActivityModule.filterExerciseCategory('flexibility')">🧘 Flex</button>` : ''}
-                ${userCategories.includes('recreation') ? `<button class="category-btn ${exerciseSelectedCategory === 'recreation' ? 'active' : ''}" onclick="ActivityModule.filterExerciseCategory('recreation')">🌱 Other</button>` : ''}
-            </div>
+        html += '</div>';
+        grid.innerHTML = html;
+    }
 
-            <div class="exercise-entry-form">
-                <div class="form-row">
-                    <label for="activitySelect">Activity</label>
-                    <select id="activitySelect" onchange="ActivityModule.updateExercisePreview()">
-                        <option value="">Choose activity...</option>
-                        ${filteredActivities.map(a => `<option value="${a.id}">${a.icon} ${a.name}</option>`).join('')}
-                    </select>
+    async function openActivitySelector() {
+        const userActivities = getUserActivities();
+        const currentGridActivities = getActiveGridActivities();
+        const availableActivities = userActivities.filter(id => !currentGridActivities.includes(id));
+
+        if (availableActivities.length === 0) {
+            alert('All your activities are already in the grid!');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.id = 'activitySelectorModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content activity-browser-modal" style="max-width: 400px;">
+                <div class="modal-header">
+                    <h3>Add Activity to Grid</h3>
+                    <button class="modal-close-btn" onclick="document.getElementById('activitySelectorModal').remove()">×</button>
                 </div>
-
-                <div class="form-row">
-                    <label for="durationInput">Duration (minutes)</label>
-                    <input type="number" id="durationInput" min="1" max="300" value="30" onchange="ActivityModule.updateExercisePreview()" oninput="ActivityModule.updateExercisePreview()">
+                <div style="padding: 20px; flex: 1; overflow-y: auto;">
+                    ${availableActivities.map(id => {
+                        const activity = getActivityById(id);
+                        if (!activity) return '';
+                        return `
+                            <button onclick="ActivityModule.addToGrid('${activity.id}')" style="
+                                display: block;
+                                width: 100%;
+                                text-align: left;
+                                padding: 12px;
+                                background: var(--bg-light);
+                                border: 1px solid var(--bg-light);
+                                border-radius: 8px;
+                                margin-bottom: 8px;
+                                cursor: pointer;
+                                color: var(--text-primary);
+                                transition: all 0.2s;
+                            " onmouseover="this.style.background='var(--primary)'; this.style.color='white';" onmouseout="this.style.background='var(--bg-light)'; this.style.color='var(--text-primary)';">
+                                ${activity.icon} ${activity.name}
+                            </button>
+                        `;
+                    }).join('')}
                 </div>
-
-                <div class="quick-duration-btns">
-                    <button class="duration-btn" onclick="ActivityModule.setExerciseDuration(15)">15m</button>
-                    <button class="duration-btn" onclick="ActivityModule.setExerciseDuration(30)">30m</button>
-                    <button class="duration-btn" onclick="ActivityModule.setExerciseDuration(45)">45m</button>
-                    <button class="duration-btn" onclick="ActivityModule.setExerciseDuration(60)">60m</button>
-                    <button class="duration-btn" onclick="ActivityModule.setExerciseDuration(90)">90m</button>
-                </div>
-
-                <div id="exercisePreview" class="exercise-preview">
-                    <p>Select an activity to see calculation</p>
-                </div>
-
-                <button id="logExerciseBtn" class="btn btn-primary exercise-log-btn" onclick="ActivityModule.logExerciseFromForm()" disabled>
-                    Log Activity
-                </button>
             </div>
         `;
+        document.body.appendChild(modal);
+    }
+
+    async function addToGrid(activityId) {
+        activeGridActivities = getActiveGridActivities();
+        if (!activeGridActivities.includes(activityId)) {
+            activeGridActivities.push(activityId);
+            await saveActiveGridActivities();
+            await updateExerciseUI();
+        }
+        const modal = document.getElementById('activitySelectorModal');
+        if (modal) modal.remove();
+    }
+
+    async function removeFromGrid(activityId) {
+        if (confirm('Remove this activity from the grid?')) {
+            activeGridActivities = getActiveGridActivities();
+            activeGridActivities = activeGridActivities.filter(id => id !== activityId);
+            await saveActiveGridActivities();
+            await updateExerciseUI();
+        }
+    }
+
+    async function logActivityGridTime(activityId, minutes) {
+        const activity = getActivityById(activityId);
+        if (!activity) return;
+
+        const calculation = calculateActivityRewards(activityId, minutes);
+        const today = safeGetTodayKey();
+
+        const exercise = {
+            date: today,
+            activity: activity.name,
+            activity_id: activityId,
+            minutes: minutes,
+            calories: calculation.calories,
+            points: calculation.points,
+            met_value: activity.met_value,
+            time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+            timestamp: Date.now()
+        };
+
+        await addExercise(exercise);
+
+        if (typeof updateAllUI === 'function') {
+            await updateAllUI();
+        }
+        await updateExerciseUI();
+    }
+
+    async function resetActivityGridTime(activityId) {
+        const activity = getActivityById(activityId);
+        if (!activity) return;
+
+        if (confirm(`Reset ${activity.name} time to zero?`)) {
+            const today = safeGetTodayKey();
+            await deleteExerciseByActivity(today, activity.name);
+            if (typeof updateAllUI === 'function') {
+                await updateAllUI();
+            }
+            await updateExerciseUI();
+        }
     }
 
     function filterExerciseCategory(category) {
@@ -1259,6 +1404,16 @@ const ActivityModule = (function() {
         deleteExerciseEntry,
         updateExercisePointsDisplay,
         resetExercise,
+
+        // Grid Activity Functions
+        initializeActiveGridActivities,
+        getActiveGridActivities,
+        getCumulativeActivityTime,
+        openActivitySelector,
+        addToGrid,
+        removeFromGrid,
+        logActivityGridTime,
+        resetActivityGridTime,
 
         // Activity Browser Modal
         openActivityBrowser,

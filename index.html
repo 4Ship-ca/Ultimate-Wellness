@@ -689,6 +689,163 @@
             font-size: 13px;
         }
 
+        /* Exercise Header with Add Button */
+        .exercise-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            gap: 10px;
+        }
+
+        .exercise-header h3 {
+            margin: 0;
+            flex: 1;
+        }
+
+        .exercise-header #addActivityBtn {
+            padding: 8px 14px;
+            font-size: 16px;
+            font-weight: bold;
+            min-width: 40px;
+            height: 40px;
+            padding: 0;
+            border-radius: 8px;
+        }
+
+        /* Activity Cards Grid */
+        .exercise-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .exercise-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .exercise-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Activity Card */
+        .activity-card {
+            background: var(--bg-light);
+            border-radius: 12px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* Activity Card Header */
+        .activity-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .activity-card-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .activity-card-icon {
+            font-size: 20px;
+        }
+
+        .activity-card-time {
+            text-align: right;
+        }
+
+        .activity-total-time {
+            display: block;
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--primary);
+        }
+
+        .activity-time-label {
+            display: block;
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .activity-card-controls {
+            display: flex;
+            gap: 6px;
+        }
+
+        .activity-refresh-btn,
+        .activity-remove-btn {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            background: transparent;
+            border: 1px solid var(--bg-card);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .activity-refresh-btn:hover {
+            background: var(--bg-card);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .activity-remove-btn:hover {
+            background: #ff4444;
+            border-color: #ff4444;
+            color: white;
+        }
+
+        /* Preset Time Buttons Grid */
+        .preset-time-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .preset-time-btn {
+            padding: 10px 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--bg-light);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .preset-time-btn:hover {
+            background: var(--bg-light);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .preset-time-btn:active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
         /* Activity Browser Modal */
         .modal-overlay {
             position: fixed;
@@ -1872,26 +2029,24 @@
         <!-- EXERCISE TAB -->
         <div id="exerciseTab" class="tab-content">
             <div class="card">
-                <h3 style="margin-bottom: 15px;">💪 Exercise Log</h3>
+                <div class="exercise-header">
+                    <h3 style="margin-bottom: 0;">💪 Exercise Log</h3>
+                    <button class="btn btn-small btn-primary" id="addActivityBtn" onclick="ActivityModule.openActivitySelector()" title="Add activity">+</button>
+                </div>
 
-                <!-- Activity Selector (dynamically populated) -->
+                <!-- Activity Cards Grid (dynamically populated) -->
                 <div class="exercise-grid" id="exerciseGrid"></div>
-
-                <!-- Undo Button -->
-                <button id="undoExerciseBtn" class="btn btn-secondary undo-btn disabled" onclick="undoLastExercise()" disabled>
-                    ↩️ No activities to undo
-                </button>
 
                 <!-- Points Earned Display -->
                 <div class="points-earned" id="exercisePoints">
                     Points Earned Today: 0 pts
                 </div>
 
-                <!-- Exercise Intervals List -->
+                <!-- Exercise Intervals List (for detailed logging) -->
                 <div id="exerciseIntervals" class="exercise-intervals-container">
                     <div class="no-exercises">
                         <p>No activities logged today</p>
-                        <p class="hint">Select an activity above to get started!</p>
+                        <p class="hint">Click time buttons above to log activities!</p>
                     </div>
                 </div>
             </div>
