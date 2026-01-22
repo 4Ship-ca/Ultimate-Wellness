@@ -745,7 +745,11 @@ function getLogicalDay(date, resetHour, resetMinute) {
         d.setDate(d.getDate() - 1);
     }
 
-    return d.toISOString().split('T')[0];
+    // Format as local date (YYYY-MM-DD), not UTC
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 /**
@@ -754,7 +758,11 @@ function getLogicalDay(date, resetHour, resetMinute) {
 function getCurrentLogicalDay() {
     const settings = window.userSettings;
     if (!settings) {
-        return new Date().toISOString().split('T')[0];
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
     // Settings stores resetTime as "HH:MM" string (e.g., "04:00")
