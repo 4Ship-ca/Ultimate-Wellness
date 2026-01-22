@@ -33,6 +33,37 @@ const HYDRATING_FOODS = {
 };
 
 // ============================================================================
+// DEBUG DATETIME DISPLAY
+// ============================================================================
+
+function updateDebugDateTime() {
+    const debugEl = document.getElementById('debugDateTime');
+    if (!debugEl) return;
+
+    const now = new Date();
+    const appDay = typeof getTodayKey === 'function' ? getTodayKey() : now.toISOString().split('T')[0];
+
+    // Format: "Local: 1/22/26 9:53:21 PM | App Day: 2026-01-22"
+    const localTime = now.toLocaleString('en-US', {
+        month: 'numeric',
+        day: 'numeric',
+        year: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+
+    debugEl.textContent = `Local: ${localTime} | App Day: ${appDay}`;
+}
+
+function startDebugDateTimePulse() {
+    // Update immediately
+    updateDebugDateTime();
+    // Then update every second
+    setInterval(updateDebugDateTime, 1000);
+}
+
+// ============================================================================
 // BULLETPROOF AUTHENTICATION & SESSION SYSTEM
 // ============================================================================
 
@@ -1551,7 +1582,19 @@ async function updateTodayLog() {
                 const pointsDisplay = f.points === 0 ?
                     `<span style="color: #28a745; font-weight: bold;">0 pts</span>` :
                     `${f.points}pts`;
-                return `<div style="margin-bottom: 5px;">${f.time} - ${f.name} (${pointsDisplay})</div>`;
+                // Handle missing time gracefully - prioritize local time fields
+                let displayTime = f.time;
+                if (!displayTime && f.localTimestamp) {
+                    // Extract time from local timestamp (e.g., "1/22/2026, 7:53:00 PM" -> "7:53 PM")
+                    const localDate = new Date(f.localTimestamp);
+                    displayTime = localDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                }
+                if (!displayTime && f.timestamp) {
+                    // Fallback: convert UTC timestamp to local time
+                    displayTime = new Date(f.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                }
+                displayTime = displayTime || 'logged';
+                return `<div style="margin-bottom: 5px;">${displayTime} - ${f.name} (${pointsDisplay})</div>`;
             }).join('')}
         `;
     } catch (error) {
@@ -5332,12 +5375,16 @@ async function addFood(foodData) {
     try {
         const userId = getCurrentUserId();
         const today = getTodayKey();
-        
+        const now = new Date();
+
+        // Generate LOCAL time string for display (e.g., "7:53 PM")
+        const timeString = foodData.time || now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
         const food = {
             id: `food_${userId}_${Date.now()}`,
             oderId: `food_${Date.now()}`,
             userId: userId,
-            date: today,
+            date: foodData.date || today,  // Use provided date or current app day
             name: foodData.name,
             points: foodData.points || 0,
             calories: foodData.calories || 0,
@@ -5347,11 +5394,13 @@ async function addFood(foodData) {
             fiber: foodData.fiber || 0,
             sodium: foodData.sodium || 0,
             source: foodData.source || 'manual',
-            timestamp: new Date().toISOString()
+            time: timeString,  // LOCAL display time (e.g., "7:53 PM")
+            localTimestamp: now.toLocaleString('en-US'),  // LOCAL full timestamp for debugging
+            timestamp: now.toISOString()  // UTC ISO timestamp for sorting/syncing
         };
-        
+
         await dbPut('foods', food);
-        console.log('✅ Food logged:', food.name);
+        console.log('✅ Food logged:', food.name, 'at', food.time, '(local)', 'for date', food.date);
         return food;
     } catch (error) {
         console.error('Error adding food:', error);
@@ -6159,20 +6208,28 @@ async function addExercise(exerciseData) {
         }
 
         const userId = getCurrentUserId();
+        const now = new Date();
+        const today = getTodayKey();
+
+        // Generate LOCAL time string for display
+        const timeString = exerciseData.time || now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
         const exercise = {
             id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             userId: userId,
-            date: exerciseData.date,
+            date: exerciseData.date || today,  // Use provided date or current app day
             activity: exerciseData.activity,
             activity_id: exerciseData.activity_id || null,
             minutes: exerciseData.minutes,
             calories: exerciseData.calories || 0,
             points: exerciseData.points || 0,
             met_value: exerciseData.met_value || null,
-            time: exerciseData.time,
-            timestamp: exerciseData.timestamp || Date.now()
+            time: timeString,  // LOCAL display time (e.g., "7:53 PM")
+            localTimestamp: now.toLocaleString('en-US'),  // LOCAL full timestamp for debugging
+            timestamp: exerciseData.timestamp || now.toISOString()  // UTC for sorting/syncing
         };
         await dbPut('exercise', exercise);
+        console.log('✅ Exercise logged:', exercise.activity, 'at', exercise.time, '(local)', 'for date', exercise.date);
         return exercise;
     } catch (error) {
         console.error('Error adding exercise:', error);
@@ -6383,6 +6440,10 @@ async function initializeAfterLogin() {
         // Set global userSettings
         window.userSettings = settings;
         console.log('✅ userSettings loaded:', settings.name);
+
+        // Start debug datetime pulse (shows local time in header)
+        startDebugDateTimePulse();
+        console.log('✅ Debug datetime pulse started');
 
         // Initialize API configuration from dedicated storage
         await initAPIConfig();
