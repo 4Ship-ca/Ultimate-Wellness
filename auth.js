@@ -331,6 +331,55 @@ async function loadUserData(userId) {
 }
 
 /**
+ * Create default settings for a user if none exist
+ * This handles the case where a user logs in but has no settings (corrupted DB recovery)
+ */
+async function createDefaultSettings(userId) {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 84);
+
+        // Create minimal default settings
+        const defaultSettings = {
+            id: `user_${userId}`,
+            userId: userId,
+            name: 'My Account',
+            email: '',
+            birthday: new Date().toISOString().split('T')[0],
+            gender: 'other',
+            currentWeight: 180,
+            goalWeight: 180,
+            heightInInches: 70,
+            heightFeet: 5,
+            heightInches: 10,
+            activity: 'moderate',
+            dailyPoints: 23,
+            lockedPoints: 23,
+            pointsPeriodStart: today,
+            pointsPeriodEnd: endDate.toISOString().split('T')[0],
+            lastPointsUpdate: today,
+            lastWeighIn: today,
+            joinDate: today,
+            resetTime: '04:00',
+            proxyUrl: '',
+            useProxy: false,
+            appVersion: typeof APP_VERSION !== 'undefined' ? APP_VERSION : '1.0.0'
+        };
+
+        // Save to database
+        await dbPut('settings', defaultSettings);
+
+        console.log(`✅ Default settings created for user ${userId}`);
+
+        return defaultSettings;
+    } catch (error) {
+        console.error('❌ Error creating default settings:', error);
+        throw new Error(`Failed to create default settings: ${error.message}`);
+    }
+}
+
+/**
  * Delete user account and all data
  */
 async function deleteUserAccount(userId, password) {
@@ -572,6 +621,7 @@ window.quickSwitchUser = quickSwitchUser;
 // User data
 window.loadUserData = loadUserData;
 window.deleteUserAccount = deleteUserAccount;
+window.createDefaultSettings = createDefaultSettings;
 
 // Initialization
 window.initAuth = initAuth;
