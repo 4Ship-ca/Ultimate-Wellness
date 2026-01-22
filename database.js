@@ -88,22 +88,54 @@ async function purgeAllStorage() {
     console.warn('🗑️ User initiated storage purge...');
 
     try {
-        // Close database
+        // Close database connection properly
         if (db) {
-            db.close();
+            try {
+                db.close();
+            } catch (e) {
+                console.warn('Could not close database:', e);
+            }
             db = null;
         }
 
         dbReady = false;
         dbInitPromise = null;
 
-        // Delete the database
+        // Wait a bit for connections to close
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Delete the database and wait for completion
         await new Promise((resolve, reject) => {
             const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
-            deleteRequest.onsuccess = () => resolve();
-            deleteRequest.onerror = () => reject(deleteRequest.error);
-            deleteRequest.onblocked = () => setTimeout(() => resolve(), 1000);
+            let completed = false;
+
+            deleteRequest.onsuccess = () => {
+                console.log('✅ Database deleted successfully');
+                completed = true;
+                resolve();
+            };
+
+            deleteRequest.onerror = () => {
+                console.error('❌ Failed to delete database:', deleteRequest.error);
+                completed = true;
+                reject(deleteRequest.error);
+            };
+
+            deleteRequest.onblocked = () => {
+                console.warn('⚠️ Database deletion blocked - waiting for other tabs/windows to close connections');
+                // Keep waiting but set a timeout
+                setTimeout(() => {
+                    if (!completed) {
+                        console.log('⏱️ Proceeding with purge despite being blocked');
+                        completed = true;
+                        resolve();
+                    }
+                }, 2000);
+            };
         });
+
+        // Wait additional time to ensure deletion is complete
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         // Clear all localStorage
         localStorage.clear();
@@ -113,7 +145,7 @@ async function purgeAllStorage() {
 
         console.log('✅ All storage purged successfully');
 
-        // Reload the page
+        // Reload the page after everything is cleaned up
         window.location.reload();
         return true;
     } catch (error) {
@@ -241,47 +273,83 @@ async function initDB() {
                     if (!db.objectStoreNames.contains(storeName)) {
                         const store = db.createObjectStore(storeName, { keyPath: 'id' });
 
-                        // Add indexes for common queries
-                        if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'].includes(storeName)) {
-                            store.createIndex('userId', 'userId', { unique: false });
-                            store.createIndex('date', 'date', { unique: false });
-                            store.createIndex('userId_date', ['userId', 'date'], { unique: false });
-                        }
+                        // Add indexes for common queries with error handling
+                        try {
+                            if (['foods', 'exercise', 'water', 'sleep', 'tasks', 'medications', 'med_logs', 'weight_logs', 'naps', 'stores', 'store_visits'].includes(storeName)) {
+                                if (!store.indexNames.contains('userId')) {
+                                    store.createIndex('userId', 'userId', { unique: false });
+                                }
+                                if (!store.indexNames.contains('date')) {
+                                    store.createIndex('date', 'date', { unique: false });
+                                }
+                                if (!store.indexNames.contains('userId_date')) {
+                                    store.createIndex('userId_date', ['userId', 'date'], { unique: false });
+                                }
+                            }
 
-                        if (storeName === 'users') {
-                            store.createIndex('username', 'username', { unique: true });
-                        }
+                            if (storeName === 'users') {
+                                if (!store.indexNames.contains('username')) {
+                                    store.createIndex('username', 'username', { unique: true });
+                                }
+                            }
 
-                        if (storeName === 'login_history') {
-                            store.createIndex('timestamp', 'timestamp', { unique: false });
-                            store.createIndex('date', 'date', { unique: false });
-                        }
+                            if (storeName === 'login_history') {
+                                if (!store.indexNames.contains('timestamp')) {
+                                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                                }
+                                if (!store.indexNames.contains('date')) {
+                                    store.createIndex('date', 'date', { unique: false });
+                                }
+                            }
 
-                        if (storeName === 'improvement_log') {
-                            store.createIndex('timestamp', 'timestamp', { unique: false });
-                            store.createIndex('date', 'date', { unique: false });
-                            store.createIndex('category', 'category', { unique: false });
-                        }
+                            if (storeName === 'improvement_log') {
+                                if (!store.indexNames.contains('timestamp')) {
+                                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                                }
+                                if (!store.indexNames.contains('date')) {
+                                    store.createIndex('date', 'date', { unique: false });
+                                }
+                                if (!store.indexNames.contains('category')) {
+                                    store.createIndex('category', 'category', { unique: false });
+                                }
+                            }
 
-                        if (storeName === 'sent_emails') {
-                            store.createIndex('templateId', 'templateId', { unique: false });
-                            store.createIndex('sentDate', 'sentDate', { unique: false });
-                        }
+                            if (storeName === 'sent_emails') {
+                                if (!store.indexNames.contains('templateId')) {
+                                    store.createIndex('templateId', 'templateId', { unique: false });
+                                }
+                                if (!store.indexNames.contains('sentDate')) {
+                                    store.createIndex('sentDate', 'sentDate', { unique: false });
+                                }
+                            }
 
-                        if (storeName === 'upc_database') {
-                            store.createIndex('upc', 'upc', { unique: true });
-                            store.createIndex('product_name', 'product_name', { unique: false });
-                        }
+                            if (storeName === 'upc_database') {
+                                if (!store.indexNames.contains('upc')) {
+                                    store.createIndex('upc', 'upc', { unique: true });
+                                }
+                                if (!store.indexNames.contains('product_name')) {
+                                    store.createIndex('product_name', 'product_name', { unique: false });
+                                }
+                            }
 
-                        if (storeName === 'upc_preferences') {
-                            store.createIndex('upc', 'upc', { unique: true });
-                        }
+                            if (storeName === 'upc_preferences') {
+                                if (!store.indexNames.contains('upc')) {
+                                    store.createIndex('upc', 'upc', { unique: true });
+                                }
+                            }
 
-                        if (storeName === 'medications') {
-                            store.createIndex('userId', 'userId', { unique: false });
-                        }
+                            if (storeName === 'medications') {
+                                if (!store.indexNames.contains('userId')) {
+                                    store.createIndex('userId', 'userId', { unique: false });
+                                }
+                            }
 
-                        console.log('✅ Created object store:', storeName);
+                            console.log('✅ Created object store:', storeName);
+                        } catch (indexError) {
+                            console.warn(`⚠️ Error creating indexes for ${storeName}:`, indexError);
+                            // Store was created but some indexes might have failed
+                            // This is non-fatal as we check for index existence in upgrade paths
+                        }
                     } else {
                         console.log('ℹ️ Object store already exists:', storeName);
                     }
