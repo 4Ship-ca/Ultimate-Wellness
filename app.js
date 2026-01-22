@@ -5110,10 +5110,11 @@ async function loadExternalData() {
     } catch (e) { console.warn('No bot scenarios:', e); }
 }
 
-async function getSettings() {
+async function getSettings(userId) {
     try {
-        const userId = getCurrentUserId();
-        const settings = await dbGet('settings', `user_${userId}`);
+        // Use provided userId or fall back to current user
+        const id = userId || getCurrentUserId();
+        const settings = await dbGet('settings', `user_${id}`);
         return settings || null;
     } catch (error) {
         console.warn('Error getting settings:', error);
