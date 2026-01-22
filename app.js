@@ -2603,13 +2603,45 @@ function parseMealDataFromResponse(responseText) {
         return { type: 'clarification', text: responseText };
     }
 
-    const mealData = JSON.parse(jsonMatch[0]);
+    let mealData;
+    try {
+        mealData = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+        // JSON parsing failed
+        console.error('Failed to parse meal data JSON:', e);
+        return { type: 'clarification', text: responseText };
+    }
+
+    // Validate that mealData is an object
+    if (!mealData || typeof mealData !== 'object') {
+        console.error('Meal data is not an object:', mealData);
+        return { type: 'clarification', text: responseText };
+    }
 
     if (mealData.needsClarification) {
         return {
             type: 'clarification',
             text: `❓ ${mealData.question}\n\nPlease be specific with quantities for accurate point tracking!`
         };
+    }
+
+    // Validate success response has required fields
+    if (!Array.isArray(mealData.foods) ||
+        typeof mealData.totalPoints !== 'number' ||
+        typeof mealData.mealType !== 'string') {
+        console.error('Meal data missing required fields:', mealData);
+        return { type: 'clarification', text: 'Unable to parse meal data. Please try again with more specific quantities.' };
+    }
+
+    // Validate each food item has required properties
+    for (const food of mealData.foods) {
+        if (!food || typeof food !== 'object' ||
+            !food.name ||
+            typeof food.points !== 'number' ||
+            typeof food.calories !== 'number') {
+            console.error('Invalid food item:', food);
+            return { type: 'clarification', text: 'Unable to parse meal data. Please try again with more specific quantities.' };
+        }
     }
 
     return { type: 'success', data: mealData };
@@ -2623,25 +2655,51 @@ function isFoodZeroPoint(food) {
 
 // Helper: Log parsed meal items to database
 async function logMealItems(mealData) {
+    // Validate mealData and foods array
+    if (!mealData || !Array.isArray(mealData.foods)) {
+        console.error('logMealItems: mealData or foods is invalid:', mealData);
+        throw new Error('Invalid meal data for logging');
+    }
+
     const today = getTodayKey();
     const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
     for (const food of mealData.foods) {
-        const finalPoints = isFoodZeroPoint(food) ? 0 : food.points;
+        // Validate food item
+        if (!food || typeof food !== 'object' || !food.name) {
+            console.error('logMealItems: invalid food item:', food);
+            continue;
+        }
+
+        const finalPoints = isFoodZeroPoint(food) ? 0 : (food.points || 0);
+        const quantity = food.quantity || 'unknown quantity';
+        const calories = food.calories || 0;
 
         await addFood({
             date: today,
-            name: `${food.name} (${food.quantity})`,
+            name: `${food.name} (${quantity})`,
             points: finalPoints,
             time: currentTime,
             source: 'ai_voice_log',
-            calories: food.calories
+            calories: calories
         });
     }
 }
 
 // Helper: Build confirmation message for logged meal
 function buildMealConfirmation(mealData, context) {
+    // Validate mealData
+    if (!mealData || typeof mealData !== 'object') {
+        console.error('buildMealConfirmation: mealData is null or not an object');
+        return '❌ Error building meal confirmation. Please try logging again.';
+    }
+
+    // Validate required fields
+    if (!Array.isArray(mealData.foods) || typeof mealData.mealType !== 'string' || typeof mealData.totalPoints !== 'number') {
+        console.error('buildMealConfirmation: mealData missing required fields:', mealData);
+        return '❌ Error building meal confirmation. Please try logging again.';
+    }
+
     const currentTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     const mealTypeCapitalized = mealData.mealType.charAt(0).toUpperCase() + mealData.mealType.slice(1);
 
@@ -2649,12 +2707,18 @@ function buildMealConfirmation(mealData, context) {
 
     // Add each food item
     mealData.foods.forEach(food => {
+        // Validate food item
+        if (!food || typeof food !== 'object' || !food.name) {
+            console.error('buildMealConfirmation: invalid food item:', food);
+            return;
+        }
+
         const isZeroPoint = isFoodZeroPoint(food);
         const pointsDisplay = isZeroPoint
             ? `<span style="color: #28a745; font-weight: bold;">0 pts 🌟</span>`
-            : `${food.points} pts`;
+            : `${food.points || 0} pts`;
 
-        confirmation += `• ${food.name} (${food.quantity}): ${pointsDisplay}`;
+        confirmation += `• ${food.name} (${food.quantity || 'unknown quantity'}): ${pointsDisplay}`;
         if (food.portionNote) {
             confirmation += ` <em>${food.portionNote}</em>`;
         }
