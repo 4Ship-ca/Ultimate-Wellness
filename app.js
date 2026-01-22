@@ -135,13 +135,16 @@ async function loginUser(userId) {
         if (!user) throw new Error('User not found in database');
         
         currentUser = user;
-        
-        const settings = await dbGet('settings', `user_${userId}`);
-        if (settings) {
-            window.userSettings = settings;
-            await initAPIConfig();
-            console.log('✅ User settings and API config loaded');
+
+        // userId already includes 'user_' prefix, don't add it again
+        const settings = await dbGet('settings', userId);
+        if (!settings) {
+            throw new Error('User settings not found in database');
         }
+
+        window.userSettings = settings;
+        await initAPIConfig();
+        console.log('✅ User settings and API config loaded');
         
         await restoreSession(userId);
         console.log('✅ User logged in successfully');
@@ -181,7 +184,7 @@ async function registerUser(userData) {
         endDate.setDate(endDate.getDate() + 84);
         
         const settings = {
-            id: `user_${userId}`,
+            id: userId,
             userId: userId,
             name: userData.name,
             email: userData.email,
@@ -1490,7 +1493,7 @@ async function updateWeightDisplay() {
         const userId = getCurrentUserId();
         if (userId) {
             try {
-                userSettings = await dbGet('settings', `user_${userId}`);
+                userSettings = await dbGet('settings', userId);
                 console.log('✅ userSettings loaded for weight display');
             } catch (error) {
                 console.error('❌ Failed to load userSettings:', error);
@@ -3078,7 +3081,7 @@ async function switchTab(tab) {
             const userId = getCurrentUserId();
             if (userId) {
                 try {
-                    userSettings = await dbGet('settings', `user_${userId}`);
+                    userSettings = await dbGet('settings', userId);
                     console.log('✅ userSettings reloaded:', {
                         id: userSettings?.id,
                         userId: userSettings?.userId,
@@ -5115,7 +5118,7 @@ async function getSettings(userId) {
     try {
         // Use provided userId or fall back to current user
         const id = userId || getCurrentUserId();
-        const settings = await dbGet('settings', `user_${id}`);
+        const settings = await dbGet('settings', id);
         return settings || null;
     } catch (error) {
         console.warn('Error getting settings:', error);
@@ -5266,7 +5269,7 @@ async function saveSettings() {
         const userId = getCurrentUserId();
         if (!userId) { alert('❌ No user logged in'); return; }
 
-        const currentSettings = await dbGet('settings', `user_${userId}`);
+        const currentSettings = await dbGet('settings', userId);
         if (!currentSettings) { alert('❌ Settings not found'); return; }
 
         const heightInInches = (formData.heightFeet * 12) + formData.heightInches;
@@ -6434,7 +6437,7 @@ async function initializeAfterLogin() {
         }
 
         // Load settings from database
-        const settings = await dbGet('settings', `user_${userId}`);
+        const settings = await dbGet('settings', userId);
         if (!settings) {
             throw new Error('User settings not found in database');
         }
