@@ -1551,9 +1551,15 @@ async function updateTodayLog() {
                 const pointsDisplay = f.points === 0 ?
                     `<span style="color: #28a745; font-weight: bold;">0 pts</span>` :
                     `${f.points}pts`;
-                // Handle missing time gracefully - extract from timestamp if available
+                // Handle missing time gracefully - prioritize local time fields
                 let displayTime = f.time;
+                if (!displayTime && f.localTimestamp) {
+                    // Extract time from local timestamp (e.g., "1/22/2026, 7:53:00 PM" -> "7:53 PM")
+                    const localDate = new Date(f.localTimestamp);
+                    displayTime = localDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                }
                 if (!displayTime && f.timestamp) {
+                    // Fallback: convert UTC timestamp to local time
                     displayTime = new Date(f.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
                 }
                 displayTime = displayTime || 'logged';
@@ -5340,7 +5346,7 @@ async function addFood(foodData) {
         const today = getTodayKey();
         const now = new Date();
 
-        // Generate consistent time string for display
+        // Generate LOCAL time string for display (e.g., "7:53 PM")
         const timeString = foodData.time || now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
         const food = {
@@ -5357,12 +5363,13 @@ async function addFood(foodData) {
             fiber: foodData.fiber || 0,
             sodium: foodData.sodium || 0,
             source: foodData.source || 'manual',
-            time: timeString,  // Display time (e.g., "7:53 PM")
-            timestamp: now.toISOString()  // Full ISO timestamp for sorting/auditing
+            time: timeString,  // LOCAL display time (e.g., "7:53 PM")
+            localTimestamp: now.toLocaleString('en-US'),  // LOCAL full timestamp for debugging
+            timestamp: now.toISOString()  // UTC ISO timestamp for sorting/syncing
         };
 
         await dbPut('foods', food);
-        console.log('✅ Food logged:', food.name, 'at', food.time, 'for date', food.date);
+        console.log('✅ Food logged:', food.name, 'at', food.time, '(local)', 'for date', food.date);
         return food;
     } catch (error) {
         console.error('Error adding food:', error);
@@ -6173,6 +6180,9 @@ async function addExercise(exerciseData) {
         const now = new Date();
         const today = getTodayKey();
 
+        // Generate LOCAL time string for display
+        const timeString = exerciseData.time || now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
         const exercise = {
             id: `exercise_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             userId: userId,
@@ -6183,11 +6193,12 @@ async function addExercise(exerciseData) {
             calories: exerciseData.calories || 0,
             points: exerciseData.points || 0,
             met_value: exerciseData.met_value || null,
-            time: exerciseData.time || now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-            timestamp: exerciseData.timestamp || now.toISOString()
+            time: timeString,  // LOCAL display time (e.g., "7:53 PM")
+            localTimestamp: now.toLocaleString('en-US'),  // LOCAL full timestamp for debugging
+            timestamp: exerciseData.timestamp || now.toISOString()  // UTC for sorting/syncing
         };
         await dbPut('exercise', exercise);
-        console.log('✅ Exercise logged:', exercise.activity, 'at', exercise.time, 'for date', exercise.date);
+        console.log('✅ Exercise logged:', exercise.activity, 'at', exercise.time, '(local)', 'for date', exercise.date);
         return exercise;
     } catch (error) {
         console.error('Error adding exercise:', error);
