@@ -6479,6 +6479,12 @@ async function initializeAfterLogin() {
             console.log('✅ User activities initialized');
         }
 
+        // Initialize grid activities for exercise layout
+        if (typeof ActivityModule !== 'undefined' && typeof ActivityModule.initializeActiveGridActivities === 'function') {
+            await ActivityModule.initializeActiveGridActivities();
+            console.log('✅ Active grid activities initialized');
+        }
+
         // Initialize UI AFTER userSettings loaded
         await updateAllUI();
 
