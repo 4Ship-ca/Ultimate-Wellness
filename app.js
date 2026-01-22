@@ -33,6 +33,37 @@ const HYDRATING_FOODS = {
 };
 
 // ============================================================================
+// DEBUG DATETIME DISPLAY
+// ============================================================================
+
+function updateDebugDateTime() {
+    const debugEl = document.getElementById('debugDateTime');
+    if (!debugEl) return;
+
+    const now = new Date();
+    const appDay = typeof getTodayKey === 'function' ? getTodayKey() : now.toISOString().split('T')[0];
+
+    // Format: "Local: 1/22/26 9:53:21 PM | App Day: 2026-01-22"
+    const localTime = now.toLocaleString('en-US', {
+        month: 'numeric',
+        day: 'numeric',
+        year: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+
+    debugEl.textContent = `Local: ${localTime} | App Day: ${appDay}`;
+}
+
+function startDebugDateTimePulse() {
+    // Update immediately
+    updateDebugDateTime();
+    // Then update every second
+    setInterval(updateDebugDateTime, 1000);
+}
+
+// ============================================================================
 // BULLETPROOF AUTHENTICATION & SESSION SYSTEM
 // ============================================================================
 
@@ -6409,6 +6440,10 @@ async function initializeAfterLogin() {
         // Set global userSettings
         window.userSettings = settings;
         console.log('✅ userSettings loaded:', settings.name);
+
+        // Start debug datetime pulse (shows local time in header)
+        startDebugDateTimePulse();
+        console.log('✅ Debug datetime pulse started');
 
         // Initialize API configuration from dedicated storage
         await initAPIConfig();

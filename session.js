@@ -451,13 +451,20 @@ async function onAppWake() {
 
     // 1. CHECK: What day/time is it? Has the day changed?
     console.log('   1️⃣ Checking day/time transition...');
-    const resetResult = await checkDailyReset();
+    let resetResult;
+    try {
+        resetResult = await checkDailyReset();
+    } catch (error) {
+        console.warn('   ⚠️ Error checking daily reset:', error);
+        resetResult = { resetPerformed: false, error: error.message };
+    }
+
     wakeReport.checks.push({
         name: 'daily_reset',
-        result: resetResult
+        result: resetResult || { resetPerformed: false }
     });
 
-    if (resetResult.resetPerformed) {
+    if (resetResult?.resetPerformed) {
         console.log(`   ✅ Day transition handled (${resetResult.daysMissed || 0} days missed)`);
     }
 
