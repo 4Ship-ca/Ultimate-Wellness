@@ -173,7 +173,8 @@ async function registerUser(userData) {
         
         const age = calculateAge(userData.birthday);
         const heightInInches = (userData.heightFeet * 12) + (userData.heightInches || 0);
-        const pointsResult = calculateDailyPoints(userData.gender, age, userData.currentWeight, heightInInches, userData.activity);
+        // Pass default pointsFloor (23) explicitly since userSettings doesn't exist yet during registration
+        const pointsResult = calculateDailyPoints(userData.gender, age, userData.currentWeight, heightInInches, userData.activity, 23);
         
         const today = new Date().toISOString().split('T')[0];
         const endDate = new Date();
