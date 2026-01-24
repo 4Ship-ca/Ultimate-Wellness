@@ -224,6 +224,14 @@ async function registerUser(userData) {
             resetTime: '04:00',
             proxyUrl: '',
             useProxy: false,
+            voiceSettings: {
+                voiceEnabled: true,
+                voiceIndex: 0,
+                rate: 1.0,
+                pitch: 1.0,
+                volume: 1.0,
+                tone: 'natural'
+            },
             appVersion: APP_VERSION
         };
         
@@ -1842,8 +1850,6 @@ let measurementSystem = 'imperial'; // 'imperial' or 'metric'
 // Voice interaction
 let recognition = null;
 let isListening = false;
-let voiceOutputEnabled = true;
-let currentSpeech = null;
 
 // Initialize speech recognition
 function initVoiceRecognition() {
@@ -1945,113 +1951,6 @@ function showVoiceStatus(message) {
     }, 2000);
 }
 
-function toggleVoiceOutput() {
-    voiceOutputEnabled = !voiceOutputEnabled;
-    const icon = document.getElementById('voiceOutputIcon');
-    const text = document.getElementById('voiceOutputText');
-    const btn = event.target.closest('.quick-action-btn');
-    
-    if (voiceOutputEnabled) {
-        icon.textContent = '🔊';
-        text.textContent = 'Voice On';
-        btn.classList.add('voice-output-active');
-    } else {
-        icon.textContent = '🔇';
-        text.textContent = 'Voice Off';
-        btn.classList.remove('voice-output-active');
-        
-        // Stop any current speech
-        if (currentSpeech) {
-            window.speechSynthesis.cancel();
-        }
-    }
-    
-    // Save preference
-    localStorage.setItem('voiceOutputEnabled', voiceOutputEnabled);
-}
-
-function speakText(text) {
-    if (!voiceOutputEnabled) return;
-    
-    // Check if speech synthesis is supported
-    if (!('speechSynthesis' in window)) {
-        console.log('Speech synthesis not supported');
-        return;
-    }
-    
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
-    
-    // Strip HTML tags for speaking
-    const cleanText = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    
-    // Don't speak if text is too long (recipes)
-    if (cleanText.length > 500) {
-        console.log('Text too long for speech, skipping');
-        return;
-    }
-    
-    currentSpeech = new SpeechSynthesisUtterance(cleanText);
-    currentSpeech.rate = 1.0;
-    currentSpeech.pitch = 1.0;
-    currentSpeech.volume = 1.0;
-    currentSpeech.lang = 'en-US';
-    
-    // Add speaking indicator
-    currentSpeech.onstart = function() {
-        addSpeakingIndicator();
-    };
-    
-    currentSpeech.onend = function() {
-        removeSpeakingIndicator();
-        currentSpeech = null;
-    };
-    
-    currentSpeech.onerror = function(event) {
-        console.error('Speech synthesis error:', event);
-        removeSpeakingIndicator();
-        currentSpeech = null;
-    };
-    
-    window.speechSynthesis.speak(currentSpeech);
-}
-
-function addSpeakingIndicator() {
-    const header = document.querySelector('.ai-chat-header');
-    if (!header || header.querySelector('.speaking-indicator')) return;
-    
-    const indicator = document.createElement('div');
-    indicator.className = 'speaking-indicator';
-    indicator.innerHTML = '<div class="speaking-dot"></div><div class="speaking-dot"></div><div class="speaking-dot"></div>';
-    header.appendChild(indicator);
-}
-
-function removeSpeakingIndicator() {
-    const indicator = document.querySelector('.speaking-indicator');
-    if (indicator) {
-        indicator.remove();
-    }
-}
-
-// Load voice output preference on init
-document.addEventListener('DOMContentLoaded', function() {
-    const savedPref = localStorage.getItem('voiceOutputEnabled');
-    if (savedPref !== null) {
-        voiceOutputEnabled = savedPref === 'true';
-        const icon = document.getElementById('voiceOutputIcon');
-        const text = document.getElementById('voiceOutputText');
-        
-        if (icon && text) {
-            if (voiceOutputEnabled) {
-                icon.textContent = '🔊';
-                text.textContent = 'Voice On';
-            } else {
-                icon.textContent = '🔇';
-                text.textContent = 'Voice Off';
-            }
-        }
-    }
-});
 
 function toggleAIChat() {
     aiChatOpen = !aiChatOpen;
@@ -2137,12 +2036,12 @@ function addChatMessage(text, sender) {
     
     // Scroll to bottom
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    
+
     // Speak AI responses (if enabled and not user message)
-    if (sender === 'ai') {
-        speakText(text);
+    if (sender === 'ai' && userSettings && userSettings.voiceSettings) {
+        VoiceModule.speakText(text, userSettings.voiceSettings);
     }
-    
+
     return messageDiv;
 }
 
@@ -3015,40 +2914,40 @@ function getTabSpecificGuidance(tab) {
 function getFallbackResponse(message, context) {
     // Simple fallback if API fails
     const lowerMsg = message.toLowerCase();
-    
+
     if (lowerMsg.includes('exercise') || lowerMsg.includes('workout')) {
         return `Hi ${context.userName}! Here are some exercise ideas for you:
 
 💪 **Quick 30-minute workout** (2 points):
 - 10 min warm-up walk
-- 15 min bodyweight exercises (squats, push-ups, lunges)
+- 15 min bodyweight exercises like squats, push-ups, and lunges
 - 5 min cool-down stretches
 
-🚶 **Easy walk** (1 point per 15 min):
+🚶 **Easy walk** (1 point per 15 minutes):
 - Perfect for starting out
-- Listen to podcast/music
-- Aim for 30-45 minutes
+- Listen to a podcast or music while you walk
+- Try for 30 to 45 minutes
 
-🧹 **Active chores** (1 point per 15 min):
-- Vacuuming, yard work, cleaning
-- Burns calories while being productive!
+🧹 **Active chores** (1 point per 15 minutes):
+- Vacuuming, yard work, or cleaning
+- Burns calories while getting things done
 
 Which sounds good to you?`;
     }
-    
+
     if (lowerMsg.includes('recipe') || lowerMsg.includes('meal')) {
         return getSampleRecipe(context.dailyPoints - context.todayStats.foodPoints);
     }
-    
-    return `I'm here to help, ${context.userName}! Right now you have ${context.dailyPoints - context.todayStats.foodPoints} points remaining today. What would you like to know about?
 
-- Recipe ideas
-- Exercise suggestions
-- Meal planning
-- Nutrition tips
-- Motivation boost
+    return `Hi ${context.userName}! I'm here to help you on your wellness journey. Right now you have ${context.dailyPoints - context.todayStats.foodPoints} points remaining today. What would you like help with?
 
-Just ask! 💪`;
+💭 Recipe ideas
+🏃 Exercise suggestions
+📋 Meal planning
+🥗 Nutrition tips
+⭐ Motivation and support
+
+Just ask away, and I'll be happy to help!`;
 }
 
 function quickAIPrompt(type) {
@@ -3220,6 +3119,15 @@ async function switchTab(tab) {
                 displayPointsBreakdown();
             } catch (e) {
                 console.warn('displayPointsBreakdown error:', e);
+            }
+        }
+
+        // Initialize voice settings
+        if (typeof initializeVoiceSettings === 'function') {
+            try {
+                initializeVoiceSettings();
+            } catch (e) {
+                console.warn('initializeVoiceSettings error:', e);
             }
         }
         } else {
@@ -5357,6 +5265,7 @@ async function saveSettings() {
             resetTime: formData.resetTime,
             proxyUrl: formData.proxyUrl,
             useProxy: formData.useProxy,
+            voiceSettings: collectVoiceSettings(),
             lastModified: new Date().toISOString()
         };
 
@@ -5370,6 +5279,117 @@ async function saveSettings() {
         console.error('❌ Save settings error:', error);
         alert(`❌ Save failed: ${error.message}`);
     }
+}
+
+/**
+ * Voice Settings Management
+ */
+
+function collectVoiceSettings() {
+    return {
+        voiceEnabled: document.getElementById('botVoiceEnabled')?.checked ?? true,
+        voiceIndex: parseInt(document.getElementById('botVoiceSelect')?.value) || 0,
+        rate: parseFloat(document.getElementById('botVoiceRate')?.value) || 1.0,
+        pitch: parseFloat(document.getElementById('botVoicePitch')?.value) || 1.0,
+        volume: parseFloat(document.getElementById('botVoiceVolume')?.value) || 1.0,
+        tone: document.getElementById('botVoiceTone')?.value || 'natural'
+    };
+}
+
+function initializeVoiceSettings() {
+    if (!VoiceModule) {
+        console.warn('VoiceModule not yet loaded');
+        return;
+    }
+
+    const botVoiceSelect = document.getElementById('botVoiceSelect');
+    if (!botVoiceSelect) return;
+
+    // Load current voice settings from userSettings
+    const voiceSettings = window.userSettings?.voiceSettings || VoiceModule.defaultSettings;
+
+    // Populate voice dropdown
+    VoiceModule.populateVoiceSelect(botVoiceSelect, voiceSettings.voiceIndex);
+
+    // Set all voice controls to current values
+    const botVoiceEnabled = document.getElementById('botVoiceEnabled');
+    const botVoiceRate = document.getElementById('botVoiceRate');
+    const botVoicePitch = document.getElementById('botVoicePitch');
+    const botVoiceVolume = document.getElementById('botVoiceVolume');
+    const botVoiceTone = document.getElementById('botVoiceTone');
+
+    if (botVoiceEnabled) botVoiceEnabled.checked = voiceSettings.voiceEnabled;
+    if (botVoiceRate) {
+        botVoiceRate.value = voiceSettings.rate;
+        updateVoiceRateDisplay(voiceSettings.rate);
+    }
+    if (botVoicePitch) {
+        botVoicePitch.value = voiceSettings.pitch;
+        updateVoicePitchDisplay(voiceSettings.pitch);
+    }
+    if (botVoiceVolume) {
+        botVoiceVolume.value = voiceSettings.volume;
+        updateVoiceVolumeDisplay(voiceSettings.volume);
+    }
+    if (botVoiceTone) botVoiceTone.value = voiceSettings.tone;
+}
+
+function updateVoiceRateDisplay(value) {
+    const display = document.getElementById('botVoiceRateValue');
+    if (display) display.textContent = `${value}x`;
+}
+
+function updateVoicePitchDisplay(value) {
+    const display = document.getElementById('botVoicePitchValue');
+    if (display) display.textContent = value.toFixed(1);
+}
+
+function updateVoiceVolumeDisplay(value) {
+    const display = document.getElementById('botVoiceVolumeValue');
+    if (display) display.textContent = `${Math.round(value * 100)}%`;
+}
+
+function updateBotVoiceSettings() {
+    // Update display values
+    const rate = document.getElementById('botVoiceRate')?.value;
+    const pitch = document.getElementById('botVoicePitch')?.value;
+    const volume = document.getElementById('botVoiceVolume')?.value;
+
+    if (rate) updateVoiceRateDisplay(rate);
+    if (pitch) updateVoicePitchDisplay(pitch);
+    if (volume) updateVoiceVolumeDisplay(volume);
+}
+
+function playBotVoiceSample() {
+    if (!VoiceModule) {
+        alert('Voice module not ready. Please refresh the page.');
+        return;
+    }
+
+    const voiceSettings = collectVoiceSettings();
+    const sampleText = VoiceModule.getSampleText();
+
+    // Change button text to show it's playing
+    const btn = event?.target;
+    if (btn) {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏸️ Stop Sample';
+        btn.onclick = () => {
+            VoiceModule.stop();
+            btn.innerHTML = originalText;
+            btn.onclick = playBotVoiceSample;
+        };
+    }
+
+    VoiceModule.playSample(sampleText, voiceSettings);
+
+    // Reset button after speech ends
+    window.speechSynthesis.onend = () => {
+        if (btn && originalText) {
+            btn.innerHTML = originalText;
+            btn.onclick = playBotVoiceSample;
+        }
+    };
 }
 
 async function completeSetup() {
