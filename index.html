@@ -1549,6 +1549,19 @@
             color: white;
         }
 
+        .quick-action-btn.voice-enabled {
+            background: var(--success);
+            border-color: var(--success);
+            color: white;
+        }
+
+        .quick-action-btn.voice-disabled {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: white;
+            opacity: 0.7;
+        }
+
         .recipe-card {
             background: var(--bg-light);
             padding: 15px;
@@ -2333,7 +2346,7 @@
                 </div>
 
                 <!-- BOT VOICE SETTINGS -->
-                <div class="card" style="margin: 20px 0; background: var(--primary); padding: 15px;">
+                <div class="card" style="margin: 20px 0; background: var(--bg-light); padding: 15px;">
                     <h4 style="margin: 0 0 15px 0;">🎙️ Bot Voice Settings</h4>
 
                     <div class="input-group">
@@ -2536,6 +2549,9 @@
             <button class="quick-action-btn" onclick="quickAIPrompt('meal-plan')">📋 Meal Plan</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('exercise')">💪 Exercise Help</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('log-meal')">📝 Log Meal</button>
+            <button class="quick-action-btn" id="botVoiceToggleBtn" onclick="toggleBotVoice()" title="Toggle voice on/off">
+                <span id="botVoiceToggleIcon">🔊</span>
+            </button>
         </div>
     </div>
 

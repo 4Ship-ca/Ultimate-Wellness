@@ -5296,6 +5296,60 @@ function collectVoiceSettings() {
     };
 }
 
+function toggleBotVoice() {
+    if (!userSettings || !userSettings.voiceSettings) {
+        alert('Please go to Settings to configure voice.');
+        return;
+    }
+
+    // Toggle the voice enabled state
+    userSettings.voiceSettings.voiceEnabled = !userSettings.voiceSettings.voiceEnabled;
+
+    // Update the checkbox in settings tab if it exists
+    const checkbox = document.getElementById('botVoiceEnabled');
+    if (checkbox) {
+        checkbox.checked = userSettings.voiceSettings.voiceEnabled;
+    }
+
+    // Update the button icon
+    const btn = document.getElementById('botVoiceToggleBtn');
+    const icon = document.getElementById('botVoiceToggleIcon');
+    if (userSettings.voiceSettings.voiceEnabled) {
+        icon.textContent = '🔊';
+        btn?.classList.add('voice-enabled');
+        btn?.classList.remove('voice-disabled');
+    } else {
+        icon.textContent = '🔇';
+        btn?.classList.remove('voice-enabled');
+        btn?.classList.add('voice-disabled');
+        // Stop any currently playing speech
+        VoiceModule?.stop();
+    }
+
+    // Save to userSettings
+    const userId = getCurrentUserId();
+    if (userId) {
+        dbPut('settings', userSettings).catch(err => console.error('Failed to save voice settings:', err));
+    }
+}
+
+function updateBotVoiceToggleUI() {
+    const btn = document.getElementById('botVoiceToggleBtn');
+    const icon = document.getElementById('botVoiceToggleIcon');
+
+    if (!userSettings?.voiceSettings) return;
+
+    if (userSettings.voiceSettings.voiceEnabled) {
+        icon.textContent = '🔊';
+        btn?.classList.add('voice-enabled');
+        btn?.classList.remove('voice-disabled');
+    } else {
+        icon.textContent = '🔇';
+        btn?.classList.remove('voice-enabled');
+        btn?.classList.add('voice-disabled');
+    }
+}
+
 function initializeVoiceSettings() {
     if (!VoiceModule) {
         console.warn('VoiceModule not yet loaded');
@@ -5336,17 +5390,20 @@ function initializeVoiceSettings() {
 
 function updateVoiceRateDisplay(value) {
     const display = document.getElementById('botVoiceRateValue');
-    if (display) display.textContent = `${value}x`;
+    const numValue = parseFloat(value) || 1.0;
+    if (display) display.textContent = `${numValue.toFixed(1)}x`;
 }
 
 function updateVoicePitchDisplay(value) {
     const display = document.getElementById('botVoicePitchValue');
-    if (display) display.textContent = value.toFixed(1);
+    const numValue = parseFloat(value) || 1.0;
+    if (display) display.textContent = numValue.toFixed(1);
 }
 
 function updateVoiceVolumeDisplay(value) {
     const display = document.getElementById('botVoiceVolumeValue');
-    if (display) display.textContent = `${Math.round(value * 100)}%`;
+    const numValue = parseFloat(value) || 1.0;
+    if (display) display.textContent = `${Math.round(numValue * 100)}%`;
 }
 
 function updateBotVoiceSettings() {
@@ -5355,9 +5412,9 @@ function updateBotVoiceSettings() {
     const pitch = document.getElementById('botVoicePitch')?.value;
     const volume = document.getElementById('botVoiceVolume')?.value;
 
-    if (rate) updateVoiceRateDisplay(rate);
-    if (pitch) updateVoicePitchDisplay(pitch);
-    if (volume) updateVoiceVolumeDisplay(volume);
+    if (rate !== undefined) updateVoiceRateDisplay(rate);
+    if (pitch !== undefined) updateVoicePitchDisplay(pitch);
+    if (volume !== undefined) updateVoiceVolumeDisplay(volume);
 }
 
 function playBotVoiceSample() {
@@ -6614,6 +6671,9 @@ async function initializeAfterLogin() {
         } else {
             switchTab('home');
         }
+
+        // Initialize voice toggle button UI
+        updateBotVoiceToggleUI();
 
         // Mark ready
         appReady = true;
