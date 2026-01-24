@@ -12,6 +12,7 @@ const ConversationModule = {
     isWaitingForGoWord: false,
     isListeningForWakeWord: false,
     wakeWordTimer: null,
+    pendingPassiveListeningRestart: false, // Flag to restart on next recognition.onend()
 
     // Default settings
     defaultSettings: {
@@ -190,9 +191,10 @@ const ConversationModule = {
                 this.sendBufferedMessage(this.conversationBuffer);
             }
 
-            // In persistent listening mode, restart passive listening instead of ending
+            // In persistent listening mode, mark for restart after recognition ends
             if (settings.persistentListeningEnabled) {
-                this.restartPassiveListening(settings);
+                this.pendingPassiveListeningRestart = true;
+                console.log('🔔 Marking passive listening restart for after recognition ends');
             } else {
                 this.endConversation();
             }
@@ -257,10 +259,9 @@ const ConversationModule = {
 
                 // After sending, check if we should loop back to passive listening
                 if (settings.persistentListeningEnabled) {
-                    // Use a small delay to ensure message is processed before restarting
-                    setTimeout(() => {
-                        this.restartPassiveListening(settings);
-                    }, 100);
+                    // Mark for restart after recognition ends
+                    this.pendingPassiveListeningRestart = true;
+                    console.log('🔔 Marking passive listening restart for after recognition ends');
                 } else {
                     this.endConversation();
                 }

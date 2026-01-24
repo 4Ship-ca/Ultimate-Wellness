@@ -1948,9 +1948,23 @@ function initVoiceRecognition() {
     };
     
     recognition.onend = function() {
-        // Check if we should restart recognition for persistent listening
-        if (isListening && userSettings?.conversationSettings?.persistentListeningEnabled) {
-            // Persistent listening is enabled - restart recognition automatically
+        // Check if we need to restart passive listening (persistent mode)
+        if (isListening && ConversationModule?.pendingPassiveListeningRestart) {
+            console.log('🔄 Restarting passive listening after message send');
+            ConversationModule.pendingPassiveListeningRestart = false;
+
+            // Clear conversation state and restart passive listening
+            try {
+                ConversationModule.restartPassiveListening(userSettings.conversationSettings);
+                recognition.start();
+                console.log('🎧 Passive listening restarted');
+            } catch (error) {
+                console.error('Failed to restart passive listening:', error);
+                isListening = false;
+                updateVoiceButton();
+            }
+        } else if (isListening && userSettings?.conversationSettings?.persistentListeningEnabled) {
+            // Persistent listening enabled but no pending restart - just restart recognition
             try {
                 recognition.start();
                 console.log('🔄 Restarting recognition for persistent listening');
