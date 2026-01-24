@@ -232,6 +232,14 @@ async function registerUser(userData) {
                 volume: 1.0,
                 tone: 'natural'
             },
+            conversationSettings: {
+                conversationEnabled: true,
+                goWord: 'go',
+                pauseLength: 2000,
+                endConversationPhrase: 'end conversation',
+                autoStartResponse: true,
+                multiSentenceMode: true
+            },
             appVersion: APP_VERSION
         };
         
@@ -1871,8 +1879,33 @@ function initVoiceRecognition() {
     
     recognition.onresult = function(event) {
         const transcript = event.results[0][0].transcript;
-        document.getElementById('aiChatInput').value = transcript;
-        sendAIMessage();
+
+        // Check if conversation mode is enabled
+        if (userSettings?.conversationSettings?.conversationEnabled && ConversationModule) {
+            const conversationSettings = userSettings.conversationSettings;
+
+            // Process through conversation module
+            const shouldSend = ConversationModule.processVoiceInput(transcript, conversationSettings);
+
+            if (shouldSend) {
+                // Send the buffered message
+                const message = ConversationModule.getBuffer();
+                if (message) {
+                    document.getElementById('aiChatInput').value = message;
+                    sendAIMessage();
+                }
+            } else {
+                // Show buffer status to user
+                const status = ConversationModule.getStatus();
+                if (status.isWaitingForSilence) {
+                    showVoiceStatus(`📝 Buffered: "${ConversationModule.getBuffer()}"`);
+                }
+            }
+        } else {
+            // Conversation disabled - single message mode
+            document.getElementById('aiChatInput').value = transcript;
+            sendAIMessage();
+        }
     };
     
     recognition.onerror = function(event) {
@@ -1906,16 +1939,27 @@ function toggleVoiceInput() {
     if (isListening) {
         recognition.stop();
         isListening = false;
+        // End conversation if it was active
+        if (ConversationModule?.isInConversation) {
+            ConversationModule.endConversation();
+        }
     } else {
         try {
+            // Start conversation if enabled
+            if (userSettings?.conversationSettings?.conversationEnabled && ConversationModule) {
+                ConversationModule.startConversation(userSettings.conversationSettings);
+                const helper = ConversationModule.showConversationHelper(userSettings.conversationSettings);
+                showVoiceStatus(helper);
+            } else {
+                showVoiceStatus('Listening...');
+            }
             recognition.start();
-            showVoiceStatus('Listening...');
         } catch (error) {
             console.error('Failed to start recognition:', error);
             alert('Could not start voice input. Please check microphone permissions.');
         }
     }
-    
+
     updateVoiceButton();
 }
 
@@ -3128,6 +3172,15 @@ async function switchTab(tab) {
                 initializeVoiceSettings();
             } catch (e) {
                 console.warn('initializeVoiceSettings error:', e);
+            }
+        }
+
+        // Initialize conversation settings
+        if (typeof initializeConversationSettings === 'function') {
+            try {
+                initializeConversationSettings(userSettings);
+            } catch (e) {
+                console.warn('initializeConversationSettings error:', e);
             }
         }
         } else {
@@ -5266,6 +5319,7 @@ async function saveSettings() {
             proxyUrl: formData.proxyUrl,
             useProxy: formData.useProxy,
             voiceSettings: collectVoiceSettings(),
+            conversationSettings: collectConversationSettings(),
             lastModified: new Date().toISOString()
         };
 
@@ -5447,6 +5501,59 @@ function playBotVoiceSample() {
             btn.onclick = playBotVoiceSample;
         }
     };
+}
+
+/**
+ * Conversation Settings Management
+ */
+
+function collectConversationSettings() {
+    return {
+        conversationEnabled: document.getElementById('conversationEnabled')?.checked ?? true,
+        multiSentenceMode: document.getElementById('conversationMultiSentence')?.checked ?? true,
+        goWord: document.getElementById('conversationGoWord')?.value?.toLowerCase()?.trim() || 'go',
+        pauseLength: parseInt(document.getElementById('conversationPauseLength')?.value) || 2000,
+        endConversationPhrase: document.getElementById('conversationEndPhrase')?.value?.toLowerCase()?.trim() || 'end conversation',
+        autoStartResponse: document.getElementById('conversationAutoStart')?.checked ?? true
+    };
+}
+
+function updateConversationSettings() {
+    // Update pause length display
+    const pauseLength = document.getElementById('conversationPauseLength')?.value;
+    if (pauseLength) {
+        updatePauseLengthDisplay(pauseLength);
+    }
+}
+
+function updatePauseLengthDisplay(value) {
+    const display = document.getElementById('conversationPauseLengthValue');
+    if (display) display.textContent = `${value}ms`;
+}
+
+function initializeConversationSettings(userSettings) {
+    if (!userSettings?.conversationSettings) return;
+
+    const settings = userSettings.conversationSettings;
+
+    const conversationEnabled = document.getElementById('conversationEnabled');
+    const multiSentence = document.getElementById('conversationMultiSentence');
+    const goWord = document.getElementById('conversationGoWord');
+    const pauseLength = document.getElementById('conversationPauseLength');
+    const endPhrase = document.getElementById('conversationEndPhrase');
+    const autoStart = document.getElementById('conversationAutoStart');
+
+    if (conversationEnabled) conversationEnabled.checked = settings.conversationEnabled;
+    if (multiSentence) multiSentence.checked = settings.multiSentenceMode;
+    if (goWord) goWord.value = settings.goWord;
+    if (pauseLength) {
+        pauseLength.value = settings.pauseLength;
+        updatePauseLengthDisplay(settings.pauseLength);
+    }
+    if (endPhrase) endPhrase.value = settings.endConversationPhrase;
+    if (autoStart) autoStart.checked = settings.autoStartResponse;
+
+    console.log('✅ Conversation settings initialized');
 }
 
 async function completeSetup() {

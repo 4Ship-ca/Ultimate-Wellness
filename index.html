@@ -1723,6 +1723,33 @@
             30% { transform: translateY(-6px); }
         }
 
+        .conversation-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         .med-time-group {
             display: flex;
             gap: 10px;
@@ -2408,6 +2435,70 @@
                     </div>
                 </div>
 
+                <!-- VOICE CONVERSATION SETTINGS -->
+                <div class="card" style="margin: 20px 0; background: var(--bg-light); padding: 15px;">
+                    <h4 style="margin: 0 0 15px 0;">💬 Voice Conversation Settings</h4>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin: 0 0 15px 0;">
+                        Enable voice-to-voice conversations with your wellness coach
+                    </p>
+
+                    <div class="input-group">
+                        <label>Enable Voice Conversations</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="conversationEnabled" checked onchange="updateConversationSettings()">
+                            <span style="font-size: 14px;">Have multi-turn voice conversations with the bot</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Multi-Sentence Mode</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="conversationMultiSentence" checked onchange="updateConversationSettings()">
+                            <span style="font-size: 14px;">Allow multiple sentences before sending</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Go Word <span style="font-size: 12px; color: var(--text-secondary);">(trigger message send)</span></label>
+                        <input type="text" id="conversationGoWord" value="go" placeholder="e.g., go, send, next" onchange="updateConversationSettings()" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Say this word to end your current message and send it. Used in multi-sentence mode.
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Auto-Send Pause: <span id="conversationPauseLengthValue">2000ms</span></label>
+                        <input type="range" id="conversationPauseLength" min="500" max="5000" step="100" value="2000" onchange="updateConversationSettings()" style="width: 100%; cursor: pointer;">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Time of silence before auto-sending message (500ms - 5000ms). Triggered if no "go word" is used.
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>End Conversation Phrase</label>
+                        <input type="text" id="conversationEndPhrase" value="end conversation" placeholder="e.g., end conversation, goodbye" onchange="updateConversationSettings()" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Say this phrase to end the voice conversation. Can be multiple words.
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Auto-Start Bot Response</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="conversationAutoStart" checked onchange="updateConversationSettings()">
+                            <span style="font-size: 14px;">Automatically play bot response after message is sent</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px; padding: 10px; background: var(--bg-dark); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
+                        <strong>How it works:</strong><br>
+                        • Start voice input by clicking the 🎤 button<br>
+                        • Say your message and pause for the auto-send time, OR say the go word<br>
+                        • The bot will respond with voice<br>
+                        • Continue the conversation or say the end phrase to stop
+                    </div>
+                </div>
+
                 <!-- POINTS CALCULATION BREAKDOWN (v2.0 - Beta Display) -->
                 <div class="card" style="margin: 20px 0; background: var(--primary); padding: 15px;">
                     <h4 style="margin: 0 0 15px 0;">📊 Daily Points Calculation (Beta)</h4>
@@ -2655,6 +2746,7 @@
     <script src="login-tracking.js"></script>
     <script src="recipe-pdf-scraper.js"></script>
     <script src="voice-module.js"></script>
+    <script src="conversation-module.js"></script>
 
     <!-- V2.3.0 CAMERA - ENHANCED -->
     <!-- Features: Black screen fix, flash controls, auto-rotation, -->
