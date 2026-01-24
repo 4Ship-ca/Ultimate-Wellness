@@ -1683,35 +1683,6 @@
             border-color: var(--success) !important;
         }
 
-        .voice-controls {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .voice-select {
-            padding: 8px 12px;
-            border: 2px solid var(--border);
-            border-radius: 6px;
-            background: var(--bg);
-            color: var(--text);
-            font-size: 14px;
-            cursor: pointer;
-            min-width: 150px;
-            transition: all 0.3s ease;
-        }
-
-        .voice-select:hover {
-            border-color: var(--primary);
-            background: var(--bg-light);
-        }
-
-        .voice-select:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
-        }
-
         .speaking-indicator {
             display: inline-flex;
             gap: 3px;
@@ -2361,6 +2332,69 @@
                     </small>
                 </div>
 
+                <!-- BOT VOICE SETTINGS -->
+                <div class="card" style="margin: 20px 0; background: var(--primary); padding: 15px;">
+                    <h4 style="margin: 0 0 15px 0;">🎙️ Bot Voice Settings</h4>
+
+                    <div class="input-group">
+                        <label>Voice Enabled</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="botVoiceEnabled" checked onchange="updateBotVoiceSettings()">
+                            <span style="font-size: 14px;">Enable voice responses from your wellness coach</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Voice Selection</label>
+                        <select id="botVoiceSelect" onchange="updateBotVoiceSettings()" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-light); color: var(--text);">
+                            <!-- Populated by VoiceModule.populateVoiceSelect() -->
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Speech Speed: <span id="botVoiceRateValue">1.0x</span></label>
+                        <input type="range" id="botVoiceRate" min="0.5" max="2" step="0.1" value="1.0" onchange="updateBotVoiceSettings()" style="width: 100%; cursor: pointer;">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            0.5x (slower) to 2.0x (faster)
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Pitch: <span id="botVoicePitchValue">1.0</span></label>
+                        <input type="range" id="botVoicePitch" min="0.5" max="2" step="0.1" value="1.0" onchange="updateBotVoiceSettings()" style="width: 100%; cursor: pointer;">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            0.5 (lower) to 2.0 (higher)
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Volume: <span id="botVoiceVolumeValue">100%</span></label>
+                        <input type="range" id="botVoiceVolume" min="0" max="1" step="0.1" value="1" onchange="updateBotVoiceSettings()" style="width: 100%; cursor: pointer;">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            0% (silent) to 100% (full volume)
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Tone</label>
+                        <select id="botVoiceTone" onchange="updateBotVoiceSettings()" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-light); color: var(--text);">
+                            <option value="natural">Natural</option>
+                            <option value="warm">Warm & Friendly</option>
+                            <option value="professional">Professional</option>
+                            <option value="energetic">Energetic & Motivating</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+                        <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 10px 0;">
+                            👂 Hear how your wellness coach will sound with these settings:
+                        </p>
+                        <button class="btn" style="background: var(--bg); color: var(--text);" onclick="playBotVoiceSample()">
+                            🔊 Hear Sample
+                        </button>
+                    </div>
+                </div>
+
                 <!-- POINTS CALCULATION BREAKDOWN (v2.0 - Beta Display) -->
                 <div class="card" style="margin: 20px 0; background: var(--primary); padding: 15px;">
                     <h4 style="margin: 0 0 15px 0;">📊 Daily Points Calculation (Beta)</h4>
@@ -2502,14 +2536,6 @@
             <button class="quick-action-btn" onclick="quickAIPrompt('meal-plan')">📋 Meal Plan</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('exercise')">💪 Exercise Help</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('log-meal')">📝 Log Meal</button>
-            <div class="voice-controls">
-                <select id="voiceSelect" class="voice-select" onchange="selectVoice()" title="Choose voice">
-                    <option value="">Select Voice</option>
-                </select>
-                <button class="quick-action-btn" onclick="toggleVoiceOutput()">
-                    <span id="voiceOutputIcon">🔊</span> <span id="voiceOutputText">Voice On</span>
-                </button>
-            </div>
         </div>
     </div>
 
@@ -2612,6 +2638,7 @@
     <script src="email-system.js"></script>
     <script src="login-tracking.js"></script>
     <script src="recipe-pdf-scraper.js"></script>
+    <script src="voice-module.js"></script>
 
     <!-- V2.3.0 CAMERA - ENHANCED -->
     <!-- Features: Black screen fix, flash controls, auto-rotation, -->
