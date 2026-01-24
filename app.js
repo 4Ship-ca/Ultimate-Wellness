@@ -1616,7 +1616,7 @@ async function updateTodayLog() {
                 // Show points as calculated - no auto-badge based on static list
                 const pointsDisplay = f.points === 0 ?
                     `<span style="color: #28a745; font-weight: bold;">0 pts</span>` :
-                    `${f.points}pts`;
+                    `${f.points} pts`;
                 // Handle missing time gracefully - prioritize local time fields
                 let displayTime = f.time;
                 if (!displayTime && f.localTimestamp) {
@@ -2627,20 +2627,56 @@ async function callMealParsingAPI(userMessage) {
 
 // Helper: Parse and validate meal data from API response
 function parseMealDataFromResponse(responseText) {
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) {
+    // Find the first opening brace and parse from there
+    const startIndex = responseText.indexOf('{');
+    if (startIndex === -1) {
         // AI is asking for clarification in plain text
         return { type: 'clarification', text: responseText };
     }
 
-    const mealData = JSON.parse(jsonMatch[0]);
+    let mealData;
+    let jsonStr;
+
+    try {
+        // Try to extract and parse JSON starting from the first brace
+        // Use a more robust approach: find matching closing brace
+        let braceCount = 0;
+        let endIndex = -1;
+
+        for (let i = startIndex; i < responseText.length; i++) {
+            if (responseText[i] === '{') braceCount++;
+            if (responseText[i] === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    endIndex = i + 1;
+                    break;
+                }
+            }
+        }
+
+        if (endIndex === -1) {
+            // No matching closing brace found
+            return { type: 'clarification', text: responseText };
+        }
+
+        jsonStr = responseText.substring(startIndex, endIndex);
+        mealData = JSON.parse(jsonStr);
+    } catch (error) {
+        console.error('JSON parsing error:', error, 'Response:', responseText);
+        // AI is asking for clarification in plain text
+        return { type: 'clarification', text: responseText };
+    }
 
     if (mealData.needsClarification) {
         return {
             type: 'clarification',
             text: `❓ ${mealData.question}\n\nPlease be specific with quantities for accurate point tracking!`
         };
+    }
+
+    // Validate that foods array exists and is not empty
+    if (!mealData.foods || !Array.isArray(mealData.foods) || mealData.foods.length === 0) {
+        return { type: 'clarification', text: 'No food items were recognized. Please be more specific about what you ate.' };
     }
 
     return { type: 'success', data: mealData };
