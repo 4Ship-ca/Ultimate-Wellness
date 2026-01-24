@@ -10,6 +10,8 @@ const ConversationModule = {
     sentenceCount: 0,
     silenceTimer: null,
     isWaitingForGoWord: false,
+    isListeningForWakeWord: false,
+    wakeWordTimer: null,
 
     // Default settings
     defaultSettings: {
@@ -18,7 +20,10 @@ const ConversationModule = {
         pauseLength: 2000, // milliseconds
         endConversationPhrase: 'end conversation',
         autoStartResponse: true, // Auto-speak bot response when recognized
-        multiSentenceMode: true // Allow multiple sentences before go-word
+        multiSentenceMode: true, // Allow multiple sentences before go-word
+        activeListeningEnabled: true,
+        activeListeningPhrase: 'hey bot',
+        activeListeningTimeout: 10 // seconds
     },
 
     /**
@@ -60,9 +65,83 @@ const ConversationModule = {
         this.sentenceCount = 0;
         this.clearSilenceTimer();
         this.hideConversationIndicator();
+        this.clearWakeWordTimer();
 
         console.log('👋 Conversation ended');
         return true;
+    },
+
+    /**
+     * Start listening for wake word (passive listening mode)
+     */
+    startPassiveListening(settings) {
+        if (!settings.activeListeningEnabled) return false;
+
+        this.isListeningForWakeWord = true;
+        console.log(`👂 Listening for wake word: "${settings.activeListeningPhrase}"`);
+        console.log(`⏰ Will timeout in ${settings.activeListeningTimeout} seconds`);
+
+        // Start timeout timer
+        this.wakeWordTimer = setTimeout(() => {
+            if (this.isListeningForWakeWord) {
+                console.log('⏸️ Wake word timeout - no phrase detected');
+                this.stopPassiveListening();
+            }
+        }, settings.activeListeningTimeout * 1000);
+
+        return true;
+    },
+
+    /**
+     * Stop listening for wake word
+     */
+    stopPassiveListening() {
+        this.isListeningForWakeWord = false;
+        this.clearWakeWordTimer();
+        console.log('🛑 Stopped listening for wake word');
+    },
+
+    /**
+     * Check if transcript contains the wake phrase and start conversation
+     */
+    processWakeWord(transcript, settings) {
+        if (!this.isListeningForWakeWord) return false;
+
+        const lowerTranscript = transcript.toLowerCase().trim();
+        const lowerPhrase = settings.activeListeningPhrase.toLowerCase().trim();
+
+        if (lowerTranscript.includes(lowerPhrase)) {
+            console.log(`🎯 Wake word detected: "${settings.activeListeningPhrase}"`);
+            this.stopPassiveListening();
+            this.startConversation(settings);
+
+            // Remove the wake phrase from the transcript so the user's actual message is clean
+            const cleanedTranscript = this.removeWakePhrase(transcript, settings.activeListeningPhrase);
+            return {
+                detected: true,
+                cleanedTranscript: cleanedTranscript
+            };
+        }
+
+        return { detected: false, cleanedTranscript: transcript };
+    },
+
+    /**
+     * Remove wake phrase from transcript
+     */
+    removeWakePhrase(transcript, phrase) {
+        const regex = new RegExp(phrase, 'gi');
+        return transcript.replace(regex, '').trim();
+    },
+
+    /**
+     * Clear wake word timer
+     */
+    clearWakeWordTimer() {
+        if (this.wakeWordTimer) {
+            clearTimeout(this.wakeWordTimer);
+            this.wakeWordTimer = null;
+        }
     },
 
     /**

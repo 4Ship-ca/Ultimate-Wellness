@@ -238,7 +238,10 @@ async function registerUser(userData) {
                 pauseLength: 2000,
                 endConversationPhrase: 'end conversation',
                 autoStartResponse: true,
-                multiSentenceMode: true
+                multiSentenceMode: true,
+                activeListeningEnabled: true,
+                activeListeningPhrase: 'hey bot',
+                activeListeningTimeout: 10
             },
             appVersion: APP_VERSION
         };
@@ -1880,11 +1883,34 @@ function initVoiceRecognition() {
     recognition.onresult = function(event) {
         const transcript = event.results[0][0].transcript;
 
-        // Check if conversation mode is enabled
-        if (userSettings?.conversationSettings?.conversationEnabled && ConversationModule) {
-            const conversationSettings = userSettings.conversationSettings;
+        if (!userSettings?.conversationSettings || !ConversationModule) {
+            // Fallback: conversation not enabled, single message mode
+            document.getElementById('aiChatInput').value = transcript;
+            sendAIMessage();
+            return;
+        }
 
-            // Process through conversation module
+        const conversationSettings = userSettings.conversationSettings;
+
+        // Check if we're in passive listening mode (waiting for wake word)
+        if (ConversationModule.isListeningForWakeWord && conversationSettings.activeListeningEnabled) {
+            const wakeWordResult = ConversationModule.processWakeWord(transcript, conversationSettings);
+
+            if (wakeWordResult.detected) {
+                // Wake word detected - start conversation and send cleaned message if there's content
+                showVoiceStatus(`🎤 Conversation started! Say your message...`);
+
+                // If there's content after the wake phrase, send it
+                if (wakeWordResult.cleanedTranscript.trim()) {
+                    document.getElementById('aiChatInput').value = wakeWordResult.cleanedTranscript;
+                    sendAIMessage();
+                }
+            } else {
+                // No wake word yet, show what we heard
+                showVoiceStatus(`Listening for "${conversationSettings.activeListeningPhrase}"... (heard: "${transcript}")`);
+            }
+        } else if (userSettings?.conversationSettings?.conversationEnabled) {
+            // In active conversation mode - process input normally
             const shouldSend = ConversationModule.processVoiceInput(transcript, conversationSettings);
 
             if (shouldSend) {
@@ -1943,15 +1969,27 @@ function toggleVoiceInput() {
         if (ConversationModule?.isInConversation) {
             ConversationModule.endConversation();
         }
+        if (ConversationModule?.isListeningForWakeWord) {
+            ConversationModule.stopPassiveListening();
+        }
     } else {
         try {
-            // Start conversation if enabled
-            if (userSettings?.conversationSettings?.conversationEnabled && ConversationModule) {
-                ConversationModule.startConversation(userSettings.conversationSettings);
-                const helper = ConversationModule.showConversationHelper(userSettings.conversationSettings);
-                showVoiceStatus(helper);
-            } else {
+            if (!userSettings?.conversationSettings || !ConversationModule) {
+                // Fallback: conversation not enabled
                 showVoiceStatus('Listening...');
+            } else {
+                // Check if active listening is enabled
+                if (userSettings.conversationSettings.activeListeningEnabled) {
+                    // Start passive listening for wake word
+                    ConversationModule.startPassiveListening(userSettings.conversationSettings);
+                    const phrase = userSettings.conversationSettings.activeListeningPhrase;
+                    showVoiceStatus(`🎤 Listening for "${phrase}"...`);
+                } else {
+                    // Start full conversation immediately
+                    ConversationModule.startConversation(userSettings.conversationSettings);
+                    const helper = ConversationModule.showConversationHelper(userSettings.conversationSettings);
+                    showVoiceStatus(helper);
+                }
             }
             recognition.start();
         } catch (error) {
@@ -5514,7 +5552,10 @@ function collectConversationSettings() {
         goWord: document.getElementById('conversationGoWord')?.value?.toLowerCase()?.trim() || 'go',
         pauseLength: parseInt(document.getElementById('conversationPauseLength')?.value) || 2000,
         endConversationPhrase: document.getElementById('conversationEndPhrase')?.value?.toLowerCase()?.trim() || 'end conversation',
-        autoStartResponse: document.getElementById('conversationAutoStart')?.checked ?? true
+        autoStartResponse: document.getElementById('conversationAutoStart')?.checked ?? true,
+        activeListeningEnabled: document.getElementById('activeListeningEnabled')?.checked ?? true,
+        activeListeningPhrase: document.getElementById('activeListeningPhrase')?.value?.toLowerCase()?.trim() || 'hey bot',
+        activeListeningTimeout: parseInt(document.getElementById('activeListeningTimeout')?.value) || 10
     };
 }
 
@@ -5523,6 +5564,23 @@ function updateConversationSettings() {
     const pauseLength = document.getElementById('conversationPauseLength')?.value;
     if (pauseLength) {
         updatePauseLengthDisplay(pauseLength);
+    }
+}
+
+function updateActiveListeningSettings() {
+    // Update timeout display
+    const timeout = document.getElementById('activeListeningTimeout')?.value;
+    if (timeout) {
+        const display = document.getElementById('activeListeningTimeoutValue');
+        if (display) display.textContent = timeout;
+    }
+}
+
+function selectActiveListeningPhrase(phrase) {
+    const input = document.getElementById('activeListeningPhrase');
+    if (input) {
+        input.value = phrase;
+        updateConversationSettings();
     }
 }
 
@@ -5542,6 +5600,9 @@ function initializeConversationSettings(userSettings) {
     const pauseLength = document.getElementById('conversationPauseLength');
     const endPhrase = document.getElementById('conversationEndPhrase');
     const autoStart = document.getElementById('conversationAutoStart');
+    const activeListeningEnabled = document.getElementById('activeListeningEnabled');
+    const activeListeningPhrase = document.getElementById('activeListeningPhrase');
+    const activeListeningTimeout = document.getElementById('activeListeningTimeout');
 
     if (conversationEnabled) conversationEnabled.checked = settings.conversationEnabled;
     if (multiSentence) multiSentence.checked = settings.multiSentenceMode;
@@ -5552,6 +5613,12 @@ function initializeConversationSettings(userSettings) {
     }
     if (endPhrase) endPhrase.value = settings.endConversationPhrase;
     if (autoStart) autoStart.checked = settings.autoStartResponse;
+    if (activeListeningEnabled) activeListeningEnabled.checked = settings.activeListeningEnabled ?? true;
+    if (activeListeningPhrase) activeListeningPhrase.value = settings.activeListeningPhrase || 'hey bot';
+    if (activeListeningTimeout) {
+        activeListeningTimeout.value = settings.activeListeningTimeout || 10;
+        updateActiveListeningSettings();
+    }
 
     console.log('✅ Conversation settings initialized');
 }
