@@ -241,7 +241,8 @@ async function registerUser(userData) {
                 multiSentenceMode: true,
                 activeListeningEnabled: true,
                 activeListeningPhrase: 'hey bot',
-                activeListeningTimeout: 10
+                activeListeningTimeout: 10,
+                persistentListeningEnabled: false
             },
             appVersion: APP_VERSION
         };
@@ -1947,8 +1948,21 @@ function initVoiceRecognition() {
     };
     
     recognition.onend = function() {
-        isListening = false;
-        updateVoiceButton();
+        // Check if we should restart recognition for persistent listening
+        if (isListening && userSettings?.conversationSettings?.persistentListeningEnabled) {
+            // Persistent listening is enabled - restart recognition automatically
+            try {
+                recognition.start();
+                console.log('🔄 Restarting recognition for persistent listening');
+            } catch (error) {
+                console.error('Failed to restart recognition:', error);
+                isListening = false;
+                updateVoiceButton();
+            }
+        } else {
+            isListening = false;
+            updateVoiceButton();
+        }
     };
     
     return true;
@@ -2004,13 +2018,25 @@ function toggleVoiceInput() {
 function updateVoiceButton() {
     const btn = document.getElementById('voiceBtn');
     const icon = document.getElementById('voiceIcon');
-    
-    if (isListening) {
+
+    if (!isListening) {
+        // Idle state - no classes
+        btn.classList.remove('listening', 'passive-listening', 'active-listening');
+        icon.textContent = '🎤';
+    } else if (ConversationModule?.isInConversation) {
+        // Active conversation state - green pulse
+        btn.classList.remove('listening', 'passive-listening');
+        btn.classList.add('active-listening');
+        icon.textContent = '🎙️';
+    } else if (ConversationModule?.isListeningForWakeWord) {
+        // Passive listening state - yellow pulse
+        btn.classList.remove('listening', 'active-listening');
+        btn.classList.add('passive-listening');
+        icon.textContent = '👂';
+    } else {
+        // Generic listening state (fallback)
         btn.classList.add('listening');
         icon.textContent = '🔴';
-    } else {
-        btn.classList.remove('listening');
-        icon.textContent = '🎤';
     }
 }
 
@@ -5555,7 +5581,8 @@ function collectConversationSettings() {
         autoStartResponse: document.getElementById('conversationAutoStart')?.checked ?? true,
         activeListeningEnabled: document.getElementById('activeListeningEnabled')?.checked ?? true,
         activeListeningPhrase: document.getElementById('activeListeningPhrase')?.value?.toLowerCase()?.trim() || 'hey bot',
-        activeListeningTimeout: parseInt(document.getElementById('activeListeningTimeout')?.value) || 10
+        activeListeningTimeout: parseInt(document.getElementById('activeListeningTimeout')?.value) || 10,
+        persistentListeningEnabled: document.getElementById('persistentListeningEnabled')?.checked ?? false
     };
 }
 
@@ -5603,6 +5630,7 @@ function initializeConversationSettings(userSettings) {
     const activeListeningEnabled = document.getElementById('activeListeningEnabled');
     const activeListeningPhrase = document.getElementById('activeListeningPhrase');
     const activeListeningTimeout = document.getElementById('activeListeningTimeout');
+    const persistentListeningEnabled = document.getElementById('persistentListeningEnabled');
 
     if (conversationEnabled) conversationEnabled.checked = settings.conversationEnabled;
     if (multiSentence) multiSentence.checked = settings.multiSentenceMode;
@@ -5619,6 +5647,7 @@ function initializeConversationSettings(userSettings) {
         activeListeningTimeout.value = settings.activeListeningTimeout || 10;
         updateActiveListeningSettings();
     }
+    if (persistentListeningEnabled) persistentListeningEnabled.checked = settings.persistentListeningEnabled ?? false;
 
     console.log('✅ Conversation settings initialized');
 }

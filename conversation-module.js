@@ -79,15 +79,20 @@ const ConversationModule = {
 
         this.isListeningForWakeWord = true;
         console.log(`👂 Listening for wake word: "${settings.activeListeningPhrase}"`);
-        console.log(`⏰ Will timeout in ${settings.activeListeningTimeout} seconds`);
 
-        // Start timeout timer
-        this.wakeWordTimer = setTimeout(() => {
-            if (this.isListeningForWakeWord) {
-                console.log('⏸️ Wake word timeout - no phrase detected');
-                this.stopPassiveListening();
-            }
-        }, settings.activeListeningTimeout * 1000);
+        // Only set timeout if persistent listening is disabled
+        if (settings.persistentListeningEnabled) {
+            console.log(`♾️ Persistent listening enabled - will listen indefinitely until mic clicked`);
+        } else {
+            console.log(`⏰ Will timeout in ${settings.activeListeningTimeout} seconds`);
+            // Start timeout timer
+            this.wakeWordTimer = setTimeout(() => {
+                if (this.isListeningForWakeWord) {
+                    console.log('⏸️ Wake word timeout - no phrase detected');
+                    this.stopPassiveListening();
+                }
+            }, settings.activeListeningTimeout * 1000);
+        }
 
         return true;
     },
