@@ -25,6 +25,17 @@ async function verifyPassword(password, hash) {
 // ============ USER ID MANAGEMENT ============
 
 /**
+ * Get local date string in YYYY-MM-DD format (NOT UTC)
+ * Use this instead of toISOString().split('T')[0]
+ */
+function getLocalDateString(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
  * Get current user ID from localStorage
  */
 function getCurrentUserId() {
@@ -336,7 +347,7 @@ async function loadUserData(userId) {
  */
 async function createDefaultSettings(userId) {
     try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         const endDate = new Date();
         endDate.setDate(endDate.getDate() + 84);
 
@@ -346,7 +357,7 @@ async function createDefaultSettings(userId) {
             userId: userId,
             name: 'My Account',
             email: '',
-            birthday: new Date().toISOString().split('T')[0],
+            birthday: getLocalDateString(),
             gender: 'other',
             currentWeight: 180,
             goalWeight: 180,
@@ -357,7 +368,7 @@ async function createDefaultSettings(userId) {
             dailyPoints: 23,
             lockedPoints: 23,
             pointsPeriodStart: today,
-            pointsPeriodEnd: endDate.toISOString().split('T')[0],
+            pointsPeriodEnd: getLocalDateString(endDate),
             lastPointsUpdate: today,
             lastWeighIn: today,
             joinDate: today,

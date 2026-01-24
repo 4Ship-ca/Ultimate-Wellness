@@ -70,6 +70,17 @@ function startDebugDateTimePulse() {
     setInterval(updateDebugDateTime, 1000);
 }
 
+/**
+ * Get local date string in YYYY-MM-DD format (NOT UTC)
+ * Use this instead of toISOString().split('T')[0]
+ */
+function getLocalDateString(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 // ============================================================================
 // BULLETPROOF AUTHENTICATION & SESSION SYSTEM
 // ============================================================================
@@ -186,10 +197,10 @@ async function registerUser(userData) {
         // Pass default pointsFloor (23) explicitly since userSettings doesn't exist yet during registration
         const pointsResult = calculateDailyPoints(userData.gender, age, userData.currentWeight, heightInInches, userData.activity, 23);
         
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         const endDate = new Date();
         endDate.setDate(endDate.getDate() + 84);
-        
+
         const settings = {
             id: userId,
             userId: userId,
@@ -206,7 +217,7 @@ async function registerUser(userData) {
             dailyPoints: pointsResult.points,
             lockedPoints: pointsResult.points,
             pointsPeriodStart: today,
-            pointsPeriodEnd: endDate.toISOString().split('T')[0],
+            pointsPeriodEnd: getLocalDateString(endDate),
             lastPointsUpdate: today,
             lastWeighIn: today,
             joinDate: today,
@@ -325,14 +336,10 @@ async function restoreSession(userId) {
             
             console.log(`✅ Session restored - last active: ${session.lastActiveDate}, tab: ${session.lastActiveTab}`);
 
-            // Use local date (not UTC) for day comparison
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const today = `${year}-${month}-${day}`;
+            // Use logical day (respects reset time) for day comparison
+            const logicalToday = typeof getTodayKey === 'function' ? getTodayKey() : getLocalDateString();
 
-            if (session.lastActiveDate !== today && userSettings) {
+            if (session.lastActiveDate !== logicalToday && userSettings) {
                 console.log('📅 New day detected - checking reset time');
                 await handleDailyReset(userSettings);
             }
@@ -3046,16 +3053,12 @@ async function switchTab(tab) {
     
     currentTab = tab;
     
-    // Update session state (using local date, not UTC)
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const localDate = `${year}-${month}-${day}`;
+    // Update session state (using logical day that respects reset time)
+    const logicalToday = typeof getTodayKey === 'function' ? getTodayKey() : getLocalDateString();
 
     updateSessionState({
         lastActiveTab: tab,
-        lastActiveDate: localDate
+        lastActiveDate: logicalToday
     });
     
     // Safely remove active from all
@@ -3531,7 +3534,7 @@ async function emailGroceryList() {
     }
 
     // Get pantry items from last 30 days
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const thirtyDaysAgo = getLocalDateString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
     const allPantry = await dbGetAll('pantry_items');
     const recentItems = allPantry.filter(p => p.date >= thirtyDaysAgo);
     
@@ -4918,7 +4921,7 @@ async function getIncompleteSleepSession() {
         for (let i = 0; i < 3; i++) {
             const checkDate = new Date(today);
             checkDate.setDate(checkDate.getDate() - i);
-            const dateKey = checkDate.toISOString().split('T')[0];
+            const dateKey = getLocalDateString(checkDate);
 
             const sleepLogs = await dbGetByUserAndDate('sleep', userId, dateKey);
             const incomplete = sleepLogs.find(log => log.start_datetime && !log.end_datetime);
@@ -5086,8 +5089,8 @@ async function addFoodWaterML(ml) {
 async function getRecentSleepSessions(days = 7) {
     try {
         const userId = getCurrentUserId();
-        const endDate = new Date().toISOString().split('T')[0];
-        const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const endDate = getLocalDateString();
+        const startDate = getLocalDateString(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
         const sessions = await dbGetByDateRange('sleep', userId, startDate, endDate);
         return sessions || [];
     } catch (error) {
@@ -5382,7 +5385,7 @@ async function completeSetup() {
         }
         
         await addWeightLog({
-            date: new Date().toISOString().split('T')[0],
+            date: getLocalDateString(),
             weight: formData.currentWeight,
             notes: 'Starting weight'
         });
@@ -5489,7 +5492,7 @@ async function startSleepSession(startTime) {
     try {
         const userId = getCurrentUserId();
         const now = startTime ? new Date(startTime) : new Date();
-        const date = now.toISOString().split('T')[0];
+        const date = getLocalDateString(now);
 
         const sleepSession = {
             id: `sleep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -5582,8 +5585,8 @@ function startNewPointsPeriod() {
     const weightDelta = userSettings.currentWeight - userSettings.goalWeight;
     const targetWeeklyLoss = Math.max(0, Math.min(2, weightDelta / 12));
 
-    userSettings.pointsPeriodStart = today.toISOString().split('T')[0];
-    userSettings.pointsPeriodEnd = periodEnd.toISOString().split('T')[0];
+    userSettings.pointsPeriodStart = getLocalDateString(today);
+    userSettings.pointsPeriodEnd = getLocalDateString(periodEnd);
     userSettings.lockedPoints = result.points;
     userSettings.dailyPoints = result.points;
     userSettings.targetWeeklyLoss = targetWeeklyLoss;
@@ -5604,7 +5607,7 @@ function checkPointsPeriodBoundary() {
         return true;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     const periodEnd = userSettings.pointsPeriodEnd;
     const periodStart = userSettings.pointsPeriodStart;
 
@@ -5617,7 +5620,7 @@ function checkPointsPeriodBoundary() {
     const startDate = new Date(periodStart);
     const sixWeeksLater = new Date(startDate);
     sixWeeksLater.setDate(sixWeeksLater.getDate() + (6 * 7));
-    const sixWeekStr = sixWeeksLater.toISOString().split('T')[0];
+    const sixWeekStr = getLocalDateString(sixWeeksLater);
 
     if (today >= sixWeekStr && !userSettings.sixWeekCheckpointDone) {
         console.log('6-week checkpoint - checking progress');
@@ -5693,7 +5696,7 @@ async function performSixWeekCheckpoint() {
     }
 
     userSettings.sixWeekCheckpointDone = true;
-    userSettings.sixWeekCheckpointDate = new Date().toISOString().split('T')[0];
+    userSettings.sixWeekCheckpointDate = getLocalDateString();
     await dbPut('settings', userSettings);
 }
 
@@ -5702,7 +5705,7 @@ function calculateActualBurnRate() {
 
     const twoWeeksAgo = new Date();
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-    const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0];
+    const twoWeeksAgoStr = getLocalDateString(twoWeeksAgo);
 
     getAllWeightLogs().then(logs => {
         const recentLogs = logs.filter(log => log.date >= twoWeeksAgoStr).sort((a, b) => a.date.localeCompare(b.date));
@@ -5804,11 +5807,11 @@ function handlePointsRecalculation(currentSettings, formData, age, heightInInche
         updatedSettings.dailyPoints = newPoints;
         updatedSettings.lockedPoints = newPoints;
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         const endDate = new Date();
         endDate.setDate(endDate.getDate() + 84);
         updatedSettings.pointsPeriodStart = today;
-        updatedSettings.pointsPeriodEnd = endDate.toISOString().split('T')[0];
+        updatedSettings.pointsPeriodEnd = getLocalDateString(endDate);
 
         return true;
     }
@@ -5912,7 +5915,7 @@ async function updateWeight() {
         return;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     const todayLogs = await getAllWeightLogs();
     const existingToday = todayLogs.find(log => log.date === today);
@@ -6398,7 +6401,11 @@ function getTodayKey() {
         now.setDate(now.getDate() - 1);
     }
 
-    return now.toISOString().split('T')[0];
+    // Format as local date (YYYY-MM-DD), NOT UTC
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 // ============================================================================
@@ -6531,16 +6538,12 @@ async function initializeAfterLogin() {
 
         // Ensure sessionState is initialized (even if no previous session)
         if (!sessionState.initialized) {
-            // Use local date (not UTC) for lastActiveDate
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const localDate = `${year}-${month}-${day}`;
+            // Use logical day (respects reset time) for lastActiveDate
+            const logicalToday = typeof getTodayKey === 'function' ? getTodayKey() : getLocalDateString();
 
             sessionState = {
                 lastActiveTab: 'home',
-                lastActiveDate: localDate,
+                lastActiveDate: logicalToday,
                 scrollPositions: {},
                 formData: {},
                 initialized: true
