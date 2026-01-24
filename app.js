@@ -41,7 +41,14 @@ function updateDebugDateTime() {
     if (!debugEl) return;
 
     const now = new Date();
-    const appDay = typeof getTodayKey === 'function' ? getTodayKey() : now.toISOString().split('T')[0];
+    // Use local date (not UTC) as fallback, consistent with getTodayKey()
+    const fallbackDay = (() => {
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    })();
+    const appDay = typeof getTodayKey === 'function' ? getTodayKey() : fallbackDay;
 
     // Format: "Local: 1/22/26 9:53:21 PM | App Day: 2026-01-22"
     const localTime = now.toLocaleString('en-US', {
@@ -232,11 +239,17 @@ async function saveSession() {
             return;
         }
         
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const localDate = `${year}-${month}-${day}`;
+
         const session = {
             id: `session_${userId}`,
             userId: userId,
             lastActiveTab: sessionState.lastActiveTab || 'home',
-            lastActiveDate: new Date().toISOString().split('T')[0],
+            lastActiveDate: localDate,
             timestamp: new Date().toISOString(),
             scrollPositions: sessionState.scrollPositions || {},
             formData: sessionState.formData || {}
@@ -311,8 +324,14 @@ async function restoreSession(userId) {
             };
             
             console.log(`✅ Session restored - last active: ${session.lastActiveDate}, tab: ${session.lastActiveTab}`);
-            
-            const today = new Date().toISOString().split('T')[0];
+
+            // Use local date (not UTC) for day comparison
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const today = `${year}-${month}-${day}`;
+
             if (session.lastActiveDate !== today && userSettings) {
                 console.log('📅 New day detected - checking reset time');
                 await handleDailyReset(userSettings);
@@ -336,24 +355,29 @@ async function handleDailyReset(settings) {
         const now = new Date();
         const resetTime = settings.resetTime || '04:00';
         const [resetHour, resetMinute] = resetTime.split(':').map(Number);
-        
-        const today = new Date().toISOString().split('T')[0];
+
+        // Use local date (not UTC) to match session.js checkDailyReset logic
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+
         const lastReset = localStorage.getItem('lastReset');
-        
+
         if (lastReset === today) {
             console.log('✅ Daily reset already completed today');
             return;
         }
-        
+
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const resetMinutes = resetHour * 60 + resetMinute;
-        
+
         if (currentMinutes >= resetMinutes) {
             console.log(`🔄 Performing daily reset (${resetTime})`);
             localStorage.setItem('lastReset', today);
             console.log('✅ Daily reset completed');
         }
-        
+
     } catch (error) {
         console.error('Daily reset error:', error);
     }
@@ -3022,10 +3046,16 @@ async function switchTab(tab) {
     
     currentTab = tab;
     
-    // Update session state
+    // Update session state (using local date, not UTC)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const localDate = `${year}-${month}-${day}`;
+
     updateSessionState({
         lastActiveTab: tab,
-        lastActiveDate: new Date().toISOString().split('T')[0]
+        lastActiveDate: localDate
     });
     
     // Safely remove active from all
@@ -6035,8 +6065,14 @@ async function testAPIConnection() {
 }
 
 function checkDailyReset() {
+    // Use local date format consistent with session.js (YYYY-MM-DD)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const currentDay = `${year}-${month}-${day}`;
+
     const lastCheck = localStorage.getItem('lastDailyCheck');
-    const currentDay = getTodayKey();
 
     if (lastCheck && lastCheck !== currentDay) {
         console.log('New day detected - refreshing...');
@@ -6495,9 +6531,16 @@ async function initializeAfterLogin() {
 
         // Ensure sessionState is initialized (even if no previous session)
         if (!sessionState.initialized) {
+            // Use local date (not UTC) for lastActiveDate
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const localDate = `${year}-${month}-${day}`;
+
             sessionState = {
                 lastActiveTab: 'home',
-                lastActiveDate: new Date().toISOString().split('T')[0],
+                lastActiveDate: localDate,
                 scrollPositions: {},
                 formData: {},
                 initialized: true
