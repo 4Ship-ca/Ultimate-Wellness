@@ -72,6 +72,27 @@ const ConversationModule = {
     },
 
     /**
+     * Restart passive listening after a message is sent (persistent listening mode)
+     * Clears conversation state but stays in listening mode (yellow state)
+     */
+    restartPassiveListening(settings) {
+        if (!this.isInConversation) return false;
+
+        // Clear conversation state
+        this.isInConversation = false;
+        this.conversationBuffer = '';
+        this.sentenceCount = 0;
+        this.clearSilenceTimer();
+        this.hideConversationIndicator();
+
+        // Start passive listening again
+        this.startPassiveListening(settings);
+
+        console.log('🔄 Restarting passive listening (persistent mode)');
+        return true;
+    },
+
+    /**
      * Start listening for wake word (passive listening mode)
      */
     startPassiveListening(settings) {
@@ -169,7 +190,12 @@ const ConversationModule = {
                 this.sendBufferedMessage(this.conversationBuffer);
             }
 
-            this.endConversation();
+            // In persistent listening mode, restart passive listening instead of ending
+            if (settings.persistentListeningEnabled) {
+                this.restartPassiveListening(settings);
+            } else {
+                this.endConversation();
+            }
             return false;
         }
 
@@ -228,6 +254,16 @@ const ConversationModule = {
             if (this.conversationBuffer.trim()) {
                 console.log('⏸️ Pause detected, sending message');
                 this.sendBufferedMessage(this.conversationBuffer);
+
+                // After sending, check if we should loop back to passive listening
+                if (settings.persistentListeningEnabled) {
+                    // Use a small delay to ensure message is processed before restarting
+                    setTimeout(() => {
+                        this.restartPassiveListening(settings);
+                    }, 100);
+                } else {
+                    this.endConversation();
+                }
             }
         }, settings.pauseLength);
     },
