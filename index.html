@@ -1549,6 +1549,19 @@
             color: white;
         }
 
+        .quick-action-btn.voice-enabled {
+            background: var(--success);
+            border-color: var(--success);
+            color: white;
+        }
+
+        .quick-action-btn.voice-disabled {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: white;
+            opacity: 0.7;
+        }
+
         .recipe-card {
             background: var(--bg-light);
             padding: 15px;
@@ -1647,10 +1660,35 @@
             border-color: var(--primary);
         }
 
+        /* Passive listening mode - waiting for wake word */
+        .voice-btn.passive-listening {
+            background: #FFC107;
+            border-color: #FFC107;
+            animation: voicePulseYellow 1.5s infinite;
+        }
+
+        /* Active listening mode - in conversation */
+        .voice-btn.active-listening {
+            background: var(--success);
+            border-color: var(--success);
+            animation: voicePulseGreen 1.5s infinite;
+        }
+
+        /* Legacy listening state (kept for compatibility) */
         .voice-btn.listening {
-            background: var(--danger);
-            border-color: var(--danger);
-            animation: voicePulse 1.5s infinite;
+            background: var(--success);
+            border-color: var(--success);
+            animation: voicePulseGreen 1.5s infinite;
+        }
+
+        @keyframes voicePulseYellow {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+            50% { transform: scale(1.05); box-shadow: 0 0 15px rgba(255, 193, 7, 0.8); }
+        }
+
+        @keyframes voicePulseGreen {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
+            50% { transform: scale(1.05); box-shadow: 0 0 15px rgba(76, 175, 80, 0.8); }
         }
 
         @keyframes voicePulse {
@@ -1663,7 +1701,7 @@
             top: -25px;
             left: 50%;
             transform: translateX(-50%);
-            background: var(--danger);
+            background: var(--primary);
             color: white;
             padding: 4px 12px;
             border-radius: 12px;
@@ -1708,6 +1746,33 @@
         @keyframes speakingBounce {
             0%, 60%, 100% { transform: translateY(0); }
             30% { transform: translateY(-6px); }
+        }
+
+        .conversation-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
 
         .med-time-group {
@@ -2333,7 +2398,7 @@
                 </div>
 
                 <!-- BOT VOICE SETTINGS -->
-                <div class="card" style="margin: 20px 0; background: var(--primary); padding: 15px;">
+                <div class="card" style="margin: 20px 0; background: var(--bg-light); padding: 15px;">
                     <h4 style="margin: 0 0 15px 0;">🎙️ Bot Voice Settings</h4>
 
                     <div class="input-group">
@@ -2392,6 +2457,137 @@
                         <button class="btn" style="background: var(--bg); color: var(--text);" onclick="playBotVoiceSample()">
                             🔊 Hear Sample
                         </button>
+                    </div>
+                </div>
+
+                <!-- VOICE CONVERSATION SETTINGS -->
+                <div class="card" style="margin: 20px 0; background: var(--bg-light); padding: 15px;">
+                    <h4 style="margin: 0 0 15px 0;">💬 Voice Conversation Settings</h4>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin: 0 0 15px 0;">
+                        Enable voice-to-voice conversations with your wellness coach
+                    </p>
+
+                    <div class="input-group">
+                        <label>Enable Voice Conversations</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="conversationEnabled" checked onchange="updateConversationSettings()">
+                            <span style="font-size: 14px;">Have multi-turn voice conversations with the bot</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Multi-Sentence Mode</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="conversationMultiSentence" checked onchange="updateConversationSettings()">
+                            <span style="font-size: 14px;">Allow multiple sentences before sending</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Go Word <span style="font-size: 12px; color: var(--text-secondary);">(trigger message send)</span></label>
+                        <input type="text" id="conversationGoWord" value="go" placeholder="e.g., go, send, next" onchange="updateConversationSettings()" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Say this word to end your current message and send it. Used in multi-sentence mode.
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Auto-Send Pause: <span id="conversationPauseLengthValue">2000ms</span></label>
+                        <input type="range" id="conversationPauseLength" min="500" max="5000" step="100" value="2000" onchange="updateConversationSettings()" style="width: 100%; cursor: pointer;">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Time of silence before auto-sending message (500ms - 5000ms). Triggered if no "go word" is used.
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>End Conversation Phrase</label>
+                        <input type="text" id="conversationEndPhrase" value="end conversation" placeholder="e.g., end conversation, goodbye" onchange="updateConversationSettings()" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Say this phrase to end the voice conversation. Can be multiple words.
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Auto-Start Bot Response</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="conversationAutoStart" checked onchange="updateConversationSettings()">
+                            <span style="font-size: 14px;">Automatically play bot response after message is sent</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px; padding: 10px; background: var(--bg-dark); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
+                        <strong>How it works:</strong><br>
+                        • Start voice input by clicking the 🎤 button<br>
+                        • Say your message and pause for the auto-send time, OR say the go word<br>
+                        • The bot will respond with voice<br>
+                        • Continue the conversation or say the end phrase to stop
+                    </div>
+                </div>
+
+                <!-- ACTIVE LISTENING SETTINGS -->
+                <div class="card" style="margin: 20px 0; background: var(--bg-light); padding: 15px;">
+                    <h4 style="margin: 0 0 15px 0;">👂 Active Listening Settings</h4>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin: 0 0 15px 0;">
+                        Enable passive listening for hands-free activation with a wake phrase
+                    </p>
+
+                    <div class="input-group">
+                        <label>Enable Active Listening</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="activeListeningEnabled" checked onchange="updateActiveListeningSettings()">
+                            <span style="font-size: 14px;">Detect wake phrase after clicking mic (e.g., "Hey Bot")</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Conversation Activation Phrase</label>
+                        <div style="margin-bottom: 10px;">
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Hey Bot')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Hey Bot</button>
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Hey Coach')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Hey Coach</button>
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Hey Foodie')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Hey Foodie</button>
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Hey Chef')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Hey Chef</button>
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Yo Coach')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Yo Coach</button>
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Talk to me')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Talk to me</button>
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Wellness check')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Wellness check</button>
+                                <button class="phrase-preset" onclick="selectActiveListeningPhrase('Alright buddy')" style="padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Alright buddy</button>
+                            </div>
+                        </div>
+
+                        <label style="display: block; margin-bottom: 8px; margin-top: 10px; font-weight: 600;">Or Create Your Own:</label>
+                        <input type="text" id="activeListeningPhrase" value="Hey Bot" placeholder="e.g., Hey Food Bitch, Yo Nutrition, whatever fits your vibe..." onchange="updateActiveListeningSettings()" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Say this phrase after clicking the mic to start a voice conversation. Make it yours! 😎
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Active Listening Timeout</label>
+                        <input type="range" id="activeListeningTimeout" min="5" max="30" step="1" value="10" onchange="updateActiveListeningSettings()" style="width: 100%; cursor: pointer;">
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 5px; display: block;">
+                            Time to listen for wake phrase after clicking mic: <span id="activeListeningTimeoutValue">10</span> seconds
+                        </small>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Keep Listening Indefinitely</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="persistentListeningEnabled" onchange="updateActiveListeningSettings()">
+                            <span style="font-size: 14px;">Stay listening until mic clicked again (no timeout)</span>
+                        </div>
+                        <small style="color: var(--text-secondary); font-size: 12px; margin-top: 8px; display: block;">
+                            ✅ Enabled: Click mic once, listen indefinitely until you click again. Perfect for extended conversations.<br>
+                            ❌ Disabled: Timeout after configured seconds (5-30s) and stop listening.
+                        </small>
+                    </div>
+
+                    <div style="margin-top: 15px; padding: 10px; background: var(--bg-dark); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
+                        <strong>How Active Listening works:</strong><br>
+                        • Click the 🎤 button → Yellow pulse shows "Listening for your phrase..."<br>
+                        • Say your activation phrase (e.g., "Hey Bot")<br>
+                        • 🟢 Green light: Conversation started<br>
+                        • Have a natural voice conversation<br>
+                        • Say your end phrase to stop, OR click mic to stop listening
                     </div>
                 </div>
 
@@ -2536,6 +2732,9 @@
             <button class="quick-action-btn" onclick="quickAIPrompt('meal-plan')">📋 Meal Plan</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('exercise')">💪 Exercise Help</button>
             <button class="quick-action-btn" onclick="quickAIPrompt('log-meal')">📝 Log Meal</button>
+            <button class="quick-action-btn" id="botVoiceToggleBtn" onclick="toggleBotVoice()" title="Toggle voice on/off">
+                <span id="botVoiceToggleIcon">🔊</span>
+            </button>
         </div>
     </div>
 
@@ -2639,6 +2838,7 @@
     <script src="login-tracking.js"></script>
     <script src="recipe-pdf-scraper.js"></script>
     <script src="voice-module.js"></script>
+    <script src="conversation-module.js"></script>
 
     <!-- V2.3.0 CAMERA - ENHANCED -->
     <!-- Features: Black screen fix, flash controls, auto-rotation, -->

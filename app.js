@@ -232,6 +232,18 @@ async function registerUser(userData) {
                 volume: 1.0,
                 tone: 'natural'
             },
+            conversationSettings: {
+                conversationEnabled: true,
+                goWord: 'go',
+                pauseLength: 2000,
+                endConversationPhrase: 'end conversation',
+                autoStartResponse: true,
+                multiSentenceMode: true,
+                activeListeningEnabled: true,
+                activeListeningPhrase: 'hey bot',
+                activeListeningTimeout: 10,
+                persistentListeningEnabled: false
+            },
             appVersion: APP_VERSION
         };
         
@@ -1871,8 +1883,56 @@ function initVoiceRecognition() {
     
     recognition.onresult = function(event) {
         const transcript = event.results[0][0].transcript;
-        document.getElementById('aiChatInput').value = transcript;
-        sendAIMessage();
+
+        if (!userSettings?.conversationSettings || !ConversationModule) {
+            // Fallback: conversation not enabled, single message mode
+            document.getElementById('aiChatInput').value = transcript;
+            sendAIMessage();
+            return;
+        }
+
+        const conversationSettings = userSettings.conversationSettings;
+
+        // Check if we're in passive listening mode (waiting for wake word)
+        if (ConversationModule.isListeningForWakeWord && conversationSettings.activeListeningEnabled) {
+            const wakeWordResult = ConversationModule.processWakeWord(transcript, conversationSettings);
+
+            if (wakeWordResult.detected) {
+                // Wake word detected - start conversation and send cleaned message if there's content
+                showVoiceStatus(`🎤 Conversation started! Say your message...`);
+
+                // If there's content after the wake phrase, send it
+                if (wakeWordResult.cleanedTranscript.trim()) {
+                    document.getElementById('aiChatInput').value = wakeWordResult.cleanedTranscript;
+                    sendAIMessage();
+                }
+            } else {
+                // No wake word yet, show what we heard
+                showVoiceStatus(`Listening for "${conversationSettings.activeListeningPhrase}"... (heard: "${transcript}")`);
+            }
+        } else if (userSettings?.conversationSettings?.conversationEnabled) {
+            // In active conversation mode - process input normally
+            const shouldSend = ConversationModule.processVoiceInput(transcript, conversationSettings);
+
+            if (shouldSend) {
+                // Send the buffered message
+                const message = ConversationModule.getBuffer();
+                if (message) {
+                    document.getElementById('aiChatInput').value = message;
+                    sendAIMessage();
+                }
+            } else {
+                // Show buffer status to user
+                const status = ConversationModule.getStatus();
+                if (status.isWaitingForSilence) {
+                    showVoiceStatus(`📝 Buffered: "${ConversationModule.getBuffer()}"`);
+                }
+            }
+        } else {
+            // Conversation disabled - single message mode
+            document.getElementById('aiChatInput').value = transcript;
+            sendAIMessage();
+        }
     };
     
     recognition.onerror = function(event) {
@@ -1888,8 +1948,21 @@ function initVoiceRecognition() {
     };
     
     recognition.onend = function() {
-        isListening = false;
-        updateVoiceButton();
+        // Check if we should restart recognition for persistent listening
+        if (isListening && userSettings?.conversationSettings?.persistentListeningEnabled) {
+            // Persistent listening is enabled - restart recognition automatically
+            try {
+                recognition.start();
+                console.log('🔄 Restarting recognition for persistent listening');
+            } catch (error) {
+                console.error('Failed to restart recognition:', error);
+                isListening = false;
+                updateVoiceButton();
+            }
+        } else {
+            isListening = false;
+            updateVoiceButton();
+        }
     };
     
     return true;
@@ -1906,29 +1979,64 @@ function toggleVoiceInput() {
     if (isListening) {
         recognition.stop();
         isListening = false;
+        // End conversation if it was active
+        if (ConversationModule?.isInConversation) {
+            ConversationModule.endConversation();
+        }
+        if (ConversationModule?.isListeningForWakeWord) {
+            ConversationModule.stopPassiveListening();
+        }
     } else {
         try {
+            if (!userSettings?.conversationSettings || !ConversationModule) {
+                // Fallback: conversation not enabled
+                showVoiceStatus('Listening...');
+            } else {
+                // Check if active listening is enabled
+                if (userSettings.conversationSettings.activeListeningEnabled) {
+                    // Start passive listening for wake word
+                    ConversationModule.startPassiveListening(userSettings.conversationSettings);
+                    const phrase = userSettings.conversationSettings.activeListeningPhrase;
+                    showVoiceStatus(`🎤 Listening for "${phrase}"...`);
+                } else {
+                    // Start full conversation immediately
+                    ConversationModule.startConversation(userSettings.conversationSettings);
+                    const helper = ConversationModule.showConversationHelper(userSettings.conversationSettings);
+                    showVoiceStatus(helper);
+                }
+            }
             recognition.start();
-            showVoiceStatus('Listening...');
         } catch (error) {
             console.error('Failed to start recognition:', error);
             alert('Could not start voice input. Please check microphone permissions.');
         }
     }
-    
+
     updateVoiceButton();
 }
 
 function updateVoiceButton() {
     const btn = document.getElementById('voiceBtn');
     const icon = document.getElementById('voiceIcon');
-    
-    if (isListening) {
+
+    if (!isListening) {
+        // Idle state - no classes
+        btn.classList.remove('listening', 'passive-listening', 'active-listening');
+        icon.textContent = '🎤';
+    } else if (ConversationModule?.isInConversation) {
+        // Active conversation state - green pulse
+        btn.classList.remove('listening', 'passive-listening');
+        btn.classList.add('active-listening');
+        icon.textContent = '🎙️';
+    } else if (ConversationModule?.isListeningForWakeWord) {
+        // Passive listening state - yellow pulse
+        btn.classList.remove('listening', 'active-listening');
+        btn.classList.add('passive-listening');
+        icon.textContent = '👂';
+    } else {
+        // Generic listening state (fallback)
         btn.classList.add('listening');
         icon.textContent = '🔴';
-    } else {
-        btn.classList.remove('listening');
-        icon.textContent = '🎤';
     }
 }
 
@@ -3128,6 +3236,15 @@ async function switchTab(tab) {
                 initializeVoiceSettings();
             } catch (e) {
                 console.warn('initializeVoiceSettings error:', e);
+            }
+        }
+
+        // Initialize conversation settings
+        if (typeof initializeConversationSettings === 'function') {
+            try {
+                initializeConversationSettings(userSettings);
+            } catch (e) {
+                console.warn('initializeConversationSettings error:', e);
             }
         }
         } else {
@@ -5266,6 +5383,7 @@ async function saveSettings() {
             proxyUrl: formData.proxyUrl,
             useProxy: formData.useProxy,
             voiceSettings: collectVoiceSettings(),
+            conversationSettings: collectConversationSettings(),
             lastModified: new Date().toISOString()
         };
 
@@ -5294,6 +5412,60 @@ function collectVoiceSettings() {
         volume: parseFloat(document.getElementById('botVoiceVolume')?.value) || 1.0,
         tone: document.getElementById('botVoiceTone')?.value || 'natural'
     };
+}
+
+function toggleBotVoice() {
+    if (!userSettings || !userSettings.voiceSettings) {
+        alert('Please go to Settings to configure voice.');
+        return;
+    }
+
+    // Toggle the voice enabled state
+    userSettings.voiceSettings.voiceEnabled = !userSettings.voiceSettings.voiceEnabled;
+
+    // Update the checkbox in settings tab if it exists
+    const checkbox = document.getElementById('botVoiceEnabled');
+    if (checkbox) {
+        checkbox.checked = userSettings.voiceSettings.voiceEnabled;
+    }
+
+    // Update the button icon
+    const btn = document.getElementById('botVoiceToggleBtn');
+    const icon = document.getElementById('botVoiceToggleIcon');
+    if (userSettings.voiceSettings.voiceEnabled) {
+        icon.textContent = '🔊';
+        btn?.classList.add('voice-enabled');
+        btn?.classList.remove('voice-disabled');
+    } else {
+        icon.textContent = '🔇';
+        btn?.classList.remove('voice-enabled');
+        btn?.classList.add('voice-disabled');
+        // Stop any currently playing speech
+        VoiceModule?.stop();
+    }
+
+    // Save to userSettings
+    const userId = getCurrentUserId();
+    if (userId) {
+        dbPut('settings', userSettings).catch(err => console.error('Failed to save voice settings:', err));
+    }
+}
+
+function updateBotVoiceToggleUI() {
+    const btn = document.getElementById('botVoiceToggleBtn');
+    const icon = document.getElementById('botVoiceToggleIcon');
+
+    if (!userSettings?.voiceSettings) return;
+
+    if (userSettings.voiceSettings.voiceEnabled) {
+        icon.textContent = '🔊';
+        btn?.classList.add('voice-enabled');
+        btn?.classList.remove('voice-disabled');
+    } else {
+        icon.textContent = '🔇';
+        btn?.classList.remove('voice-enabled');
+        btn?.classList.add('voice-disabled');
+    }
 }
 
 function initializeVoiceSettings() {
@@ -5336,17 +5508,20 @@ function initializeVoiceSettings() {
 
 function updateVoiceRateDisplay(value) {
     const display = document.getElementById('botVoiceRateValue');
-    if (display) display.textContent = `${value}x`;
+    const numValue = parseFloat(value) || 1.0;
+    if (display) display.textContent = `${numValue.toFixed(1)}x`;
 }
 
 function updateVoicePitchDisplay(value) {
     const display = document.getElementById('botVoicePitchValue');
-    if (display) display.textContent = value.toFixed(1);
+    const numValue = parseFloat(value) || 1.0;
+    if (display) display.textContent = numValue.toFixed(1);
 }
 
 function updateVoiceVolumeDisplay(value) {
     const display = document.getElementById('botVoiceVolumeValue');
-    if (display) display.textContent = `${Math.round(value * 100)}%`;
+    const numValue = parseFloat(value) || 1.0;
+    if (display) display.textContent = `${Math.round(numValue * 100)}%`;
 }
 
 function updateBotVoiceSettings() {
@@ -5355,9 +5530,9 @@ function updateBotVoiceSettings() {
     const pitch = document.getElementById('botVoicePitch')?.value;
     const volume = document.getElementById('botVoiceVolume')?.value;
 
-    if (rate) updateVoiceRateDisplay(rate);
-    if (pitch) updateVoicePitchDisplay(pitch);
-    if (volume) updateVoiceVolumeDisplay(volume);
+    if (rate !== undefined) updateVoiceRateDisplay(rate);
+    if (pitch !== undefined) updateVoicePitchDisplay(pitch);
+    if (volume !== undefined) updateVoiceVolumeDisplay(volume);
 }
 
 function playBotVoiceSample() {
@@ -5390,6 +5565,91 @@ function playBotVoiceSample() {
             btn.onclick = playBotVoiceSample;
         }
     };
+}
+
+/**
+ * Conversation Settings Management
+ */
+
+function collectConversationSettings() {
+    return {
+        conversationEnabled: document.getElementById('conversationEnabled')?.checked ?? true,
+        multiSentenceMode: document.getElementById('conversationMultiSentence')?.checked ?? true,
+        goWord: document.getElementById('conversationGoWord')?.value?.toLowerCase()?.trim() || 'go',
+        pauseLength: parseInt(document.getElementById('conversationPauseLength')?.value) || 2000,
+        endConversationPhrase: document.getElementById('conversationEndPhrase')?.value?.toLowerCase()?.trim() || 'end conversation',
+        autoStartResponse: document.getElementById('conversationAutoStart')?.checked ?? true,
+        activeListeningEnabled: document.getElementById('activeListeningEnabled')?.checked ?? true,
+        activeListeningPhrase: document.getElementById('activeListeningPhrase')?.value?.toLowerCase()?.trim() || 'hey bot',
+        activeListeningTimeout: parseInt(document.getElementById('activeListeningTimeout')?.value) || 10,
+        persistentListeningEnabled: document.getElementById('persistentListeningEnabled')?.checked ?? false
+    };
+}
+
+function updateConversationSettings() {
+    // Update pause length display
+    const pauseLength = document.getElementById('conversationPauseLength')?.value;
+    if (pauseLength) {
+        updatePauseLengthDisplay(pauseLength);
+    }
+}
+
+function updateActiveListeningSettings() {
+    // Update timeout display
+    const timeout = document.getElementById('activeListeningTimeout')?.value;
+    if (timeout) {
+        const display = document.getElementById('activeListeningTimeoutValue');
+        if (display) display.textContent = timeout;
+    }
+}
+
+function selectActiveListeningPhrase(phrase) {
+    const input = document.getElementById('activeListeningPhrase');
+    if (input) {
+        input.value = phrase;
+        updateConversationSettings();
+    }
+}
+
+function updatePauseLengthDisplay(value) {
+    const display = document.getElementById('conversationPauseLengthValue');
+    if (display) display.textContent = `${value}ms`;
+}
+
+function initializeConversationSettings(userSettings) {
+    if (!userSettings?.conversationSettings) return;
+
+    const settings = userSettings.conversationSettings;
+
+    const conversationEnabled = document.getElementById('conversationEnabled');
+    const multiSentence = document.getElementById('conversationMultiSentence');
+    const goWord = document.getElementById('conversationGoWord');
+    const pauseLength = document.getElementById('conversationPauseLength');
+    const endPhrase = document.getElementById('conversationEndPhrase');
+    const autoStart = document.getElementById('conversationAutoStart');
+    const activeListeningEnabled = document.getElementById('activeListeningEnabled');
+    const activeListeningPhrase = document.getElementById('activeListeningPhrase');
+    const activeListeningTimeout = document.getElementById('activeListeningTimeout');
+    const persistentListeningEnabled = document.getElementById('persistentListeningEnabled');
+
+    if (conversationEnabled) conversationEnabled.checked = settings.conversationEnabled;
+    if (multiSentence) multiSentence.checked = settings.multiSentenceMode;
+    if (goWord) goWord.value = settings.goWord;
+    if (pauseLength) {
+        pauseLength.value = settings.pauseLength;
+        updatePauseLengthDisplay(settings.pauseLength);
+    }
+    if (endPhrase) endPhrase.value = settings.endConversationPhrase;
+    if (autoStart) autoStart.checked = settings.autoStartResponse;
+    if (activeListeningEnabled) activeListeningEnabled.checked = settings.activeListeningEnabled ?? true;
+    if (activeListeningPhrase) activeListeningPhrase.value = settings.activeListeningPhrase || 'hey bot';
+    if (activeListeningTimeout) {
+        activeListeningTimeout.value = settings.activeListeningTimeout || 10;
+        updateActiveListeningSettings();
+    }
+    if (persistentListeningEnabled) persistentListeningEnabled.checked = settings.persistentListeningEnabled ?? false;
+
+    console.log('✅ Conversation settings initialized');
 }
 
 async function completeSetup() {
@@ -6614,6 +6874,9 @@ async function initializeAfterLogin() {
         } else {
             switchTab('home');
         }
+
+        // Initialize voice toggle button UI
+        updateBotVoiceToggleUI();
 
         // Mark ready
         appReady = true;
