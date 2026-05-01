@@ -11,7 +11,7 @@
       "points": 2
     },
     "0066019800109": {
-      "name": "Fresh Garlic Caesar",
+      "name": "Fresh Garlic Caesar Salad Dressing",
       "brand": "la maison",
       "points": 16
     },
@@ -52,7 +52,7 @@
     },
     "0065651002919": {
       "name": "White eggs",
-      "brand": "Burnbrae Farms",
+      "brand": "BURNBRAE",
       "points": 4
     },
     "0066200021085": {
@@ -138,7 +138,7 @@
       "0072655454699",
       "0072655001770"
     ],
-    "Burnbrae Farms": [
+    "BURNBRAE": [
       "0065651002919"
     ],
     "OXO": [
@@ -243,6 +243,6 @@
       "0064144004102"
     ]
   },
-  "lastUpdated": "2026-04-15T05:15:46.520Z",
+  "lastUpdated": "2026-05-01T06:16:56.337Z",
   "totalProducts": 22
 }

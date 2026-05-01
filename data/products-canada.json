@@ -57,7 +57,7 @@
   },
   "0066019800109": {
     "upc": "0066019800109",
-    "product_name": "Fresh Garlic Caesar",
+    "product_name": "Fresh Garlic Caesar Salad Dressing",
     "brand": "la maison",
     "points_per_100g": 16,
     "points_per_serving": 5,
@@ -81,7 +81,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1772164768
+    "last_modified": 1776809836
   },
   "0056200828555": {
     "upc": "0056200828555",
@@ -282,7 +282,7 @@
   "0065651002919": {
     "upc": "0065651002919",
     "product_name": "White eggs",
-    "brand": "Burnbrae Farms",
+    "brand": "BURNBRAE",
     "points_per_100g": 4,
     "points_per_serving": 4,
     "serving_size": "2 egg (105 g)",
@@ -305,7 +305,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1774385772
+    "last_modified": 1776724931
   },
   "0066200021085": {
     "upc": "0066200021085",
@@ -369,8 +369,8 @@
     "brand": "Altius",
     "points_per_100g": 0,
     "points_per_serving": 0,
-    "serving_size": "100g",
-    "serving_amount": 100,
+    "serving_size": "0.125 tsp (0.5 g)",
+    "serving_amount": 0.5,
     "hydration_ml_per_100g": 0,
     "nutrition": {
       "calories": 0,
@@ -389,7 +389,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1772164644
+    "last_modified": 1777417131
   },
   "0058300128832": {
     "upc": "0058300128832",
