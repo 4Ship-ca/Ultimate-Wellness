@@ -57,7 +57,7 @@
   },
   "0066019800109": {
     "upc": "0066019800109",
-    "product_name": "Fresh Garlic Caesar Salad Dressing",
+    "product_name": "Fresh Garlic Caesar",
     "brand": "la maison",
     "points_per_100g": 16,
     "points_per_serving": 5,
@@ -81,7 +81,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1776809836
+    "last_modified": 1778718747
   },
   "0056200828555": {
     "upc": "0056200828555",
@@ -137,7 +137,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1772164709
+    "last_modified": 1778631661
   },
   "0060383054274": {
     "upc": "0060383054274",

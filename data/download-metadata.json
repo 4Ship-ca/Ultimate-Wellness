@@ -1,7 +1,7 @@
 {
-    "download_date": "2026-05-01T06:16:56Z",
+    "download_date": "2026-05-15T06:30:59Z",
     "source": "https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz",
     "total_products": 22,
     "filter": "Canada products with nutrition data",
-    "next_update_due": "2026-05-15"
+    "next_update_due": "2026-05-29"
 }
