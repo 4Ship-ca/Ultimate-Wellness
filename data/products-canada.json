@@ -57,7 +57,7 @@
   },
   "0066019800109": {
     "upc": "0066019800109",
-    "product_name": "Fresh Garlic Caesar",
+    "product_name": "Fresh Garlic Caesar Dressing & Dip",
     "brand": "la maison",
     "points_per_100g": 16,
     "points_per_serving": 5,
@@ -76,12 +76,12 @@
       "salt": 2,
       "water": null
     },
-    "categories": "Condiments, Sauces, Salad dressings, en:dips",
+    "categories": "",
     "ingredients": "soybean oil, water, frozen egg yolk, vinegar, fresh garlic, parmesan cheese, sea salt, sugar, salt, seasonings, phosphoric acid, spices, anchovy paste, xanthan gum, propylene glycol alginate, concentrated lemon juice, lactic acid, potassium sorbate, sodium benzoate, capers, flavour, calcium disodium edta, disodium phosphate, citric acid, enzymes. contains: milk, eggs, anchovies, mustard. cves de",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1778718747
+    "last_modified": 1780058911
   },
   "0056200828555": {
     "upc": "0056200828555",
@@ -104,12 +104,12 @@
       "salt": 3,
       "water": null
     },
-    "categories": "en:yellow-mustards",
+    "categories": "",
     "ingredients": "ingredien s: vinegar, water, mustard seed, salt, turmeric paprika, spice, natural flavours and garlic powder.",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1772174257
+    "last_modified": 1780024429
   },
   "0096619164981": {
     "upc": "0096619164981",
@@ -193,7 +193,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1774112238
+    "last_modified": 1779578284
   },
   "0072655404601": {
     "upc": "0072655404601",
@@ -244,12 +244,12 @@
       "salt": 0.579,
       "water": null
     },
-    "categories": "",
+    "categories": "en:meals-with-chicken",
     "ingredients": "locust bean gum",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1772164779
+    "last_modified": 1778776236
   },
   "0072655001770": {
     "upc": "0072655001770",

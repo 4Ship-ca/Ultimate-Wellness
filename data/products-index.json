@@ -11,7 +11,7 @@
       "points": 2
     },
     "0066019800109": {
-      "name": "Fresh Garlic Caesar",
+      "name": "Fresh Garlic Caesar Dressing & Dip",
       "brand": "la maison",
       "points": 16
     },
@@ -182,29 +182,15 @@
     "Chicken and vegetable Stir Fry": [
       "0072655454644"
     ],
-    "Condiments": [
-      "0066019800109",
-      "0096619164981",
-      "0058300128832"
-    ],
-    "Sauces": [
-      "0066019800109",
-      "0058300128832"
-    ],
-    "Salad dressings": [
-      "0066019800109"
-    ],
-    "en:dips": [
-      "0066019800109"
-    ],
-    "en:yellow-mustards": [
-      "0056200828555"
-    ],
     "Plant-based foods and beverages": [
       "0096619164981"
     ],
     "Plant-based foods": [
       "0096619164981"
+    ],
+    "Condiments": [
+      "0096619164981",
+      "0058300128832"
     ],
     "Spices": [
       "0096619164981"
@@ -218,6 +204,9 @@
     "en:Sesame seeds": [
       "0060383054274"
     ],
+    "en:meals-with-chicken": [
+      "0072655454699"
+    ],
     "Farming products": [
       "0065651002919"
     ],
@@ -229,6 +218,9 @@
     ],
     "Caged Chicken Eggs": [
       "0065651002919"
+    ],
+    "Sauces": [
+      "0058300128832"
     ],
     "en:groceries": [
       "0058300128832"
@@ -243,6 +235,6 @@
       "0064144004102"
     ]
   },
-  "lastUpdated": "2026-05-15T06:30:59.985Z",
+  "lastUpdated": "2026-06-01T07:32:31.933Z",
   "totalProducts": 22
 }
