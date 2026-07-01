@@ -182,25 +182,6 @@
     "Chicken and vegetable Stir Fry": [
       "0072655454644"
     ],
-    "Plant-based foods and beverages": [
-      "0096619164981"
-    ],
-    "Plant-based foods": [
-      "0096619164981"
-    ],
-    "Condiments": [
-      "0096619164981",
-      "0058300128832"
-    ],
-    "Spices": [
-      "0096619164981"
-    ],
-    "Groceries": [
-      "0096619164981"
-    ],
-    "en:peppers": [
-      "0096619164981"
-    ],
     "en:Sesame seeds": [
       "0060383054274"
     ],
@@ -219,6 +200,9 @@
     "Caged Chicken Eggs": [
       "0065651002919"
     ],
+    "Condiments": [
+      "0058300128832"
+    ],
     "Sauces": [
       "0058300128832"
     ],
@@ -235,6 +219,6 @@
       "0064144004102"
     ]
   },
-  "lastUpdated": "2026-06-15T07:54:56.897Z",
+  "lastUpdated": "2026-07-01T07:07:48.816Z",
   "totalProducts": 22
 }

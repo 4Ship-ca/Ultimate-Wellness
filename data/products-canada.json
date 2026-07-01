@@ -132,12 +132,12 @@
       "salt": null,
       "water": null
     },
-    "categories": "Plant-based foods and beverages, Plant-based foods, Condiments, Spices, Groceries, en:peppers",
+    "categories": "",
     "ingredients": "pepper",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1778631661
+    "last_modified": 1781865085
   },
   "0060383054274": {
     "upc": "0060383054274",
