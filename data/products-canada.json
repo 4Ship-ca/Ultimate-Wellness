@@ -229,7 +229,7 @@
     "brand": "Healthy Choice",
     "points_per_100g": 2,
     "points_per_serving": 5,
-    "serving_size": "1 portion (259 g)",
+    "serving_size": "1 entr�e (259 g)",
     "serving_amount": 259,
     "hydration_ml_per_100g": 0,
     "nutrition": {
@@ -244,12 +244,12 @@
       "salt": 0.579,
       "water": null
     },
-    "categories": "en:meals-with-chicken",
+    "categories": "",
     "ingredients": "locust bean gum",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1778776236
+    "last_modified": 1786669667
   },
   "0072655001770": {
     "upc": "0072655001770",
@@ -300,12 +300,12 @@
       "salt": 0.31,
       "water": null
     },
-    "categories": "Farming products,Eggs,Chicken eggs,Caged Chicken Eggs",
+    "categories": "",
     "ingredients": "Large Chicken Eggs.",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1776724931
+    "last_modified": 1785625353
   },
   "0066200021085": {
     "upc": "0066200021085",

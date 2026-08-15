@@ -185,21 +185,6 @@
     "en:Sesame seeds": [
       "0060383054274"
     ],
-    "en:meals-with-chicken": [
-      "0072655454699"
-    ],
-    "Farming products": [
-      "0065651002919"
-    ],
-    "Eggs": [
-      "0065651002919"
-    ],
-    "Chicken eggs": [
-      "0065651002919"
-    ],
-    "Caged Chicken Eggs": [
-      "0065651002919"
-    ],
     "Condiments": [
       "0058300128832"
     ],
@@ -219,6 +204,6 @@
       "0064144004102"
     ]
   },
-  "lastUpdated": "2026-08-01T06:00:29.847Z",
+  "lastUpdated": "2026-08-15T03:22:32.849Z",
   "totalProducts": 22
 }
