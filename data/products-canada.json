@@ -169,11 +169,11 @@
   },
   "0628915751550": {
     "upc": "0628915751550",
-    "product_name": "Tartinade mayo chipotle",
+    "product_name": "CHIPOTLE MAYO SPREAD",
     "brand": "Great Value",
     "points_per_100g": 18,
     "points_per_serving": 3,
-    "serving_size": "15 ml (15 ml)",
+    "serving_size": "15ml",
     "serving_amount": 15,
     "hydration_ml_per_100g": 0,
     "nutrition": {
@@ -189,11 +189,11 @@
       "water": null
     },
     "categories": "",
-    "ingredients": "Canola Oil, Water, Sugar, Tomato Paste, Frozen Egg Yolk, Vinegar, Chipotle Chili Powder, Salt, Modified Corn Starch, Blackstrap Molasses, Lactic Acid, Concentrated Lemon Juice, Xanthan Gum, Potassium Sorbate, Natural Hickory Smoke Flavour, Cayenne Pepper Powder, Garlic Powder, Paprika Extract, Onion Powder, Calcium Disodium EDTA. Contains:Eggs. May Contain: Peanuts, Tree Nuts, Sesame, Milk, Fish, Crustaceans, Shellfish, Soy, Wheat, Mustard, Sulphites.",
+    "ingredients": "Aceite de canola, agua, azúcares (azúcar, melaza de caña), pasta de tomate, yema de huevo congelada, vinagre, el chipotle en polvo (1.25%), sal, almidón de maíz modificado, ácido láctico, jugo concentrado de limón, goma xantana, sorbato de potasio, sabor natural a humo, pimienta de cayena en polvo, ajo en polvo, extracto de pimiento, cebolla en polvo, EDTA disódico.",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1779578284
+    "last_modified": 1788224859
   },
   "0072655404601": {
     "upc": "0072655404601",
@@ -229,7 +229,7 @@
     "brand": "Healthy Choice",
     "points_per_100g": 2,
     "points_per_serving": 5,
-    "serving_size": "1 entr�e (259 g)",
+    "serving_size": "1 portion (259 g)",
     "serving_amount": 259,
     "hydration_ml_per_100g": 0,
     "nutrition": {
@@ -249,7 +249,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1786669667
+    "last_modified": 1787764368
   },
   "0072655001770": {
     "upc": "0072655001770",
