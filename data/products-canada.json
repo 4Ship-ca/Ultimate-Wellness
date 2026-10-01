@@ -249,7 +249,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1787764368
+    "last_modified": 1790045038
   },
   "0072655001770": {
     "upc": "0072655001770",
@@ -608,11 +608,11 @@
       "salt": 0,
       "water": null
     },
-    "categories": "Open Food Facts",
-    "ingredients": "Huile de canola, Huile de palme modifiée, Huile de coco, Lécithine de soya, Silicone diméthyle, Isobutane, Propane  Contient : Soya.",
+    "categories": "",
+    "ingredients": "Huile de canola, Huile de palme modifiée, Huile de coco, Lécithine de soya, Silicone diméthyle, Isobutane, Propane .",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1771957630
+    "last_modified": 1790671615
   }
 }
