@@ -34,7 +34,7 @@
     "points_per_100g": 2,
     "points_per_serving": 5,
     "serving_size": "1 portion (262 g)",
-    "serving_amount": "262",
+    "serving_amount": 262,
     "hydration_ml_per_100g": 0,
     "nutrition": {
       "calories": 72.5,
@@ -48,12 +48,12 @@
       "salt": 0.458,
       "water": null
     },
-    "categories": "Chicken and vegetable Stir Fry",
-    "ingredients": "Vegetable blend (broccoli, carrots, edamame, onions, red bell peppers), Cooked seasoned chicken pieces (chicken breast, water, sugar, salt, olive oil, soy protein isolate, soy fibre, rice starch, spice extract), Sesame soy sauce (water, soy sauce, sugar, rice vinegar, salted sake, corn starch, sesame oil, salt, garlic powder, ginger powder, carob bean gum). Contains: Soy, Wheat, Sesame.",
+    "categories": "",
+    "ingredients": "Vegetable blend (broccoli, carrots, edamame, onions, bell peppers), Cooked seasoned chicken pieces (chicken breast, water, sugar, salt, vegetable oil, soy protein isolate, soy fibre, rice starch, spice extract), Sesame soy sauce (water, soy sauce, sugar, rice, vinegar, salted sake, corn starch, vegetable oil, salt, garlic powder, ginger powder, carob bean gum).\nContains: Soy, Wheat, Sesame.",
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1772164776
+    "last_modified": 1791675649
   },
   "0066019800109": {
     "upc": "0066019800109",
@@ -256,9 +256,9 @@
     "product_name": "Steamers",
     "brand": "Healthy Choice",
     "points_per_100g": 3,
-    "points_per_serving": 3,
-    "serving_size": "100g",
-    "serving_amount": 100,
+    "points_per_serving": 8,
+    "serving_size": "1 entr�e (283 g)",
+    "serving_amount": 283,
     "hydration_ml_per_100g": 0,
     "nutrition": {
       "calories": 95.4064,
@@ -277,7 +277,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1772164789
+    "last_modified": 1791839789
   },
   "0065651002919": {
     "upc": "0065651002919",
@@ -285,7 +285,7 @@
     "brand": "BURNBRAE",
     "points_per_100g": 4,
     "points_per_serving": 4,
-    "serving_size": "2 egg (105 g)",
+    "serving_size": "2 Large Eggs (105 g)",
     "serving_amount": 105,
     "hydration_ml_per_100g": 0,
     "nutrition": {
@@ -305,7 +305,7 @@
     "image_url": "",
     "source": "openfoodfacts",
     "verified": false,
-    "last_modified": 1785625353
+    "last_modified": 1791235995
   },
   "0066200021085": {
     "upc": "0066200021085",

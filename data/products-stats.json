@@ -1,6 +1,6 @@
 {
   "total_products": 22,
-  "date_processed": "2026-10-01T08:55:46.908Z",
+  "date_processed": "2026-10-15T07:31:00.650Z",
   "points_distribution": {
     "0": 7,
     "2": 4,
@@ -15,5 +15,5 @@
     "23": 1
   },
   "brands_count": 17,
-  "categories_count": 11
+  "categories_count": 10
 }
